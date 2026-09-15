@@ -1,5 +1,5 @@
-name: aims_flow_scanner
-version: 0.5.0+5
+name: nailfit
+version: 0.5.1+6
 publish_to: 'none'
 
 environment:
