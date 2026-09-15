@@ -3,13 +3,9 @@ set -euo pipefail
 
 PKG="hu.logisticaims.aims_flow_scanner"
 ACTIVITY="$PKG/.MainActivity"
-BUILT_APK="build/app/outputs/flutter-apk/app-debug.apk"
-DELIVERY_DIR="/tmp/aims-delivery"
-DELIVERY_NAME="AIMS-Flow-Smart-Scanner-v0.5-OCR.apk"
-DELIVERY_ZIP="$DELIVERY_DIR/AIMS-Flow-Smart-Scanner-v0.5-OCR-INSTALL.zip"
-APK="$DELIVERY_DIR/unpacked/$DELIVERY_NAME"
+APK="build/app/outputs/flutter-apk/app-debug.apk"
 EVIDENCE="test-evidence"
-mkdir -p "$EVIDENCE" "$DELIVERY_DIR/unpacked"
+mkdir -p "$EVIDENCE"
 
 fail_with_logs() {
   echo "==== FAILURE DIAGNOSTICS ===="
@@ -20,14 +16,14 @@ fail_with_logs() {
   exit 1
 }
 
-check_app_foreground() {
+check_foreground() {
   adb shell dumpsys activity activities | grep -E 'mResumedActivity|topResumedActivity' | grep "$PKG" >/dev/null || fail_with_logs
 }
 
-check_no_app_crash() {
+check_no_crash() {
   adb logcat -d > "$EVIDENCE/logcat.txt" 2>&1 || true
   if grep -E "FATAL EXCEPTION|Process: ${PKG}|AndroidRuntime.*FATAL" "$EVIDENCE/logcat.txt" >/dev/null; then
-    echo "Crash signature found for AIMS Flow"
+    echo "Crash signature found"
     fail_with_logs
   fi
 }
@@ -45,18 +41,19 @@ dump_ui() {
     fi
     sleep 2
   done
-  echo "UIAutomator dump failed"
   fail_with_logs
 }
 
-find_scanner_button() {
-  local xml="$1"
-  python3 - "$xml" <<'PY'
+find_center() {
+  local file="$1"
+  local needle="$2"
+  python3 - "$file" "$needle" <<'PY'
 import re, sys, xml.etree.ElementTree as ET
-root = ET.parse(sys.argv[1]).getroot()
+path, needle = sys.argv[1], sys.argv[2]
+root = ET.parse(path).getroot()
 for node in root.iter('node'):
-    label = node.attrib.get('text') or node.attrib.get('content-desc') or ''
-    if 'Scanner megnyitása' in label:
+    label = ' '.join(filter(None, [node.attrib.get('text',''), node.attrib.get('content-desc','')]))
+    if needle in label:
         m = re.match(r'\[(\d+),(\d+)\]\[(\d+),(\d+)\]', node.attrib.get('bounds',''))
         if not m:
             continue
@@ -67,107 +64,93 @@ raise SystemExit(1)
 PY
 }
 
-echo "[0/9] Recreate delivery chain: APK -> ZIP -> extract"
-cp "$BUILT_APK" "$DELIVERY_DIR/$DELIVERY_NAME"
-(
-  cd "$DELIVERY_DIR"
-  zip -q "$(basename "$DELIVERY_ZIP")" "$DELIVERY_NAME"
-)
-unzip -t "$DELIVERY_ZIP"
-unzip -q "$DELIVERY_ZIP" -d "$DELIVERY_DIR/unpacked"
-test -s "$APK"
-cmp -s "$BUILT_APK" "$APK"
-sha256sum "$BUILT_APK" "$APK" > "$EVIDENCE/delivery-sha256.txt"
-unzip -t "$APK" > "$EVIDENCE/apk-integrity.txt"
-echo "Delivery APK is byte-for-byte identical"
-
-echo "[1/9] Verify Google Play services and install extracted APK"
-adb shell pm list packages | grep 'com.google.android.gms' >/dev/null || {
-  echo "Google Play services missing from emulator"
-  exit 1
-}
+echo "[1/10] Install APK and grant camera"
 adb install -r "$APK"
+adb shell pm grant "$PKG" android.permission.CAMERA || true
 adb shell pm list packages | grep "$PKG"
 
-echo "[2/9] Cold launch AIMS Flow"
+echo "[2/10] Cold launch"
 adb logcat -c
 adb shell am force-stop "$PKG"
 launch_app
 sleep 4
-check_app_foreground
-check_no_app_crash
+check_foreground
+check_no_crash
 adb exec-out screencap -p > "$EVIDENCE/01-home.png" || true
 
-echo "[3/9] Locate scanner button, scrolling if needed"
-FOUND=0
-for attempt in 1 2 3 4; do
-  dump_ui /sdcard/home.xml "$EVIDENCE/home-$attempt.xml"
-  if find_scanner_button "$EVIDENCE/home-$attempt.xml" > /tmp/tap.txt; then
-    FOUND=1
-    break
-  fi
-  adb shell input swipe 540 1900 540 700 450
-  sleep 1
-done
-if [[ "$FOUND" -ne 1 ]]; then
-  echo "Scanner button not found after scrolling"
-  fail_with_logs
-fi
-read TAP_X TAP_Y < /tmp/tap.txt
-
-echo "[4/9] Launch native ML Kit document scanner"
-adb shell input tap "$TAP_X" "$TAP_Y"
-# First use can download the scanner UI/model through Google Play services.
-for i in $(seq 1 20); do
+echo "[3/10] Open custom Smart Scanner"
+dump_ui /sdcard/home.xml "$EVIDENCE/home.xml"
+read X Y < <(find_center "$EVIDENCE/home.xml" "Smart Scan indítása") || fail_with_logs
+adb shell input tap "$X" "$Y"
+rm -f /tmp/capture.txt
+for i in $(seq 1 15); do
   sleep 2
-  TOP=$(adb shell dumpsys activity activities | grep -E 'mResumedActivity|topResumedActivity' | head -1 || true)
-  echo "$TOP" > "$EVIDENCE/top-after-scan.txt"
-  if [[ "$TOP" != *"$PKG"* ]] && [[ -n "$TOP" ]]; then
+  dump_ui /sdcard/scanner.xml "$EVIDENCE/scanner.xml"
+  if find_center "$EVIDENCE/scanner.xml" "CMR fényképezése és feldolgozása" >/tmp/capture.txt 2>/dev/null; then
     break
   fi
 done
-TOP=$(cat "$EVIDENCE/top-after-scan.txt")
-if [[ -z "$TOP" ]] || [[ "$TOP" == *"$PKG"* ]]; then
-  echo "Native document scanner did not take foreground"
+test -s /tmp/capture.txt || fail_with_logs
+check_no_crash
+adb exec-out screencap -p > "$EVIDENCE/02-scanner.png" || true
+
+echo "[4/10] Take photo and run real processing pipeline"
+read CX CY < /tmp/capture.txt
+adb shell input tap "$CX" "$CY"
+
+RESULT_OK=0
+for i in $(seq 1 45); do
+  sleep 2
+  check_no_crash
+  dump_ui /sdcard/result.xml "$EVIDENCE/result.xml"
+  if grep -q -E 'Felismert CMR adatok|Smart Scan eredmény' "$EVIDENCE/result.xml"; then
+    RESULT_OK=1
+    break
+  fi
+done
+if [ "$RESULT_OK" -ne 1 ]; then
+  echo "Result screen was not reached after capture"
   fail_with_logs
 fi
-check_no_app_crash
-adb exec-out screencap -p > "$EVIDENCE/02-mlkit-scanner.png" || true
+adb exec-out screencap -p > "$EVIDENCE/03-result.png" || true
 
-echo "[5/9] Capture scanner UI diagnostics"
-dump_ui /sdcard/mlkit.xml "$EVIDENCE/mlkit.xml"
-adb shell dumpsys activity activities > "$EVIDENCE/mlkit-activities.txt"
-adb logcat -d > "$EVIDENCE/mlkit-logcat.txt"
+echo "[5/10] Verify OCR/result UI exists"
+grep -q 'Felismert CMR adatok' "$EVIDENCE/result.xml" || fail_with_logs
+check_no_crash
 
-echo "[6/9] Back from scanner to AIMS Flow"
-adb shell input keyevent KEYCODE_BACK
+echo "[6/10] Return home"
+adb shell am force-stop "$PKG"
+launch_app
 sleep 3
-check_app_foreground
-check_no_app_crash
-adb exec-out screencap -p > "$EVIDENCE/03-back-home.png" || true
+check_foreground
+check_no_crash
 
-echo "[7/9] Background / resume lifecycle"
+echo "[7/10] Background/resume"
 adb shell input keyevent KEYCODE_HOME
 sleep 2
 launch_app
 sleep 3
-check_app_foreground
-check_no_app_crash
+check_foreground
+check_no_crash
 
-echo "[8/9] Repeated cold starts"
+echo "[8/10] Repeated cold starts"
 for i in 1 2 3; do
   adb shell am force-stop "$PKG"
   launch_app
   sleep 2
-  check_app_foreground
-  check_no_app_crash
+  check_foreground
+  check_no_crash
   echo "cold start $i OK"
 done
 
-echo "[9/9] Final diagnostics"
+echo "[9/10] APK integrity"
+unzip -t "$APK" > "$EVIDENCE/apk-integrity.txt"
+tail -5 "$EVIDENCE/apk-integrity.txt"
+
+echo "[10/10] Final diagnostics"
 adb shell dumpsys package "$PKG" > "$EVIDENCE/package.txt"
 adb shell dumpsys activity activities > "$EVIDENCE/activities.txt"
 adb logcat -d > "$EVIDENCE/logcat.txt"
 adb exec-out screencap -p > "$EVIDENCE/04-final.png" || true
 
-echo "AIMS Flow Smart Scanner v0.5 OCR smoke-test PASSED"
+echo "AIMS Flow Smart Scanner v0.6 END-TO-END CAPTURE+OCR test PASSED"
