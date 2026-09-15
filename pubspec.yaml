@@ -1,5 +1,5 @@
 name: nailfit
-version: 0.5.1+6
+version: 0.6.0+7
 publish_to: 'none'
 
 environment:
@@ -10,6 +10,7 @@ dependencies:
   flutter:
     sdk: flutter
   image_picker: ^1.1.2
+  path_provider: ^2.1.5
 
 dev_dependencies:
   flutter_test:
