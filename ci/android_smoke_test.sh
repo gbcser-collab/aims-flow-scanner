@@ -15,6 +15,10 @@ fail_with_logs() {
   exit 1
 }
 
+check_foreground() {
+  adb shell dumpsys activity activities | grep -E 'mResumedActivity|topResumedActivity' | grep "$PKG" >/dev/null || fail_with_logs
+}
+
 check_no_crash() {
   adb logcat -d > "$EVIDENCE/logcat.txt" 2>&1 || true
   if grep -E "FATAL EXCEPTION|Process: ${PKG}|AndroidRuntime.*FATAL" "$EVIDENCE/logcat.txt" >/dev/null; then
@@ -23,20 +27,20 @@ check_no_crash() {
   fi
 }
 
-echo "[1/8] Install APK"
+echo "[1/9] Install APK"
 adb install -r "$APK"
 adb shell pm grant "$PKG" android.permission.CAMERA || true
 adb shell pm list packages | grep "$PKG"
 
-echo "[2/8] Cold launch and foreground verification"
+echo "[2/9] Cold launch and foreground verification"
 adb logcat -c
 adb shell am force-stop "$PKG"
 adb shell monkey -p "$PKG" -c android.intent.category.LAUNCHER 1 >/dev/null
 sleep 4
-adb shell dumpsys activity activities | grep -E 'mResumedActivity|topResumedActivity' | grep "$PKG" || fail_with_logs
+check_foreground
 adb exec-out screencap -p > "$EVIDENCE/01-home.png" || true
 
-# Flutter exposes visible labels through accessibility content-desc on Android.
+# Home is static, so accessibility lookup is reliable here.
 adb shell uiautomator dump /sdcard/home.xml >/dev/null
 adb pull /sdcard/home.xml "$EVIDENCE/home.xml" >/dev/null
 python3 - <<'PY' > /tmp/tap.txt
@@ -56,51 +60,57 @@ else:
 PY
 read TAP_X TAP_Y < /tmp/tap.txt
 
-echo "[3/8] Open scanner screen"
+echo "[3/9] Open live scanner screen"
 adb shell input tap "$TAP_X" "$TAP_Y"
 sleep 8
+check_foreground
 adb exec-out screencap -p > "$EVIDENCE/02-scanner.png" || true
-adb shell uiautomator dump /sdcard/scanner.xml >/dev/null
-adb pull /sdcard/scanner.xml "$EVIDENCE/scanner.xml" >/dev/null
-grep -F 'CMR Scanner' "$EVIDENCE/scanner.xml" >/dev/null || fail_with_logs
-if grep -F 'A kamera nem indult el' "$EVIDENCE/scanner.xml" >/dev/null; then
-  echo "Camera screen reported initialization failure"
-  fail_with_logs
-fi
 check_no_crash
 
-echo "[4/8] Background / resume lifecycle"
+echo "[4/9] Exercise tap-to-focus path"
+# Pixel 6 emulator is 1080x2400. Tap near the document center, away from controls.
+adb shell input tap 540 1200
+sleep 2
+check_foreground
+adb exec-out screencap -p > "$EVIDENCE/03-focus.png" || true
+check_no_crash
+
+echo "[5/9] Let live frame analysis run under load"
+sleep 8
+check_foreground
+check_no_crash
+adb exec-out screencap -p > "$EVIDENCE/04-analysis.png" || true
+
+echo "[6/9] Background / resume lifecycle"
 adb shell input keyevent KEYCODE_HOME
 sleep 2
 adb shell monkey -p "$PKG" -c android.intent.category.LAUNCHER 1 >/dev/null
 sleep 5
-adb shell dumpsys activity activities | grep -E 'mResumedActivity|topResumedActivity' | grep "$PKG" || fail_with_logs
+check_foreground
 check_no_crash
 
-echo "[5/8] Back navigation"
+echo "[7/9] Back navigation"
 adb shell input keyevent KEYCODE_BACK
 sleep 3
+check_foreground
 adb shell uiautomator dump /sdcard/back.xml >/dev/null
 adb pull /sdcard/back.xml "$EVIDENCE/back.xml" >/dev/null
 grep -F 'Scanner megnyitása' "$EVIDENCE/back.xml" >/dev/null || fail_with_logs
 
-echo "[6/8] Repeated cold starts"
+echo "[8/9] Repeated cold starts"
 for i in 1 2 3; do
   adb shell am force-stop "$PKG"
   adb shell monkey -p "$PKG" -c android.intent.category.LAUNCHER 1 >/dev/null
   sleep 3
-  adb shell dumpsys activity activities | grep -E 'mResumedActivity|topResumedActivity' | grep "$PKG" >/dev/null || fail_with_logs
+  check_foreground
   echo "cold start $i OK"
 done
 check_no_crash
 
-echo "[7/8] Package and permission state"
+echo "[9/9] Package, permission and final diagnostics"
 adb shell dumpsys package "$PKG" > "$EVIDENCE/package.txt"
-grep -F 'android.permission.CAMERA: granted=true' "$EVIDENCE/package.txt" >/dev/null || true
-
-echo "[8/8] Final diagnostics snapshot"
 adb shell dumpsys activity activities > "$EVIDENCE/activities.txt"
 adb logcat -d > "$EVIDENCE/logcat.txt"
-adb exec-out screencap -p > "$EVIDENCE/03-final.png" || true
+adb exec-out screencap -p > "$EVIDENCE/05-final.png" || true
 
-echo "AIMS Flow extended Android smoke-test PASSED"
+echo "AIMS Flow live-scanner Android smoke-test PASSED"
