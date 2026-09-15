@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PKG="hu.logisticaims.aims_flow_scanner"
+PKG="hu.logisticaims.nailfit"
 ACTIVITY="$PKG/.MainActivity"
 APK="build/app/outputs/flutter-apk/app-debug.apk"
 EVIDENCE="test-evidence"
@@ -25,15 +25,20 @@ check_crash() {
   fi
 }
 
-echo "[1/5] APK integrity"
+echo "[1/6] APK integrity"
 test -s "$APK"
 unzip -t "$APK" > "$EVIDENCE/apk-integrity.txt"
 
-echo "[2/5] Install"
+echo "[2/6] Verify standalone package id"
+if adb shell pm list packages | grep -q 'hu.logisticaims.aims_flow_scanner'; then
+  echo "Scanner package exists independently; NAILFIT must not replace it."
+fi
+
+echo "[3/6] Install NAILFIT"
 adb install -r "$APK"
 adb shell pm list packages | grep "$PKG"
 
-echo "[3/5] Cold launch"
+echo "[4/6] Cold launch"
 adb logcat -c
 adb shell am force-stop "$PKG"
 adb shell am start -W -n "$ACTIVITY" >/dev/null
@@ -42,12 +47,12 @@ check_foreground
 check_crash
 adb exec-out screencap -p > "$EVIDENCE/01-home.png" || true
 
-echo "[4/5] Verify visible NAILFIT UI"
+echo "[5/6] Verify visible NAILFIT UI"
 adb shell uiautomator dump /sdcard/nailfit.xml >/dev/null
 adb pull /sdcard/nailfit.xml "$EVIDENCE/nailfit.xml" >/dev/null
 grep -E "NAIL|FIT|Próbáld" "$EVIDENCE/nailfit.xml" >/dev/null || fail
 
-echo "[5/5] Background/resume + repeated launch"
+echo "[6/6] Background/resume + repeated launch"
 adb shell input keyevent KEYCODE_HOME
 sleep 2
 adb shell am start -W -n "$ACTIVITY" >/dev/null
@@ -62,4 +67,4 @@ for i in 1 2 3; do
   check_crash
 done
 adb exec-out screencap -p > "$EVIDENCE/02-final.png" || true
-echo "NAILFIT Android smoke-test PASSED"
+echo "NAILFIT standalone Android smoke-test PASSED"
