@@ -16,34 +16,6 @@ fail_with_logs() {
   exit 1
 }
 
-check_foreground() {
-  adb shell dumpsys activity activities | grep -E 'mResumedActivity|topResumedActivity' | grep "$PKG" >/dev/null || fail_with_logs
-}
-
-check_no_crash() {
-  adb logcat -d > "$EVIDENCE/logcat.txt" 2>&1 || true
-  if grep -E "FATAL EXCEPTION|Process: ${PKG}|AndroidRuntime.*FATAL" "$EVIDENCE/logcat.txt" >/dev/null; then
-    echo "Crash signature found"
-    fail_with_logs
-  fi
-}
-
-launch_app() {
-  adb shell am start -W -n "$ACTIVITY" >/dev/null
-}
-
-dump_ui() {
-  local remote="$1"
-  local local_file="$2"
-  for attempt in 1 2 3; do
-    if adb shell uiautomator dump "$remote" >/dev/null 2>&1 && adb pull "$remote" "$local_file" >/dev/null 2>&1; then
-      return 0
-    fi
-    sleep 2
-  done
-  fail_with_logs
-}
-
 find_center() {
   local file="$1"
   local needle="$2"
@@ -64,6 +36,71 @@ raise SystemExit(1)
 PY
 }
 
+dismiss_system_dialogs() {
+  for attempt in 1 2 3; do
+    adb shell uiautomator dump /sdcard/aims_system_dialog.xml >/dev/null 2>&1 || return 0
+    adb pull /sdcard/aims_system_dialog.xml /tmp/aims_system_dialog.xml >/dev/null 2>&1 || return 0
+
+    if grep -q -E "isn't responding|is not responding" /tmp/aims_system_dialog.xml; then
+      echo "Dismissing unrelated Android system ANR dialog"
+      if find_center /tmp/aims_system_dialog.xml "Wait" >/tmp/system-dialog-pos.txt 2>/dev/null; then
+        read DX DY < /tmp/system-dialog-pos.txt
+        adb shell input tap "$DX" "$DY"
+      elif find_center /tmp/aims_system_dialog.xml "Close app" >/tmp/system-dialog-pos.txt 2>/dev/null; then
+        read DX DY < /tmp/system-dialog-pos.txt
+        adb shell input tap "$DX" "$DY"
+      else
+        adb shell input keyevent KEYCODE_BACK || true
+      fi
+      sleep 1
+      continue
+    fi
+
+    if grep -q -E "keeps stopping|has stopped" /tmp/aims_system_dialog.xml && ! grep -q "$PKG" /tmp/aims_system_dialog.xml; then
+      echo "Dismissing unrelated Android system crash dialog"
+      if find_center /tmp/aims_system_dialog.xml "Close app" >/tmp/system-dialog-pos.txt 2>/dev/null; then
+        read DX DY < /tmp/system-dialog-pos.txt
+        adb shell input tap "$DX" "$DY"
+      else
+        adb shell input keyevent KEYCODE_BACK || true
+      fi
+      sleep 1
+      continue
+    fi
+    return 0
+  done
+}
+
+check_foreground() {
+  dismiss_system_dialogs || true
+  adb shell dumpsys activity activities | grep -E 'mResumedActivity|topResumedActivity' | grep "$PKG" >/dev/null || fail_with_logs
+}
+
+check_no_crash() {
+  adb logcat -d > "$EVIDENCE/logcat.txt" 2>&1 || true
+  if grep -E "FATAL EXCEPTION|Process: ${PKG}|AndroidRuntime.*FATAL" "$EVIDENCE/logcat.txt" >/dev/null; then
+    echo "Crash signature found"
+    fail_with_logs
+  fi
+}
+
+launch_app() {
+  adb shell am start -W -n "$ACTIVITY" >/dev/null
+}
+
+dump_ui() {
+  local remote="$1"
+  local local_file="$2"
+  dismiss_system_dialogs || true
+  for attempt in 1 2 3; do
+    if adb shell uiautomator dump "$remote" >/dev/null 2>&1 && adb pull "$remote" "$local_file" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 2
+  done
+  fail_with_logs
+}
+
 scroll_down() {
   adb shell input swipe 540 1800 540 520 350
   sleep 1
@@ -79,6 +116,7 @@ adb logcat -c
 adb shell am force-stop "$PKG"
 launch_app
 sleep 4
+dismiss_system_dialogs || true
 check_foreground
 check_no_crash
 adb exec-out screencap -p > "$EVIDENCE/01-home.png" || true
@@ -170,6 +208,7 @@ echo "[9/14] Restart and verify offline history persisted"
 adb shell am force-stop "$PKG"
 launch_app
 sleep 4
+dismiss_system_dialogs || true
 check_foreground
 check_no_crash
 rm -f /tmp/history.txt
@@ -197,11 +236,13 @@ echo "[11/14] Home restart and background/resume"
 adb shell am force-stop "$PKG"
 launch_app
 sleep 3
+dismiss_system_dialogs || true
 check_foreground
 adb shell input keyevent KEYCODE_HOME
 sleep 2
 launch_app
 sleep 3
+dismiss_system_dialogs || true
 check_foreground
 check_no_crash
 
@@ -210,6 +251,7 @@ for i in 1 2 3; do
   adb shell am force-stop "$PKG"
   launch_app
   sleep 2
+  dismiss_system_dialogs || true
   check_foreground
   check_no_crash
   echo "cold start $i OK"
