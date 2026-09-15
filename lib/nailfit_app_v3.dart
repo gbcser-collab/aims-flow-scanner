@@ -8,6 +8,7 @@ import 'nailfit_v3_try.dart';
 
 class NailFitApp extends StatefulWidget {
   const NailFitApp({super.key});
+
   @override
   State<NailFitApp> createState() => _NailFitAppState();
 }
@@ -33,7 +34,11 @@ class _NailFitAppState extends State<NailFitApp> {
   void _refresh() => setState(() {});
 
   Future<void> _pick(ImageSource source) async {
-    final file = await picker.pickImage(source: source, imageQuality: 90, maxWidth: 2200);
+    final file = await picker.pickImage(
+      source: source,
+      imageQuality: 90,
+      maxWidth: 2200,
+    );
     if (!mounted || file == null) return;
     setState(() => photo = file);
     c.go(1);
@@ -41,18 +46,33 @@ class _NailFitAppState extends State<NailFitApp> {
 
   @override
   Widget build(BuildContext context) {
+    final savedProfile = NailFitV3SavedProfile(c: c);
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'NAILFIT',
-      theme: ThemeData(useMaterial3: true, brightness: Brightness.light, scaffoldBackgroundColor: nfCream, colorScheme: ColorScheme.fromSeed(seedColor: nfRose, brightness: Brightness.light)),
+      theme: ThemeData(
+        useMaterial3: true,
+        brightness: Brightness.light,
+        scaffoldBackgroundColor: nfCream,
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: nfRose,
+          brightness: Brightness.light,
+        ),
+      ),
       home: Scaffold(
-        body: SafeArea(bottom: false, child: IndexedStack(index: c.tab, children: [
-          NailFitV3Home(c: c, pick: _pick),
-          NailFitV3Scan(c: c, photo: photo, pick: _pick),
-          NailFitV3Try(c: c, photo: photo, pick: _pick),
-          NailFitV3SavedProfile(c: c).saved(),
-          NailFitV3SavedProfile(c: c).profile(),
-        ])),
+        body: SafeArea(
+          bottom: false,
+          child: IndexedStack(
+            index: c.tab,
+            children: [
+              NailFitV3Home(c: c, pick: _pick),
+              NailFitV3Scan(c: c, photo: photo, pick: _pick),
+              NailFitV3Try(c: c, photo: photo, pick: _pick),
+              savedProfile.saved(),
+              savedProfile.profile(),
+            ],
+          ),
+        ),
         bottomNavigationBar: _nav(),
       ),
     );
@@ -66,19 +86,82 @@ class _NailFitAppState extends State<NailFitApp> {
       (Icons.favorite_border_rounded, Icons.favorite_rounded, 'Mentett'),
       (Icons.person_outline_rounded, Icons.person_rounded, 'Profil'),
     ];
-    return SafeArea(top: false, child: Container(
-      margin: const EdgeInsets.fromLTRB(14, 5, 14, 9), padding: const EdgeInsets.all(5),
-      decoration: BoxDecoration(color: const Color(0xFFFFFCFA), borderRadius: BorderRadius.circular(29), border: Border.all(color: Colors.white), boxShadow: const [BoxShadow(color: Color(0x1FB17A85), blurRadius: 25, offset: Offset(0, 9))]),
-      child: Row(children: List.generate(items.length, (i) {
-        final active = c.tab == i;
-        return Expanded(child: InkWell(key: ValueKey('nav-$i'), onTap: () => c.go(i), borderRadius: BorderRadius.circular(22), child: AnimatedContainer(duration: const Duration(milliseconds: 180), padding: const EdgeInsets.symmetric(vertical: 8), decoration: BoxDecoration(color: active ? const Color(0xFFFBE3E7) : Colors.transparent, borderRadius: BorderRadius.circular(22)), child: Column(mainAxisSize: MainAxisSize.min, children: [Icon(active ? items[i].$2 : items[i].$1, color: active ? nfRoseDark : const Color(0xFF475257), size: 23), const SizedBox(height: 2), Text(items[i].$3, style: TextStyle(fontSize: 10, color: active ? nfRoseDark : const Color(0xFF475257), fontWeight: active ? FontWeight.w800 : FontWeight.w500)), SizedBox(height: 4, child: active ? const Center(child: CircleAvatar(radius: 2.5, backgroundColor: nfRoseDark)) : null)])))));
-      })),
-    ));
+
+    return SafeArea(
+      top: false,
+      child: Container(
+        margin: const EdgeInsets.fromLTRB(14, 5, 14, 9),
+        padding: const EdgeInsets.all(5),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFFCFA),
+          borderRadius: BorderRadius.circular(29),
+          border: Border.all(color: Colors.white),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x1FB17A85),
+              blurRadius: 25,
+              offset: Offset(0, 9),
+            ),
+          ],
+        ),
+        child: Row(
+          children: List.generate(items.length, (i) {
+            final active = c.tab == i;
+            return Expanded(
+              child: InkWell(
+                key: ValueKey('nav-$i'),
+                onTap: () => c.go(i),
+                borderRadius: BorderRadius.circular(22),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  decoration: BoxDecoration(
+                    color: active ? const Color(0xFFFBE3E7) : Colors.transparent,
+                    borderRadius: BorderRadius.circular(22),
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        active ? items[i].$2 : items[i].$1,
+                        color: active ? nfRoseDark : const Color(0xFF475257),
+                        size: 23,
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        items[i].$3,
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: active ? nfRoseDark : const Color(0xFF475257),
+                          fontWeight: active ? FontWeight.w800 : FontWeight.w500,
+                        ),
+                      ),
+                      SizedBox(
+                        height: 4,
+                        child: active
+                            ? const Center(
+                                child: CircleAvatar(
+                                  radius: 2.5,
+                                  backgroundColor: nfRoseDark,
+                                ),
+                              )
+                            : null,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          }),
+        ),
+      ),
+    );
   }
 }
 
 class NailFitHome extends StatelessWidget {
   const NailFitHome({super.key});
+
   @override
   Widget build(BuildContext context) => const SizedBox.shrink();
 }
