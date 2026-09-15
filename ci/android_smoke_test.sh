@@ -42,10 +42,10 @@ check_foreground
 check_crash
 adb exec-out screencap -p > "$EVIDENCE/01-home.png" || true
 
-echo "[4/5] Verify NAILFIT UI text"
+echo "[4/5] Verify visible NAILFIT UI"
 adb shell uiautomator dump /sdcard/nailfit.xml >/dev/null
 adb pull /sdcard/nailfit.xml "$EVIDENCE/nailfit.xml" >/dev/null
-grep -E "NAIL|FIT|Fotózás|Galéria|Nail Match" "$EVIDENCE/nailfit.xml" >/dev/null || fail
+grep -E "NAIL|FIT|Próbáld" "$EVIDENCE/nailfit.xml" >/dev/null || fail
 
 echo "[5/5] Background/resume + repeated launch"
 adb shell input keyevent KEYCODE_HOME
