@@ -5,8 +5,8 @@ PKG="hu.logisticaims.aims_flow_scanner"
 ACTIVITY="$PKG/.MainActivity"
 BUILT_APK="build/app/outputs/flutter-apk/app-debug.apk"
 DELIVERY_DIR="/tmp/aims-delivery"
-DELIVERY_NAME="AIMS-Flow-CMR-Scanner-v0.4-MLKIT.apk"
-DELIVERY_ZIP="$DELIVERY_DIR/AIMS-Flow-CMR-Scanner-v0.4-MLKIT-INSTALL.zip"
+DELIVERY_NAME="AIMS-Flow-Smart-Scanner-v0.5-OCR.apk"
+DELIVERY_ZIP="$DELIVERY_DIR/AIMS-Flow-Smart-Scanner-v0.5-OCR-INSTALL.zip"
 APK="$DELIVERY_DIR/unpacked/$DELIVERY_NAME"
 EVIDENCE="test-evidence"
 mkdir -p "$EVIDENCE" "$DELIVERY_DIR/unpacked"
@@ -49,6 +49,24 @@ dump_ui() {
   fail_with_logs
 }
 
+find_scanner_button() {
+  local xml="$1"
+  python3 - "$xml" <<'PY'
+import re, sys, xml.etree.ElementTree as ET
+root = ET.parse(sys.argv[1]).getroot()
+for node in root.iter('node'):
+    label = node.attrib.get('text') or node.attrib.get('content-desc') or ''
+    if 'Scanner megnyitása' in label:
+        m = re.match(r'\[(\d+),(\d+)\]\[(\d+),(\d+)\]', node.attrib.get('bounds',''))
+        if not m:
+            continue
+        x1,y1,x2,y2 = map(int,m.groups())
+        print((x1+x2)//2, (y1+y2)//2)
+        raise SystemExit(0)
+raise SystemExit(1)
+PY
+}
+
 echo "[0/9] Recreate delivery chain: APK -> ZIP -> extract"
 cp "$BUILT_APK" "$DELIVERY_DIR/$DELIVERY_NAME"
 (
@@ -80,23 +98,21 @@ check_app_foreground
 check_no_app_crash
 adb exec-out screencap -p > "$EVIDENCE/01-home.png" || true
 
-echo "[3/9] Locate scanner button"
-dump_ui /sdcard/home.xml "$EVIDENCE/home.xml"
-python3 - <<'PY' > /tmp/tap.txt
-import re, xml.etree.ElementTree as ET
-root = ET.parse('test-evidence/home.xml').getroot()
-for node in root.iter('node'):
-    label = node.attrib.get('text') or node.attrib.get('content-desc') or ''
-    if 'Scanner megnyitása' in label:
-        m = re.match(r'\[(\d+),(\d+)\]\[(\d+),(\d+)\]', node.attrib.get('bounds',''))
-        if not m:
-            raise SystemExit('Button bounds missing')
-        x1,y1,x2,y2 = map(int,m.groups())
-        print((x1+x2)//2, (y1+y2)//2)
-        break
-else:
-    raise SystemExit('Scanner button not found')
-PY
+echo "[3/9] Locate scanner button, scrolling if needed"
+FOUND=0
+for attempt in 1 2 3 4; do
+  dump_ui /sdcard/home.xml "$EVIDENCE/home-$attempt.xml"
+  if find_scanner_button "$EVIDENCE/home-$attempt.xml" > /tmp/tap.txt; then
+    FOUND=1
+    break
+  fi
+  adb shell input swipe 540 1900 540 700 450
+  sleep 1
+done
+if [[ "$FOUND" -ne 1 ]]; then
+  echo "Scanner button not found after scrolling"
+  fail_with_logs
+fi
 read TAP_X TAP_Y < /tmp/tap.txt
 
 echo "[4/9] Launch native ML Kit document scanner"
@@ -154,4 +170,4 @@ adb shell dumpsys activity activities > "$EVIDENCE/activities.txt"
 adb logcat -d > "$EVIDENCE/logcat.txt"
 adb exec-out screencap -p > "$EVIDENCE/04-final.png" || true
 
-echo "AIMS Flow ML Kit document-scanner smoke-test PASSED"
+echo "AIMS Flow Smart Scanner v0.5 OCR smoke-test PASSED"
