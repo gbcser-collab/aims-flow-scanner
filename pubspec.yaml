@@ -1,5 +1,5 @@
 name: aims_flow_scanner
-version: 0.4.0+4
+version: 0.5.0+5
 publish_to: 'none'
 
 environment:
@@ -9,7 +9,7 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  google_mlkit_document_scanner: 0.6.1
+  image_picker: ^1.1.2
 
 dev_dependencies:
   flutter_test:
