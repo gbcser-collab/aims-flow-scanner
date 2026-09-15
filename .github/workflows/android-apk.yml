@@ -24,6 +24,16 @@ jobs:
           channel: stable
           cache: true
 
+      - name: Enable KVM for Android emulator
+        run: |
+          if [ -e /dev/kvm ]; then
+            sudo chmod 666 /dev/kvm
+            ls -l /dev/kvm
+          else
+            echo '/dev/kvm is not available on this runner'
+            exit 1
+          fi
+
       - name: Generate Android platform
         run: |
           rm -rf /tmp/aims_template
@@ -76,3 +86,4 @@ jobs:
             adb shell monkey -p hu.logisticaims.aims_flow_scanner -c android.intent.category.LAUNCHER 1
             sleep 5
             adb shell dumpsys activity activities | grep -E 'mResumedActivity|topResumedActivity' | grep 'hu.logisticaims.aims_flow_scanner'
+            echo 'AIMS Flow launch smoke-test PASSED'
