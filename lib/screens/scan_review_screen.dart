@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../models/scan_models.dart';
 import '../services/scan_repository.dart';
@@ -12,12 +13,14 @@ class ScanReviewScreen extends StatefulWidget {
     required this.quality,
     required this.cmr,
     this.savedDocument,
+    this.smartOcrSource,
   });
 
   final String processedImagePath;
   final ScanQuality quality;
   final CmrData cmr;
   final ScannedDocument? savedDocument;
+  final String? smartOcrSource;
 
   @override
   State<ScanReviewScreen> createState() => _ScanReviewScreenState();
@@ -89,7 +92,7 @@ class _ScanReviewScreenState extends State<ScanReviewScreen> {
       loadingPlace: _clean(_loadingPlace),
       deliveryPlace: _clean(_deliveryPlace),
       date: _clean(_date),
-      plate: _clean(_plate),
+      plate: _clean(_plate)?.toUpperCase(),
       packageCount: packageText.isEmpty ? null : int.tryParse(packageText),
       grossWeightKg: weightText.isEmpty ? null : double.tryParse(weightText),
       goodsDescription: _clean(_goods),
@@ -97,20 +100,15 @@ class _ScanReviewScreenState extends State<ScanReviewScreen> {
     );
   }
 
-  int _filledFieldCount() {
-    final values = <String?>[
-      _clean(_cmrNumber),
-      _clean(_shipper),
-      _clean(_consignee),
-      _clean(_loadingPlace),
-      _clean(_deliveryPlace),
-      _clean(_date),
-      _clean(_plate),
-      _clean(_packageCount),
-      _clean(_grossWeight),
-      _clean(_goods),
-    ];
-    return values.where((value) => value != null).length;
+  int _filledFieldCount() => _currentCmr().filledFieldCount;
+
+  Future<void> _copySummary() async {
+    final text = _currentCmr().toPlainText();
+    await Clipboard.setData(ClipboardData(text: text));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('CMR összegzés a vágólapra másolva.')),
+    );
   }
 
   Future<void> _save() async {
@@ -156,13 +154,14 @@ class _ScanReviewScreenState extends State<ScanReviewScreen> {
     final filled = _filledFieldCount();
     final completion = filled / 10;
     final imagePath = _savedDocument?.imagePath ?? widget.processedImagePath;
+    final missing = 10 - filled;
 
     return Scaffold(
       backgroundColor: const Color(0xFF0C0F13),
       appBar: AppBar(
         backgroundColor: const Color(0xFF0C0F13),
         foregroundColor: Colors.white,
-        title: const Text('CMR • Smart Scan eredmény'),
+        title: const Text('CMR • Smart Scan PRO'),
       ),
       body: SafeArea(
         child: ListView(
@@ -200,47 +199,44 @@ class _ScanReviewScreenState extends State<ScanReviewScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Icon(
-                    hasText ? Icons.verified_rounded : Icons.warning_amber_rounded,
+                    hasText ? Icons.auto_awesome_rounded : Icons.warning_amber_rounded,
                     color: hasText ? const Color(0xFF48D597) : Colors.orange,
                   ),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
                       hasText
-                          ? 'A kép feldolgozása és az OCR lefutott. A mezők most már javíthatók és offline elmenthetők.'
-                          : 'A kép feldolgozása lefutott, de az OCR nem talált biztos szöveget. A mezőket kézzel is kitöltheted.',
-                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+                          ? 'Smart OCR lefutott${widget.smartOcrSource == null ? '' : ' • kiválasztott forrás: ${widget.smartOcrSource}'}. A jobb OCR-eredményt automatikusan használjuk.'
+                          : 'A feldolgozás lefutott, de az OCR nem talált biztos szöveget. A mezők kézzel is kitölthetők.',
+                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, height: 1.35),
                     ),
                   ),
                 ],
               ),
             ),
             const SizedBox(height: 14),
-            Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(color: const Color(0xFF14181D), borderRadius: BorderRadius.circular(16)),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      const Expanded(
-                        child: Text('Adatkitöltés', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800)),
-                      ),
-                      Text('$filled / 10', style: const TextStyle(color: Color(0xFFE6B85C), fontWeight: FontWeight.w900)),
-                    ],
-                  ),
-                  const SizedBox(height: 9),
-                  LinearProgressIndicator(
-                    value: completion,
-                    minHeight: 7,
-                    borderRadius: BorderRadius.circular(8),
-                    color: const Color(0xFFE6B85C),
-                    backgroundColor: Colors.white12,
-                  ),
-                ],
-              ),
+            Row(
+              children: [
+                Expanded(child: _metricCard('Adatkitöltés', '$filled / 10', completion, const Color(0xFFE6B85C))),
+                const SizedBox(width: 10),
+                Expanded(child: _metricCard('Képminőség', '${widget.quality.score} / 100', widget.quality.score / 100, const Color(0xFF48D597))),
+              ],
             ),
+            if (missing > 0) ...[
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withValues(alpha: .09),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: Colors.orange.withValues(alpha: .25)),
+                ),
+                child: Text(
+                  '$missing mező még hiányzik vagy ellenőrzést igényel. A mentés előtt nézd át a CMR-rel összevetve.',
+                  style: const TextStyle(color: Colors.orangeAccent, fontWeight: FontWeight.w700, height: 1.3),
+                ),
+              ),
+            ],
             const SizedBox(height: 18),
             const Text(
               'Felismert CMR adatok',
@@ -281,6 +277,18 @@ class _ScanReviewScreenState extends State<ScanReviewScreen> {
             const SizedBox(height: 14),
             _qualityCard(),
             const SizedBox(height: 18),
+            OutlinedButton.icon(
+              key: const ValueKey('copy-summary'),
+              onPressed: _copySummary,
+              icon: const Icon(Icons.copy_all_rounded),
+              label: const Text('CMR összegzés másolása'),
+              style: OutlinedButton.styleFrom(
+                minimumSize: const Size.fromHeight(50),
+                foregroundColor: Colors.white,
+                side: const BorderSide(color: Colors.white24),
+              ),
+            ),
+            const SizedBox(height: 10),
             FilledButton.icon(
               key: const ValueKey('save-offline'),
               onPressed: _saving ? null : _save,
@@ -312,6 +320,29 @@ class _ScanReviewScreenState extends State<ScanReviewScreen> {
     );
   }
 
+  Widget _metricCard(String label, String value, double progress, Color color) {
+    return Container(
+      padding: const EdgeInsets.all(13),
+      decoration: BoxDecoration(color: const Color(0xFF14181D), borderRadius: BorderRadius.circular(16)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: const TextStyle(color: Colors.white60, fontSize: 12, fontWeight: FontWeight.w700)),
+          const SizedBox(height: 5),
+          Text(value, style: TextStyle(color: color, fontSize: 20, fontWeight: FontWeight.w900)),
+          const SizedBox(height: 8),
+          LinearProgressIndicator(
+            value: progress.clamp(0, 1),
+            minHeight: 6,
+            borderRadius: BorderRadius.circular(8),
+            color: color,
+            backgroundColor: Colors.white12,
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _qualityCard() {
     final warnings = widget.quality.warnings;
     return Container(
@@ -320,7 +351,7 @@ class _ScanReviewScreenState extends State<ScanReviewScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Képminőség', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800)),
+          const Text('Képminőség-ellenőrzés', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800)),
           const SizedBox(height: 7),
           Text(
             warnings.isEmpty ? 'A képminőség rendben.' : warnings.join('\n'),
@@ -341,6 +372,7 @@ class _ScanReviewScreenState extends State<ScanReviewScreen> {
     TextInputType? keyboardType,
     TextCapitalization textCapitalization = TextCapitalization.sentences,
   }) {
+    final empty = controller.text.trim().isEmpty;
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: TextField(
@@ -351,10 +383,10 @@ class _ScanReviewScreenState extends State<ScanReviewScreen> {
         onChanged: (_) => setState(() {}),
         style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
         decoration: InputDecoration(
-          labelText: label,
-          labelStyle: const TextStyle(color: Colors.white54),
+          labelText: empty ? '$label • ellenőrizd' : label,
+          labelStyle: TextStyle(color: empty ? Colors.orangeAccent : Colors.white54),
           filled: true,
-          fillColor: const Color(0xFF14181D),
+          fillColor: empty ? const Color(0xFF201A13) : const Color(0xFF14181D),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(14),
             borderSide: BorderSide.none,
