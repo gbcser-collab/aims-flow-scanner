@@ -25,6 +25,37 @@ check_crash() {
   fi
 }
 
+dismiss_system_anr() {
+  # GitHub's Pixel 6 emulator occasionally shows a Pixel Launcher ANR over
+  # the tested app even though NAILFIT itself is running normally. Dismiss
+  # only that system dialog, then continue testing the app underneath it.
+  for _ in 1 2 3; do
+    adb shell uiautomator dump /sdcard/system-ui.xml >/dev/null 2>&1 || true
+    adb pull /sdcard/system-ui.xml /tmp/system-ui.xml >/dev/null 2>&1 || true
+    if ! grep -q "Pixel Launcher isn't responding" /tmp/system-ui.xml 2>/dev/null; then
+      return 0
+    fi
+
+    coords=$(python3 - <<'PY'
+import re
+from pathlib import Path
+text = Path('/tmp/system-ui.xml').read_text(errors='ignore')
+m = re.search(r'resource-id="android:id/aerr_wait"[^>]*bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"', text)
+if m:
+    x1, y1, x2, y2 = map(int, m.groups())
+    print((x1 + x2) // 2, (y1 + y2) // 2)
+PY
+)
+    if [ -n "${coords:-}" ]; then
+      adb shell input tap $coords
+      sleep 2
+    else
+      adb shell input keyevent KEYCODE_BACK || true
+      sleep 2
+    fi
+  done
+}
+
 echo "[1/6] APK integrity"
 test -s "$APK"
 unzip -t "$APK" > "$EVIDENCE/apk-integrity.txt"
@@ -43,6 +74,7 @@ adb logcat -c
 adb shell am force-stop "$PKG"
 adb shell am start -W -n "$ACTIVITY" >/dev/null
 sleep 4
+dismiss_system_anr
 check_foreground
 check_crash
 adb exec-out screencap -p > "$EVIDENCE/01-home.png" || true
@@ -57,12 +89,14 @@ adb shell input keyevent KEYCODE_HOME
 sleep 2
 adb shell am start -W -n "$ACTIVITY" >/dev/null
 sleep 2
+dismiss_system_anr
 check_foreground
 check_crash
 for i in 1 2 3; do
   adb shell am force-stop "$PKG"
   adb shell am start -W -n "$ACTIVITY" >/dev/null
   sleep 2
+  dismiss_system_anr
   check_foreground
   check_crash
 done
