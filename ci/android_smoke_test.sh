@@ -5,8 +5,8 @@ PKG="hu.logisticaims.aims_flow_scanner"
 ACTIVITY="$PKG/.MainActivity"
 BUILT_APK="build/app/outputs/flutter-apk/app-debug.apk"
 DELIVERY_DIR="/tmp/aims-delivery"
-DELIVERY_NAME="AIMS-Flow-Smart-Scanner-PASSED.apk"
-DELIVERY_ZIP="$DELIVERY_DIR/AIMS-Flow-Smart-Scanner-PASSED-INSTALL.zip"
+DELIVERY_NAME="AIMS-Flow-CMR-Scanner-v0.4-MLKIT.apk"
+DELIVERY_ZIP="$DELIVERY_DIR/AIMS-Flow-CMR-Scanner-v0.4-MLKIT-INSTALL.zip"
 APK="$DELIVERY_DIR/unpacked/$DELIVERY_NAME"
 EVIDENCE="test-evidence"
 mkdir -p "$EVIDENCE" "$DELIVERY_DIR/unpacked"
@@ -16,18 +16,18 @@ fail_with_logs() {
   adb shell dumpsys activity activities > "$EVIDENCE/activities.txt" 2>&1 || true
   adb logcat -d > "$EVIDENCE/logcat.txt" 2>&1 || true
   adb exec-out screencap -p > "$EVIDENCE/failure.png" 2>/dev/null || true
-  tail -n 250 "$EVIDENCE/logcat.txt" || true
+  tail -n 300 "$EVIDENCE/logcat.txt" || true
   exit 1
 }
 
-check_foreground() {
+check_app_foreground() {
   adb shell dumpsys activity activities | grep -E 'mResumedActivity|topResumedActivity' | grep "$PKG" >/dev/null || fail_with_logs
 }
 
-check_no_crash() {
+check_no_app_crash() {
   adb logcat -d > "$EVIDENCE/logcat.txt" 2>&1 || true
   if grep -E "FATAL EXCEPTION|Process: ${PKG}|AndroidRuntime.*FATAL" "$EVIDENCE/logcat.txt" >/dev/null; then
-    echo "Crash signature found in logcat"
+    echo "Crash signature found for AIMS Flow"
     fail_with_logs
   fi
 }
@@ -36,7 +36,7 @@ launch_app() {
   adb shell am start -W -n "$ACTIVITY" >/dev/null
 }
 
-dump_ui_with_retry() {
+dump_ui() {
   local remote="$1"
   local local_file="$2"
   for attempt in 1 2 3; do
@@ -45,11 +45,11 @@ dump_ui_with_retry() {
     fi
     sleep 2
   done
-  echo "UIAutomator dump failed after retries"
+  echo "UIAutomator dump failed"
   fail_with_logs
 }
 
-echo "[0/10] Recreate exact delivery chain: APK -> ZIP -> extract"
+echo "[0/9] Recreate delivery chain: APK -> ZIP -> extract"
 cp "$BUILT_APK" "$DELIVERY_DIR/$DELIVERY_NAME"
 (
   cd "$DELIVERY_DIR"
@@ -59,25 +59,29 @@ unzip -t "$DELIVERY_ZIP"
 unzip -q "$DELIVERY_ZIP" -d "$DELIVERY_DIR/unpacked"
 test -s "$APK"
 cmp -s "$BUILT_APK" "$APK"
-echo "Built and delivered APK are byte-for-byte identical"
 sha256sum "$BUILT_APK" "$APK" > "$EVIDENCE/delivery-sha256.txt"
 unzip -t "$APK" > "$EVIDENCE/apk-integrity.txt"
+echo "Delivery APK is byte-for-byte identical"
 
-echo "[1/10] Install the extracted delivery APK"
+echo "[1/9] Verify Google Play services and install extracted APK"
+adb shell pm list packages | grep 'com.google.android.gms' >/dev/null || {
+  echo "Google Play services missing from emulator"
+  exit 1
+}
 adb install -r "$APK"
-adb shell pm grant "$PKG" android.permission.CAMERA || true
 adb shell pm list packages | grep "$PKG"
 
-echo "[2/10] Cold launch and foreground verification"
+echo "[2/9] Cold launch AIMS Flow"
 adb logcat -c
 adb shell am force-stop "$PKG"
 launch_app
 sleep 4
-check_foreground
-check_no_crash
+check_app_foreground
+check_no_app_crash
 adb exec-out screencap -p > "$EVIDENCE/01-home.png" || true
 
-dump_ui_with_retry /sdcard/home.xml "$EVIDENCE/home.xml"
+echo "[3/9] Locate scanner button"
+dump_ui /sdcard/home.xml "$EVIDENCE/home.xml"
 python3 - <<'PY' > /tmp/tap.txt
 import re, xml.etree.ElementTree as ET
 root = ET.parse('test-evidence/home.xml').getroot()
@@ -91,61 +95,63 @@ for node in root.iter('node'):
         print((x1+x2)//2, (y1+y2)//2)
         break
 else:
-    raise SystemExit('Scanner button not found in UI tree')
+    raise SystemExit('Scanner button not found')
 PY
 read TAP_X TAP_Y < /tmp/tap.txt
 
-echo "[3/10] Open live scanner screen"
+echo "[4/9] Launch native ML Kit document scanner"
 adb shell input tap "$TAP_X" "$TAP_Y"
-sleep 8
-check_foreground
-adb exec-out screencap -p > "$EVIDENCE/02-scanner.png" || true
-check_no_crash
+# First use can download the scanner UI/model through Google Play services.
+for i in $(seq 1 20); do
+  sleep 2
+  TOP=$(adb shell dumpsys activity activities | grep -E 'mResumedActivity|topResumedActivity' | head -1 || true)
+  echo "$TOP" > "$EVIDENCE/top-after-scan.txt"
+  if [[ "$TOP" != *"$PKG"* ]] && [[ -n "$TOP" ]]; then
+    break
+  fi
+done
+TOP=$(cat "$EVIDENCE/top-after-scan.txt")
+if [[ -z "$TOP" ]] || [[ "$TOP" == *"$PKG"* ]]; then
+  echo "Native document scanner did not take foreground"
+  fail_with_logs
+fi
+check_no_app_crash
+adb exec-out screencap -p > "$EVIDENCE/02-mlkit-scanner.png" || true
 
-echo "[4/10] Exercise tap-to-focus path"
-adb shell input tap 540 1200
-sleep 2
-check_foreground
-adb exec-out screencap -p > "$EVIDENCE/03-focus.png" || true
-check_no_crash
+echo "[5/9] Capture scanner UI diagnostics"
+dump_ui /sdcard/mlkit.xml "$EVIDENCE/mlkit.xml"
+adb shell dumpsys activity activities > "$EVIDENCE/mlkit-activities.txt"
+adb logcat -d > "$EVIDENCE/mlkit-logcat.txt"
 
-echo "[5/10] Let live frame analysis run under load"
-sleep 8
-check_foreground
-check_no_crash
-adb exec-out screencap -p > "$EVIDENCE/04-analysis.png" || true
+echo "[6/9] Back from scanner to AIMS Flow"
+adb shell input keyevent KEYCODE_BACK
+sleep 3
+check_app_foreground
+check_no_app_crash
+adb exec-out screencap -p > "$EVIDENCE/03-back-home.png" || true
 
-echo "[6/10] Background / resume lifecycle"
+echo "[7/9] Background / resume lifecycle"
 adb shell input keyevent KEYCODE_HOME
 sleep 2
 launch_app
-sleep 5
-check_foreground
-check_no_crash
-
-echo "[7/10] Back navigation"
-adb shell input keyevent KEYCODE_BACK
 sleep 3
-check_foreground
-dump_ui_with_retry /sdcard/back.xml "$EVIDENCE/back.xml"
-grep -F 'Scanner megnyitása' "$EVIDENCE/back.xml" >/dev/null || fail_with_logs
+check_app_foreground
+check_no_app_crash
 
-echo "[8/10] Repeated cold starts"
+echo "[8/9] Repeated cold starts"
 for i in 1 2 3; do
   adb shell am force-stop "$PKG"
   launch_app
-  sleep 3
-  check_foreground
-  check_no_crash
+  sleep 2
+  check_app_foreground
+  check_no_app_crash
   echo "cold start $i OK"
 done
 
-echo "[9/10] Package and permission diagnostics"
+echo "[9/9] Final diagnostics"
 adb shell dumpsys package "$PKG" > "$EVIDENCE/package.txt"
 adb shell dumpsys activity activities > "$EVIDENCE/activities.txt"
 adb logcat -d > "$EVIDENCE/logcat.txt"
+adb exec-out screencap -p > "$EVIDENCE/04-final.png" || true
 
-echo "[10/10] Final screenshot"
-adb exec-out screencap -p > "$EVIDENCE/05-final.png" || true
-
-echo "AIMS Flow delivery-chain + live-scanner Android smoke-test PASSED"
+echo "AIMS Flow ML Kit document-scanner smoke-test PASSED"
