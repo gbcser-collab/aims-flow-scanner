@@ -4,6 +4,7 @@ import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 
+import '../models/scan_models.dart';
 import '../services/aims_scan_engine.dart';
 import '../services/cmr_parser.dart';
 import '../services/ocr_service.dart';
@@ -172,9 +173,7 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
     setState(() => _flashChanging = true);
     try {
       await controller.setFlashMode(_cameraFlashMode(mode));
-      if (mounted) {
-        setState(() => _flashMode = mode);
-      }
+      if (mounted) setState(() => _flashMode = mode);
     } on CameraException catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -183,6 +182,11 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
     } finally {
       if (mounted) setState(() => _flashChanging = false);
     }
+  }
+
+  int _ocrScore(CmrData cmr) {
+    final textBonus = (cmr.rawText.trim().length / 120).floor().clamp(0, 8);
+    return cmr.filledFieldCount * 20 + textBonus;
   }
 
   Future<void> _captureAndProcess() async {
@@ -196,35 +200,62 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
 
     final ocr = OcrService();
     XFile? shot;
+    String? originalCopy;
+    String? processedPath;
     try {
       shot = await controller.takePicture();
       if (!mounted) return;
-      setState(() => _phase = 'Dokumentum kiegyenesítése…');
 
       final temp = await getTemporaryDirectory();
-      final processed = '${temp.path}/aims_smart_${DateTime.now().microsecondsSinceEpoch}.jpg';
+      final stamp = DateTime.now().microsecondsSinceEpoch;
+      originalCopy = '${temp.path}/aims_original_$stamp.jpg';
+      processedPath = '${temp.path}/aims_smart_$stamp.jpg';
+      await File(shot.path).copy(originalCopy);
+
+      setState(() => _phase = 'Dokumentum elemzése és biztonságos korrekció…');
       final result = await const AimsScanEngine().process(
-        inputPath: shot.path,
-        outputPath: processed,
+        inputPath: originalCopy,
+        outputPath: processedPath,
       );
 
       if (!mounted) return;
-      setState(() => _phase = 'Szöveg felismerése…');
-      final text = await ocr.recognize(result.outputPath);
+      setState(() => _phase = 'Dupla OCR: eredeti és javított kép összevetése…');
+
+      final parser = const CmrParser();
+      final processedText = await ocr.recognize(result.outputPath);
+      final processedCmr = parser.parse(processedText);
+
+      final originalText = await ocr.recognize(originalCopy);
+      final originalCmr = parser.parse(originalText);
+
+      final useOriginal = _ocrScore(originalCmr) > _ocrScore(processedCmr);
+      final cmr = useOriginal ? originalCmr : processedCmr;
+      final reviewPath = useOriginal ? originalCopy : result.outputPath;
+
+      if (useOriginal) {
+        try {
+          if (await File(result.outputPath).exists()) await File(result.outputPath).delete();
+        } catch (_) {}
+        processedPath = null;
+      } else {
+        try {
+          if (await File(originalCopy).exists()) await File(originalCopy).delete();
+        } catch (_) {}
+        originalCopy = null;
+      }
 
       if (!mounted) return;
-      setState(() => _phase = 'CMR mezők kitöltése…');
-      final cmr = const CmrParser().parse(text);
+      setState(() => _phase = 'CMR mezők intelligens kitöltése…');
 
-      if (!mounted) return;
       await _disposeCamera();
       if (!mounted) return;
       await Navigator.of(context).pushReplacement(
         MaterialPageRoute(
           builder: (_) => ScanReviewScreen(
-            processedImagePath: result.outputPath,
+            processedImagePath: reviewPath,
             quality: result.quality,
             cmr: cmr,
+            smartOcrSource: useOriginal ? 'Eredeti fotó' : 'Javított dokumentumkép',
           ),
         ),
       );
@@ -408,7 +439,7 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
                           const CircularProgressIndicator(color: Color(0xFFE6B85C)),
                           const SizedBox(height: 18),
                           const Text(
-                            'SMART SCAN',
+                            'SMART SCAN PRO',
                             style: TextStyle(
                               color: Color(0xFFE6B85C),
                               fontWeight: FontWeight.w900,
@@ -423,7 +454,8 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
                           ),
                           const SizedBox(height: 8),
                           const Text(
-                            'Ne zárd be az alkalmazást.',
+                            'A rendszer automatikusan a jobb OCR-eredményt választja.',
+                            textAlign: TextAlign.center,
                             style: TextStyle(color: Colors.white54),
                           ),
                         ],
