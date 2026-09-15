@@ -60,7 +60,7 @@ class ScanQuality {
     if (isBlurry) value -= 25;
     if (hasTooMuchGlare) value -= 20;
     if (documentTooSmall) value -= 15;
-    return value.clamp(0, 100);
+    return value.clamp(0, 100).toInt();
   }
 }
 
