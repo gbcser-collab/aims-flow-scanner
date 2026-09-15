@@ -69,12 +69,12 @@ scroll_down() {
   sleep 1
 }
 
-echo "[1/13] Install APK and grant camera"
+echo "[1/14] Install APK and grant camera"
 adb install -r "$APK"
 adb shell pm grant "$PKG" android.permission.CAMERA || true
 adb shell pm list packages | grep "$PKG"
 
-echo "[2/13] Cold launch"
+echo "[2/14] Cold launch"
 adb logcat -c
 adb shell am force-stop "$PKG"
 launch_app
@@ -83,9 +83,9 @@ check_foreground
 check_no_crash
 adb exec-out screencap -p > "$EVIDENCE/01-home.png" || true
 
-echo "[3/13] Open custom Smart Scanner"
+echo "[3/14] Open Smart Scanner PRO"
 dump_ui /sdcard/home.xml "$EVIDENCE/home.xml"
-read X Y < <(find_center "$EVIDENCE/home.xml" "Smart Scan indítása") || fail_with_logs
+read X Y < <(find_center "$EVIDENCE/home.xml" "Smart Scan PRO indítása") || fail_with_logs
 adb shell input tap "$X" "$Y"
 rm -f /tmp/capture.txt
 for i in $(seq 1 15); do
@@ -99,7 +99,7 @@ test -s /tmp/capture.txt || fail_with_logs
 check_no_crash
 adb exec-out screencap -p > "$EVIDENCE/02-scanner.png" || true
 
-echo "[4/13] Verify and exercise flash OFF/AUTO/ON controls"
+echo "[4/14] Verify and exercise flash OFF/AUTO/ON controls"
 dump_ui /sdcard/flash.xml "$EVIDENCE/flash.xml"
 for label in "Vaku KI" "Vaku AUTO" "Vaku BE"; do
   find_center "$EVIDENCE/flash.xml" "$label" >/tmp/flash-pos.txt 2>/dev/null || fail_with_logs
@@ -111,16 +111,16 @@ for label in "Vaku KI" "Vaku AUTO" "Vaku BE"; do
 done
 adb exec-out screencap -p > "$EVIDENCE/03-flash-controls.png" || true
 
-echo "[5/13] Take photo and run real processing pipeline"
+echo "[5/14] Take photo and run perspective guard + dual OCR pipeline"
 read CX CY < /tmp/capture.txt
 adb shell input tap "$CX" "$CY"
 
 RESULT_OK=0
-for i in $(seq 1 45); do
+for i in $(seq 1 65); do
   sleep 2
   check_no_crash
   dump_ui /sdcard/result.xml "$EVIDENCE/result.xml"
-  if grep -q -E 'Felismert CMR adatok|Smart Scan eredmény' "$EVIDENCE/result.xml"; then
+  if grep -q -E 'Felismert CMR adatok|Smart Scan PRO' "$EVIDENCE/result.xml"; then
     RESULT_OK=1
     break
   fi
@@ -131,11 +131,26 @@ if [ "$RESULT_OK" -ne 1 ]; then
 fi
 adb exec-out screencap -p > "$EVIDENCE/04-result.png" || true
 
-echo "[6/13] Verify OCR/editable result UI"
+echo "[6/14] Verify OCR/editable result UI"
 grep -q 'Felismert CMR adatok' "$EVIDENCE/result.xml" || fail_with_logs
 check_no_crash
 
-echo "[7/13] Save CMR offline"
+echo "[7/14] Verify PRO copy-summary tool"
+rm -f /tmp/copy.txt
+for i in $(seq 1 10); do
+  dump_ui /sdcard/copy.xml "$EVIDENCE/copy.xml"
+  if find_center "$EVIDENCE/copy.xml" "CMR összegzés másolása" >/tmp/copy.txt 2>/dev/null; then
+    break
+  fi
+  scroll_down
+done
+test -s /tmp/copy.txt || fail_with_logs
+read CPX CPY < /tmp/copy.txt
+adb shell input tap "$CPX" "$CPY"
+sleep 1
+check_no_crash
+
+echo "[8/14] Save CMR offline"
 rm -f /tmp/save.txt
 for i in $(seq 1 10); do
   dump_ui /sdcard/save.xml "$EVIDENCE/save.xml"
@@ -151,7 +166,7 @@ sleep 3
 check_no_crash
 adb exec-out screencap -p > "$EVIDENCE/05-saved.png" || true
 
-echo "[8/13] Restart and verify offline history persisted"
+echo "[9/14] Restart and verify offline history persisted"
 adb shell am force-stop "$PKG"
 launch_app
 sleep 4
@@ -168,17 +183,17 @@ done
 test -s /tmp/history.txt || fail_with_logs
 adb exec-out screencap -p > "$EVIDENCE/06-history.png" || true
 
-echo "[9/13] Re-open persisted CMR"
+echo "[10/14] Re-open persisted CMR"
 read HX HY < /tmp/history.txt
 adb shell input tap "$HX" "$HY"
 sleep 3
 check_foreground
 check_no_crash
 dump_ui /sdcard/reopened.xml "$EVIDENCE/reopened.xml"
-grep -q -E 'Smart Scan eredmény|Felismert CMR adatok' "$EVIDENCE/reopened.xml" || fail_with_logs
+grep -q -E 'Smart Scan PRO|Felismert CMR adatok' "$EVIDENCE/reopened.xml" || fail_with_logs
 adb exec-out screencap -p > "$EVIDENCE/07-reopened.png" || true
 
-echo "[10/13] Home restart and background/resume"
+echo "[11/14] Home restart and background/resume"
 adb shell am force-stop "$PKG"
 launch_app
 sleep 3
@@ -190,7 +205,7 @@ sleep 3
 check_foreground
 check_no_crash
 
-echo "[11/13] Repeated cold starts"
+echo "[12/14] Repeated cold starts"
 for i in 1 2 3; do
   adb shell am force-stop "$PKG"
   launch_app
@@ -200,14 +215,14 @@ for i in 1 2 3; do
   echo "cold start $i OK"
 done
 
-echo "[12/13] APK integrity"
+echo "[13/14] APK integrity"
 unzip -t "$APK" > "$EVIDENCE/apk-integrity.txt"
 tail -5 "$EVIDENCE/apk-integrity.txt"
 
-echo "[13/13] Final diagnostics"
+echo "[14/14] Final diagnostics"
 adb shell dumpsys package "$PKG" > "$EVIDENCE/package.txt"
 adb shell dumpsys activity activities > "$EVIDENCE/activities.txt"
 adb logcat -d > "$EVIDENCE/logcat.txt"
 adb exec-out screencap -p > "$EVIDENCE/08-final.png" || true
 
-echo "AIMS Flow Smart Scanner v0.8 FLASH OFF+AUTO+ON END-TO-END test PASSED"
+echo "AIMS Flow Smart Scanner v0.9 PRO PERSPECTIVE-GUARD + DUAL-OCR + FLASH END-TO-END test PASSED"
