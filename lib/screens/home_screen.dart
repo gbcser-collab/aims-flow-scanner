@@ -79,102 +79,100 @@ class _HomeScreenState extends State<HomeScreen> {
         title: const Text('AIMS Flow Scanner'),
       ),
       body: SafeArea(
-        child: Padding(
+        child: ListView(
           padding: const EdgeInsets.all(20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(24),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF171A1F),
-                  borderRadius: BorderRadius.circular(24),
-                  border: Border.all(color: const Color(0xFFE6B85C).withValues(alpha: .35)),
-                ),
-                child: const Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'AIMS FLOW',
-                      style: TextStyle(
-                        color: Color(0xFFE6B85C),
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 1.5,
-                      ),
+          children: [
+            Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: const Color(0xFF171A1F),
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(color: const Color(0xFFE6B85C).withValues(alpha: .35)),
+              ),
+              child: const Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'AIMS FLOW',
+                    style: TextStyle(
+                      color: Color(0xFFE6B85C),
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 1.5,
                     ),
-                    SizedBox(height: 10),
-                    Text(
-                      'CMR Scanner',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 32,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    SizedBox(height: 10),
-                    Text(
-                      'Valódi dokumentumszkenner: automatikus lapfelismerés, auto-capture, pontos élvágás és perspektívakorrekció.',
-                      style: TextStyle(color: Colors.white70, height: 1.35),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 18),
-              const _FeatureRow(
-                icon: Icons.document_scanner_rounded,
-                title: 'Automatikus lapfelismerés',
-                subtitle: 'A scanner megkeresi a dokumentum széleit és magától exponálhat.',
-              ),
-              const SizedBox(height: 10),
-              const _FeatureRow(
-                icon: Icons.crop_rotate_rounded,
-                title: 'Kivágás és kiegyenesítés',
-                subtitle: 'A ferdén fotózott CMR-t automatikusan perspektívába húzza.',
-              ),
-              const SizedBox(height: 10),
-              const _FeatureRow(
-                icon: Icons.auto_fix_high_rounded,
-                title: 'Javítás és forgatás',
-                subtitle: 'A natív dokumentummotor segít olvasható, tiszta eredményt készíteni.',
-              ),
-              const Spacer(),
-              if (_error != null) ...[
-                Container(
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: Colors.red.withValues(alpha: .12),
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: Colors.redAccent.withValues(alpha: .45)),
                   ),
-                  child: Text(_error!, style: const TextStyle(color: Colors.white)),
-                ),
-                const SizedBox(height: 12),
-              ],
-              FilledButton.icon(
-                onPressed: _busy ? null : _openScanner,
-                icon: _busy
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.document_scanner_rounded),
-                label: Text(_busy ? 'Scanner indítása…' : 'Scanner megnyitása'),
-                style: FilledButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 17),
-                  textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
-                  backgroundColor: const Color(0xFFE6B85C),
-                  foregroundColor: Colors.black,
-                ),
+                  SizedBox(height: 10),
+                  Text(
+                    'CMR Scanner',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 32,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  SizedBox(height: 10),
+                  Text(
+                    'Valódi dokumentumszkenner: automatikus lapfelismerés, auto-capture, pontos élvágás és perspektívakorrekció.',
+                    style: TextStyle(color: Colors.white70, height: 1.35),
+                  ),
+                ],
               ),
-              const SizedBox(height: 10),
-              const Text(
-                'Az első indításkor a Google Play-szolgáltatások letölthetik a dokumentumszkenner szükséges komponenseit.',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.white38, fontSize: 11, height: 1.3),
+            ),
+            const SizedBox(height: 18),
+            const _FeatureRow(
+              icon: Icons.document_scanner_rounded,
+              title: 'Automatikus lapfelismerés',
+              subtitle: 'A scanner megkeresi a dokumentum széleit és magától exponálhat.',
+            ),
+            const SizedBox(height: 10),
+            const _FeatureRow(
+              icon: Icons.crop_rotate_rounded,
+              title: 'Kivágás és kiegyenesítés',
+              subtitle: 'A ferdén fotózott CMR-t automatikusan perspektívába húzza.',
+            ),
+            const SizedBox(height: 10),
+            const _FeatureRow(
+              icon: Icons.auto_fix_high_rounded,
+              title: 'Javítás és forgatás',
+              subtitle: 'A natív dokumentummotor segít olvasható, tiszta eredményt készíteni.',
+            ),
+            const SizedBox(height: 24),
+            if (_error != null) ...[
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: Colors.red.withValues(alpha: .12),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: Colors.redAccent.withValues(alpha: .45)),
+                ),
+                child: Text(_error!, style: const TextStyle(color: Colors.white)),
               ),
+              const SizedBox(height: 12),
             ],
-          ),
+            FilledButton.icon(
+              onPressed: _busy ? null : _openScanner,
+              icon: _busy
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.document_scanner_rounded),
+              label: Text(_busy ? 'Scanner indítása…' : 'Scanner megnyitása'),
+              style: FilledButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 17),
+                textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+                backgroundColor: const Color(0xFFE6B85C),
+                foregroundColor: Colors.black,
+              ),
+            ),
+            const SizedBox(height: 10),
+            const Text(
+              'Az első indításkor a Google Play-szolgáltatások letölthetik a dokumentumszkenner szükséges komponenseit.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.white38, fontSize: 11, height: 1.3),
+            ),
+            const SizedBox(height: 8),
+          ],
         ),
       ),
     );
