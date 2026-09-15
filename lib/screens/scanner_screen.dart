@@ -24,7 +24,6 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
   bool _processing = false;
   bool _initializing = false;
   bool _flashAuto = false;
-  bool _isForeground = true;
   String? _cameraError;
   String _phase = '';
   int _cameraGeneration = 0;
@@ -107,7 +106,6 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      _isForeground = true;
       if (_controller == null && !_processing) _initialize();
       return;
     }
@@ -115,7 +113,6 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
         state == AppLifecycleState.paused ||
         state == AppLifecycleState.hidden ||
         state == AppLifecycleState.detached) {
-      _isForeground = false;
       _cameraGeneration++;
       _disposeCamera();
     }
