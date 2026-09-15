@@ -29,6 +29,7 @@ Nature of goods: Machine parts
       expect(cmr.packageCount, 12);
       expect(cmr.grossWeightKg, 2450);
       expect(cmr.goodsDescription, 'Machine parts');
+      expect(cmr.filledFieldCount, 10);
     });
 
     test('keeps the OCR text for manual review', () {
@@ -37,6 +38,36 @@ Nature of goods: Machine parts
       expect(cmr.rawText, raw);
       expect(cmr.cmrNumber, 'AIMS-778899');
       expect(cmr.shipper, 'Teszt Kft.');
+    });
+
+    test('recognizes standalone CMR serial, Hungarian plate, pallet count and weight', () {
+      const raw = '''
+157357
+Feladó: Logistic-A.I.M.S. Kft.
+Címzett: Example Kft.
+Felrakóhely: Győr
+Lerakóhely: Budapest
+2026-09-15
+SWF-373
+1 raklap
+112 kg
+Áru megnevezése: alkatrész
+''';
+
+      final cmr = const CmrParser().parse(raw);
+      expect(cmr.cmrNumber, '157357');
+      expect(cmr.plate, 'SWF-373');
+      expect(cmr.packageCount, 1);
+      expect(cmr.grossWeightKg, 112);
+      expect(cmr.date, '2026-09-15');
+      expect(cmr.filledFieldCount, greaterThanOrEqualTo(8));
+    });
+
+    test('recognizes modern Hungarian four-letter plate format', () {
+      const raw = 'Vehicle: AA AA-123\nGross weight: 900 kg';
+      final cmr = const CmrParser().parse(raw);
+      expect(cmr.plate, 'AA-AA-123');
+      expect(cmr.grossWeightKg, 900);
     });
   });
 }
