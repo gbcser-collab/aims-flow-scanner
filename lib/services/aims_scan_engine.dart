@@ -150,7 +150,12 @@ class AimsScanEngine {
   }
 
   img.Image _warpToRectangle(img.Image source, DocumentCorners c) {
-    double distance(DocPoint a, DocPoint b) => hypot(a.x - b.x, a.y - b.y);
+    double distance(DocPoint a, DocPoint b) {
+      final dx = a.x - b.x;
+      final dy = a.y - b.y;
+      return sqrt(dx * dx + dy * dy);
+    }
+
     final width = max(distance(c.topLeft, c.topRight), distance(c.bottomLeft, c.bottomRight)).round().clamp(320, 1800).toInt();
     final height = max(distance(c.topLeft, c.bottomLeft), distance(c.topRight, c.bottomRight)).round().clamp(420, 2600).toInt();
 
