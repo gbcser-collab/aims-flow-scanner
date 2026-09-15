@@ -4,7 +4,7 @@ import 'package:aims_flow_scanner/main.dart';
 void main() {
   testWidgets('AIMS Flow Smart Scanner v0.7 home renders', (tester) async {
     await tester.pumpWidget(const AimsFlowApp());
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 100));
 
     expect(find.text('AIMS Flow Smart Scanner'), findsOneWidget);
     expect(find.text('AIMS FLOW • SMART • v0.7'), findsOneWidget);
