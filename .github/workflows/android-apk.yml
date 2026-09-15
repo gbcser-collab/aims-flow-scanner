@@ -1,4 +1,4 @@
-name: Build Android APK
+name: Build and smoke-test Android APK
 
 on:
   push:
@@ -8,7 +8,7 @@ on:
 jobs:
   build-android:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
 
@@ -35,7 +35,7 @@ jobs:
           s = p.read_text()
           marker = '<manifest xmlns:android="http://schemas.android.com/apk/res/android">'
           if 'android.permission.CAMERA' not in s:
-              s = s.replace(marker, marker + '\n    <uses-permission android:name="android.permission.CAMERA" />\n    <uses-feature android:name="android.hardware.camera" android:required="true" />')
+              s = s.replace(marker, marker + '\n    <uses-permission android:name="android.permission.CAMERA" />\n    <uses-feature android:name="android.hardware.camera" android:required="false" />')
           p.write_text(s)
           PY
 
@@ -45,12 +45,34 @@ jobs:
       - name: Analyze
         run: flutter analyze
 
-      - name: Build debug APK
-        run: flutter build apk --debug
+      - name: Build release APK
+        run: flutter build apk --release
 
-      - name: Upload APK
+      - name: APK sanity check
+        run: |
+          test -s build/app/outputs/flutter-apk/app-release.apk
+          unzip -t build/app/outputs/flutter-apk/app-release.apk > /tmp/apk-test.txt
+          tail -5 /tmp/apk-test.txt
+          ls -lh build/app/outputs/flutter-apk/app-release.apk
+
+      - name: Smoke-test install and launch in Android emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          script: |
+            adb install -r build/app/outputs/flutter-apk/app-release.apk
+            adb shell pm grant hu.logisticaims.aims_flow_scanner android.permission.CAMERA || true
+            adb shell am force-stop hu.logisticaims.aims_flow_scanner
+            adb shell monkey -p hu.logisticaims.aims_flow_scanner -c android.intent.category.LAUNCHER 1
+            sleep 5
+            adb shell dumpsys activity activities | grep -E 'mResumedActivity|topResumedActivity' | grep 'hu.logisticaims.aims_flow_scanner'
+
+      - name: Upload verified APK
         uses: actions/upload-artifact@v4
         with:
-          name: AIMS-Flow-Scanner-Samsung
-          path: build/app/outputs/flutter-apk/app-debug.apk
+          name: AIMS-Flow-Scanner-Samsung-v0.3-verified
+          path: build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
