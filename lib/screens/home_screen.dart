@@ -21,7 +21,27 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _opening = false;
   bool _historyLoading = true;
   String? _error;
+  String _query = '';
   List<ScannedDocument> _history = const [];
+
+  List<ScannedDocument> get _filteredHistory {
+    final q = _query.trim().toLowerCase();
+    if (q.isEmpty) return _history;
+    return _history.where((document) {
+      final cmr = document.cmr;
+      final haystack = [
+        cmr.cmrNumber,
+        cmr.shipper,
+        cmr.consignee,
+        cmr.loadingPlace,
+        cmr.deliveryPlace,
+        cmr.date,
+        cmr.plate,
+        cmr.goodsDescription,
+      ].whereType<String>().join(' ').toLowerCase();
+      return haystack.contains(q);
+    }).toList();
+  }
 
   @override
   void initState() {
@@ -112,6 +132,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final filtered = _filteredHistory;
     return Scaffold(
       backgroundColor: const Color(0xFF0C0F13),
       appBar: AppBar(
@@ -141,7 +162,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'AIMS FLOW • SMART • v0.7',
+                    'AIMS FLOW • SMART • v0.9 PRO',
                     style: TextStyle(
                       color: Color(0xFFE6B85C),
                       fontWeight: FontWeight.w800,
@@ -155,7 +176,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                   SizedBox(height: 10),
                   Text(
-                    'Fotó, dokumentum-korrekció, OCR, szerkeszthető CMR mezők és offline mentési előzmények egy folyamatban.',
+                    'Perspektíva-védelem, dupla OCR, intelligens CMR-mezők, képminőség-ellenőrzés, vaku KI/AUTO/BE és offline előzmények.',
                     style: TextStyle(color: Colors.white70, height: 1.35),
                   ),
                 ],
@@ -168,7 +189,7 @@ class _HomeScreenState extends State<HomeScreen> {
               icon: _opening
                   ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
                   : const Icon(Icons.document_scanner_rounded),
-              label: Text(_opening ? 'Kamera indítása…' : 'Smart Scan indítása'),
+              label: Text(_opening ? 'Kamera indítása…' : 'Smart Scan PRO indítása'),
               style: FilledButton.styleFrom(
                 minimumSize: const Size.fromHeight(58),
                 backgroundColor: const Color(0xFFE6B85C),
@@ -189,28 +210,34 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             const SizedBox(height: 18),
             const _Feature(
-              icon: Icons.crop_free_rounded,
-              title: 'Dokumentum-korrekció',
-              text: 'Megkeresi a lapot, levágja a hátteret és perspektívába húzza.',
+              icon: Icons.auto_fix_high_rounded,
+              title: 'Perspektíva-védelem',
+              text: 'Ha a CMR eleve egyenes, nem erőlteti rá a perspektíva-korrekciót. Csak indokolt esetben húzza síkba.',
             ),
             const SizedBox(height: 10),
             const _Feature(
-              icon: Icons.text_snippet_rounded,
-              title: 'OCR + javítható mezők',
-              text: 'Kiolvassa a nyomtatott szöveget, a találatokat pedig mentés előtt kézzel is javíthatod.',
+              icon: Icons.compare_rounded,
+              title: 'Dupla Smart OCR',
+              text: 'Az eredeti és a javított képet is kiolvassa, majd automatikusan a több CMR-adatot adó eredményt választja.',
+            ),
+            const SizedBox(height: 10),
+            const _Feature(
+              icon: Icons.flash_on_rounded,
+              title: 'Vaku KI / AUTO / BE',
+              text: 'A BE mód folyamatos fényt ad a dokumentum beállításához, az AUTO pedig a kamerára bízza a villanást.',
             ),
             const SizedBox(height: 10),
             const _Feature(
               icon: Icons.offline_pin_rounded,
               title: 'Offline CMR előzmények',
-              text: 'A mentett dokumentumok a telefonon maradnak, újra megnyithatók és módosíthatók.',
+              text: 'A mentések a telefonon maradnak, kereshetők, újranyithatók, javíthatók és törölhetők.',
             ),
             const SizedBox(height: 24),
             Row(
               children: [
                 const Expanded(
                   child: Text(
-                    'Legutóbbi mentések',
+                    'Mentett CMR-ek',
                     style: TextStyle(color: Colors.white, fontSize: 21, fontWeight: FontWeight.w900),
                   ),
                 ),
@@ -227,6 +254,32 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ],
             ),
+            if (_history.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              TextField(
+                onChanged: (value) => setState(() => _query = value),
+                style: const TextStyle(color: Colors.white),
+                decoration: InputDecoration(
+                  hintText: 'Keresés CMR szám, rendszám, cég, hely, áru…',
+                  hintStyle: const TextStyle(color: Colors.white38),
+                  prefixIcon: const Icon(Icons.search_rounded, color: Colors.white54),
+                  suffixIcon: _query.isEmpty
+                      ? null
+                      : IconButton(
+                          tooltip: 'Keresés törlése',
+                          onPressed: () => setState(() => _query = ''),
+                          icon: const Icon(Icons.close_rounded, color: Colors.white54),
+                        ),
+                  filled: true,
+                  fillColor: const Color(0xFF14181D),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
+                ),
+              ),
+              if (_query.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Text('${filtered.length} találat', style: const TextStyle(color: Colors.white54)),
+              ],
+            ],
             const SizedBox(height: 10),
             if (_historyLoading)
               const Padding(
@@ -250,8 +303,14 @@ class _HomeScreenState extends State<HomeScreen> {
                   ],
                 ),
               )
+            else if (filtered.isEmpty)
+              Container(
+                padding: const EdgeInsets.all(18),
+                decoration: BoxDecoration(color: const Color(0xFF14181D), borderRadius: BorderRadius.circular(16)),
+                child: const Text('Nincs a keresésnek megfelelő mentett CMR.', style: TextStyle(color: Colors.white60)),
+              )
             else
-              ..._history.map((document) => _historyCard(document)),
+              ...filtered.map((document) => _historyCard(document)),
           ],
         ),
       ),
@@ -264,9 +323,10 @@ class _HomeScreenState extends State<HomeScreen> {
         ? 'CMR ${document.cmr.cmrNumber}'
         : 'Mentett CMR';
     final secondary = [
+      document.cmr.plate,
       document.cmr.consignee,
       document.cmr.deliveryPlace,
-    ].whereType<String>().where((item) => item.trim().isNotEmpty).take(2).join(' • ');
+    ].whereType<String>().where((item) => item.trim().isNotEmpty).take(3).join(' • ');
 
     return Semantics(
       label: 'Mentett CMR dokumentum',
