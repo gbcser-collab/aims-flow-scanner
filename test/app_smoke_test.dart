@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:aims_flow_scanner/main.dart';
+import 'package:nailfit/main.dart';
 
 void main() {
   testWidgets('NAILFIT home screen renders', (tester) async {
