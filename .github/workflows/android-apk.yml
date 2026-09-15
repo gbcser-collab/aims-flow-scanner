@@ -33,11 +33,12 @@ jobs:
             exit 1
           fi
 
-      - name: Generate Android platform
+      - name: Generate standalone Android platform
         run: |
           rm -rf /tmp/nailfit_template
-          flutter create --platforms=android --org hu.logisticaims --project-name aims_flow_scanner /tmp/nailfit_template
+          flutter create --platforms=android --org hu.logisticaims --project-name nailfit /tmp/nailfit_template
           cp -R /tmp/nailfit_template/android ./android
+          sed -i 's/android:label="nailfit"/android:label="NAILFIT"/' android/app/src/main/AndroidManifest.xml
 
       - name: Dependencies
         run: flutter pub get
@@ -61,7 +62,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: NAILFIT-MVP-v0.5-Android
+          name: NAILFIT-MVP-v0.5.1-Android
           path: build/app/outputs/flutter-apk/app-debug.apk
           if-no-files-found: error
 
@@ -79,6 +80,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: NAILFIT-MVP-v0.5-test-evidence
+          name: NAILFIT-MVP-v0.5.1-test-evidence
           path: test-evidence/
           if-no-files-found: warn
