@@ -10,6 +10,8 @@ import '../services/ocr_service.dart';
 import '../widgets/scanner_overlay.dart';
 import 'scan_review_screen.dart';
 
+enum _ScannerFlashMode { off, auto, torch }
+
 class ScannerScreen extends StatefulWidget {
   const ScannerScreen({super.key, required this.camera});
 
@@ -23,7 +25,8 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
   CameraController? _controller;
   bool _processing = false;
   bool _initializing = false;
-  bool _flashAuto = false;
+  bool _flashChanging = false;
+  _ScannerFlashMode _flashMode = _ScannerFlashMode.auto;
   String? _cameraError;
   String _phase = '';
   int _cameraGeneration = 0;
@@ -60,8 +63,13 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
         }
         _controller = candidate;
         try {
-          await candidate.setFlashMode(FlashMode.off);
-        } catch (_) {}
+          await candidate.setFlashMode(_cameraFlashMode(_flashMode));
+        } catch (_) {
+          _flashMode = _ScannerFlashMode.off;
+          try {
+            await candidate.setFlashMode(FlashMode.off);
+          } catch (_) {}
+        }
         _initializing = false;
         if (mounted) setState(() {});
         return;
@@ -118,18 +126,62 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
     }
   }
 
-  Future<void> _toggleFlash() async {
+  FlashMode _cameraFlashMode(_ScannerFlashMode mode) {
+    switch (mode) {
+      case _ScannerFlashMode.off:
+        return FlashMode.off;
+      case _ScannerFlashMode.auto:
+        return FlashMode.auto;
+      case _ScannerFlashMode.torch:
+        return FlashMode.torch;
+    }
+  }
+
+  String _flashLabel(_ScannerFlashMode mode) {
+    switch (mode) {
+      case _ScannerFlashMode.off:
+        return 'KI';
+      case _ScannerFlashMode.auto:
+        return 'AUTO';
+      case _ScannerFlashMode.torch:
+        return 'BE';
+    }
+  }
+
+  IconData _flashIcon(_ScannerFlashMode mode) {
+    switch (mode) {
+      case _ScannerFlashMode.off:
+        return Icons.flash_off_rounded;
+      case _ScannerFlashMode.auto:
+        return Icons.flash_auto_rounded;
+      case _ScannerFlashMode.torch:
+        return Icons.flash_on_rounded;
+    }
+  }
+
+  Future<void> _setFlashMode(_ScannerFlashMode mode) async {
     final controller = _controller;
-    if (controller == null || !controller.value.isInitialized || _processing) return;
-    final next = !_flashAuto;
+    if (controller == null ||
+        !controller.value.isInitialized ||
+        _processing ||
+        _flashChanging ||
+        mode == _flashMode) {
+      return;
+    }
+
+    setState(() => _flashChanging = true);
     try {
-      await controller.setFlashMode(next ? FlashMode.auto : FlashMode.off);
-      if (mounted) setState(() => _flashAuto = next);
+      await controller.setFlashMode(_cameraFlashMode(mode));
+      if (mounted) {
+        setState(() => _flashMode = mode);
+      }
     } on CameraException catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('A vaku ezen a kamerán nem állítható (${e.code}).')),
       );
+    } finally {
+      if (mounted) setState(() => _flashChanging = false);
     }
   }
 
@@ -255,12 +307,61 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
             ),
             if (controller != null && controller.value.isInitialized)
               Positioned(
-                top: 8,
-                right: 8,
-                child: IconButton.filledTonal(
-                  onPressed: _processing ? null : _toggleFlash,
-                  tooltip: _flashAuto ? 'Automata vaku kikapcsolása' : 'Automata vaku',
-                  icon: Icon(_flashAuto ? Icons.flash_auto_rounded : Icons.flash_off_rounded),
+                left: 0,
+                right: 0,
+                bottom: 120,
+                child: Center(
+                  child: Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: .68),
+                      borderRadius: BorderRadius.circular(24),
+                      border: Border.all(color: Colors.white24),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: _ScannerFlashMode.values.map((mode) {
+                        final selected = mode == _flashMode;
+                        return Semantics(
+                          button: true,
+                          selected: selected,
+                          label: 'Vaku ${_flashLabel(mode)}',
+                          child: InkWell(
+                            key: ValueKey('flash-${mode.name}'),
+                            borderRadius: BorderRadius.circular(20),
+                            onTap: (_processing || _flashChanging) ? null : () => _setFlashMode(mode),
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 140),
+                              padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: selected ? const Color(0xFFE6B85C) : Colors.transparent,
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    _flashIcon(mode),
+                                    size: 18,
+                                    color: selected ? Colors.black : Colors.white,
+                                  ),
+                                  const SizedBox(width: 5),
+                                  Text(
+                                    _flashLabel(mode),
+                                    style: TextStyle(
+                                      color: selected ? Colors.black : Colors.white,
+                                      fontWeight: FontWeight.w900,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ),
                 ),
               ),
             if (_cameraError == null)
