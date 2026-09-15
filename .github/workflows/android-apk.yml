@@ -8,7 +8,7 @@ on:
 jobs:
   build-android:
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
 
@@ -39,15 +39,6 @@ jobs:
           rm -rf /tmp/aims_template
           flutter create --platforms=android --org hu.logisticaims --project-name aims_flow_scanner /tmp/aims_template
           cp -R /tmp/aims_template/android ./android
-          python3 - <<'PY'
-          from pathlib import Path
-          p = Path('android/app/src/main/AndroidManifest.xml')
-          s = p.read_text()
-          marker = '<manifest xmlns:android="http://schemas.android.com/apk/res/android">'
-          if 'android.permission.CAMERA' not in s:
-              s = s.replace(marker, marker + '\n    <uses-permission android:name="android.permission.CAMERA" />\n    <uses-feature android:name="android.hardware.camera" android:required="false" />')
-          p.write_text(s)
-          PY
 
       - name: Dependencies
         run: flutter pub get
@@ -71,14 +62,15 @@ jobs:
       - name: Upload APK before device test
         uses: actions/upload-artifact@v4
         with:
-          name: AIMS-Flow-Scanner-Samsung-v0.3-deep-tested
+          name: AIMS-Flow-CMR-Scanner-v0.4-MLKIT
           path: build/app/outputs/flutter-apk/app-debug.apk
           if-no-files-found: error
 
-      - name: Deep smoke-test on Android emulator
+      - name: Deep smoke-test ML Kit scanner on Android emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
+          target: google_apis
           arch: x86_64
           profile: pixel_6
           disable-animations: true
