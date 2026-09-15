@@ -1,4 +1,4 @@
-name: Build and smoke-test Android APK
+name: Build and deep-test Android APK
 
 on:
   push:
@@ -8,7 +8,7 @@ on:
 jobs:
   build-android:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
 
@@ -55,6 +55,9 @@ jobs:
       - name: Analyze
         run: flutter analyze
 
+      - name: Unit tests
+        run: flutter test
+
       - name: Build debug APK
         run: flutter build apk --debug
 
@@ -65,25 +68,26 @@ jobs:
           tail -5 /tmp/apk-test.txt
           ls -lh build/app/outputs/flutter-apk/app-debug.apk
 
-      - name: Upload APK before device smoke-test
+      - name: Upload APK before device test
         uses: actions/upload-artifact@v4
         with:
-          name: AIMS-Flow-Scanner-Samsung-v0.3-slim
+          name: AIMS-Flow-Scanner-Samsung-v0.3-deep-tested
           path: build/app/outputs/flutter-apk/app-debug.apk
           if-no-files-found: error
 
-      - name: Smoke-test install and launch in Android emulator
+      - name: Deep smoke-test on Android emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
           arch: x86_64
           profile: pixel_6
           disable-animations: true
-          script: |
-            adb install -r build/app/outputs/flutter-apk/app-debug.apk
-            adb shell pm grant hu.logisticaims.aims_flow_scanner android.permission.CAMERA || true
-            adb shell am force-stop hu.logisticaims.aims_flow_scanner
-            adb shell monkey -p hu.logisticaims.aims_flow_scanner -c android.intent.category.LAUNCHER 1
-            sleep 5
-            adb shell dumpsys activity activities | grep -E 'mResumedActivity|topResumedActivity' | grep 'hu.logisticaims.aims_flow_scanner'
-            echo 'AIMS Flow launch smoke-test PASSED'
+          script: bash ci/android_smoke_test.sh
+
+      - name: Upload test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: AIMS-Flow-Scanner-test-evidence
+          path: test-evidence/
+          if-no-files-found: warn
