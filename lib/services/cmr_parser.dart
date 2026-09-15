@@ -34,7 +34,7 @@ class CmrParser {
       grossWeightKg: _weight(normalized),
       goodsDescription: _afterLabel(lines, const [
         'nature of goods', 'áru megnevezése', 'bezeichnung des gutes',
-        'bezeichnung des gutes', 'rodzaj towaru', 'nature de la marchandise',
+        'rodzaj towaru', 'nature de la marchandise',
         'goods description', 'description of goods',
       ]),
       rawText: raw,
@@ -68,8 +68,11 @@ class CmrParser {
   }
 
   String? _firstIdentifier(String input) {
-    final match = RegExp(r'([A-Z0-9]*\d[A-Z0-9/-]{3,20})', caseSensitive: false).firstMatch(input);
-    return match?.group(1)?.toUpperCase();
+    final upper = input.trim().toUpperCase();
+    final match = RegExp(
+      r'\b([A-Z]{1,8}[-/]?[A-Z0-9]*\d[A-Z0-9/-]{2,20}|\d{5,20})\b',
+    ).firstMatch(upper);
+    return match?.group(1);
   }
 
   String? _plate(String raw) {
