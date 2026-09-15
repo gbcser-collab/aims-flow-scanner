@@ -62,11 +62,11 @@ jobs:
       - name: Upload APK before device test
         uses: actions/upload-artifact@v4
         with:
-          name: AIMS-Flow-Smart-Scanner-v0.5-OCR
+          name: AIMS-Flow-Smart-Scanner-v0.6-END-TO-END
           path: build/app/outputs/flutter-apk/app-debug.apk
           if-no-files-found: error
 
-      - name: Deep smoke-test Smart Scanner on Android emulator
+      - name: Deep end-to-end Smart Scanner test
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
