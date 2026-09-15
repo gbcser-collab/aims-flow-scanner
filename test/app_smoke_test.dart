@@ -2,12 +2,15 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:aims_flow_scanner/main.dart';
 
 void main() {
-  testWidgets('AIMS Flow home screen renders', (tester) async {
-    await tester.pumpWidget(const AimsFlowApp());
+  testWidgets('NAILFIT home screen renders', (tester) async {
+    await tester.pumpWidget(const NailFitApp());
     await tester.pumpAndSettle();
 
-    expect(find.text('AIMS Flow Scanner'), findsOneWidget);
-    expect(find.text('CMR Scanner'), findsOneWidget);
-    expect(find.text('Scanner megnyitása'), findsOneWidget);
+    expect(find.text('NAIL'), findsOneWidget);
+    expect(find.text('FIT'), findsOneWidget);
+    expect(find.text('Próbáld fel.\nMielőtt elkészül.'), findsOneWidget);
+    expect(find.text('Fotózás'), findsOneWidget);
+    expect(find.text('Galéria'), findsOneWidget);
+    expect(find.text('Nail Match'), findsOneWidget);
   });
 }
