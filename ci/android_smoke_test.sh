@@ -10,6 +10,7 @@ fail_with_logs() {
   echo "==== FAILURE DIAGNOSTICS ===="
   adb shell dumpsys activity activities > "$EVIDENCE/activities.txt" 2>&1 || true
   adb logcat -d > "$EVIDENCE/logcat.txt" 2>&1 || true
+  adb exec-out screencap -p > "$EVIDENCE/failure.png" 2>/dev/null || true
   tail -n 250 "$EVIDENCE/logcat.txt" || true
   exit 1
 }
@@ -35,14 +36,15 @@ sleep 4
 adb shell dumpsys activity activities | grep -E 'mResumedActivity|topResumedActivity' | grep "$PKG" || fail_with_logs
 adb exec-out screencap -p > "$EVIDENCE/01-home.png" || true
 
-# Verify home UI and find the scanner button dynamically by text.
+# Flutter exposes visible labels through accessibility content-desc on Android.
 adb shell uiautomator dump /sdcard/home.xml >/dev/null
 adb pull /sdcard/home.xml "$EVIDENCE/home.xml" >/dev/null
 python3 - <<'PY' > /tmp/tap.txt
 import re, xml.etree.ElementTree as ET
 root = ET.parse('test-evidence/home.xml').getroot()
 for node in root.iter('node'):
-    if node.attrib.get('text') == 'Scanner megnyitása':
+    label = node.attrib.get('text') or node.attrib.get('content-desc') or ''
+    if label == 'Scanner megnyitása':
         m = re.match(r'\[(\d+),(\d+)\]\[(\d+),(\d+)\]', node.attrib['bounds'])
         if not m:
             raise SystemExit('Button bounds missing')
@@ -60,7 +62,7 @@ sleep 8
 adb exec-out screencap -p > "$EVIDENCE/02-scanner.png" || true
 adb shell uiautomator dump /sdcard/scanner.xml >/dev/null
 adb pull /sdcard/scanner.xml "$EVIDENCE/scanner.xml" >/dev/null
-grep -F 'text="CMR Scanner"' "$EVIDENCE/scanner.xml" >/dev/null || fail_with_logs
+grep -F 'CMR Scanner' "$EVIDENCE/scanner.xml" >/dev/null || fail_with_logs
 if grep -F 'A kamera nem indult el' "$EVIDENCE/scanner.xml" >/dev/null; then
   echo "Camera screen reported initialization failure"
   fail_with_logs
