@@ -1,5 +1,5 @@
 name: aims_flow_scanner
-version: 0.7.0+7
+version: 0.8.0+8
 publish_to: 'none'
 
 environment:
