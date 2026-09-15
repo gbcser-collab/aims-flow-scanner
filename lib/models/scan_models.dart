@@ -52,6 +52,16 @@ class ScanQuality {
   }
 
   bool get isAcceptable => warnings.isEmpty;
+
+  int get score {
+    var value = 100;
+    if (isTooDark) value -= 20;
+    if (isTooBright) value -= 20;
+    if (isBlurry) value -= 25;
+    if (hasTooMuchGlare) value -= 20;
+    if (documentTooSmall) value -= 15;
+    return value.clamp(0, 100);
+  }
 }
 
 class ScanProcessingResult {
@@ -92,6 +102,44 @@ class CmrData {
   final double? grossWeightKg;
   final String? goodsDescription;
   final String rawText;
+
+  int get filledFieldCount {
+    final values = <Object?>[
+      cmrNumber,
+      shipper,
+      consignee,
+      loadingPlace,
+      deliveryPlace,
+      date,
+      plate,
+      packageCount,
+      grossWeightKg,
+      goodsDescription,
+    ];
+    return values.where((value) {
+      if (value == null) return false;
+      if (value is String) return value.trim().isNotEmpty;
+      return true;
+    }).length;
+  }
+
+  double get completion => filledFieldCount / 10;
+
+  String toPlainText() {
+    String value(Object? input) => input == null || input.toString().trim().isEmpty ? '—' : input.toString().trim();
+    return [
+      'CMR: ${value(cmrNumber)}',
+      'Feladó: ${value(shipper)}',
+      'Címzett: ${value(consignee)}',
+      'Felrakóhely: ${value(loadingPlace)}',
+      'Lerakóhely: ${value(deliveryPlace)}',
+      'Dátum: ${value(date)}',
+      'Rendszám: ${value(plate)}',
+      'Darabszám: ${value(packageCount)}',
+      'Bruttó tömeg: ${grossWeightKg == null ? '—' : '${grossWeightKg!.toStringAsFixed(grossWeightKg! % 1 == 0 ? 0 : 2)} kg'}',
+      'Áru: ${value(goodsDescription)}',
+    ].join('\n');
+  }
 
   Map<String, dynamic> toJson() => {
         'cmrNumber': cmrNumber,
