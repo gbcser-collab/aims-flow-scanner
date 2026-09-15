@@ -1,8 +1,11 @@
 import 'dart:io';
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -27,13 +30,26 @@ class NailFitApp extends StatelessWidget {
           surface: const Color(0xFF171217),
         ),
         scaffoldBackgroundColor: const Color(0xFF0E0B0E),
-        textTheme: const TextTheme(
-          bodyMedium: TextStyle(fontFamily: 'sans-serif'),
-        ),
       ),
       home: const NailFitHome(),
     );
   }
+}
+
+class StylePreset {
+  const StylePreset({
+    required this.name,
+    required this.subtitle,
+    required this.shape,
+    required this.color,
+    required this.length,
+  });
+
+  final String name;
+  final String subtitle;
+  final String shape;
+  final Color color;
+  final double length;
 }
 
 class NailFitHome extends StatefulWidget {
@@ -46,12 +62,16 @@ class NailFitHome extends StatefulWidget {
 class _NailFitHomeState extends State<NailFitHome> {
   final ImagePicker _picker = ImagePicker();
   final List<Offset> _points = [];
+  final GlobalKey _previewKey = GlobalKey();
+  final Set<String> _favoriteLooks = <String>{};
 
   XFile? _photo;
   String _shape = 'Mandula';
   Color _color = const Color(0xFFC98384);
   double _length = .98;
   bool _demo = true;
+  bool _saving = false;
+  int _savedCount = 0;
 
   static const _colors = <Color>[
     Color(0xFFC98384),
@@ -65,6 +85,40 @@ class _NailFitHomeState extends State<NailFitHome> {
     Color(0xFFB88855),
     Color(0xFF809AAA),
   ];
+
+  static const _presets = <StylePreset>[
+    StylePreset(
+      name: 'Soft Nude',
+      subtitle: 'elegáns · mindennapi',
+      shape: 'Mandula',
+      color: Color(0xFFE7C2B7),
+      length: .92,
+    ),
+    StylePreset(
+      name: 'Cherry Wine',
+      subtitle: 'karakteres · esti',
+      shape: 'Ovális',
+      color: Color(0xFF7A263B),
+      length: 1.02,
+    ),
+    StylePreset(
+      name: 'Clean Milk',
+      subtitle: 'minimal · friss',
+      shape: 'Kocka',
+      color: Color(0xFFF0E7E0),
+      length: .82,
+    ),
+    StylePreset(
+      name: 'Editorial Rose',
+      subtitle: 'trend · látványos',
+      shape: 'Coffin',
+      color: Color(0xFFB96A78),
+      length: 1.18,
+    ),
+  ];
+
+  String get _lookKey => '$_shape-${_color.toARGB32()}-${_length.toStringAsFixed(2)}';
+  bool get _isFavorite => _favoriteLooks.contains(_lookKey);
 
   Future<void> _pick(ImageSource source) async {
     final image = await _picker.pickImage(
@@ -98,6 +152,58 @@ class _NailFitHomeState extends State<NailFitHome> {
     });
   }
 
+  void _applyPreset(StylePreset preset) {
+    setState(() {
+      _shape = preset.shape;
+      _color = preset.color;
+      _length = preset.length;
+    });
+  }
+
+  void _toggleFavorite() {
+    final key = _lookKey;
+    setState(() {
+      if (_favoriteLooks.contains(key)) {
+        _favoriteLooks.remove(key);
+      } else {
+        _favoriteLooks.add(key);
+      }
+    });
+  }
+
+  Future<void> _savePreview() async {
+    if (_saving) return;
+    setState(() => _saving = true);
+    try {
+      final boundary = _previewKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
+      if (boundary == null) throw StateError('Preview not ready');
+      final image = await boundary.toImage(pixelRatio: 2.2);
+      final data = await image.toByteData(format: ui.ImageByteFormat.png);
+      if (data == null) throw StateError('PNG encoding failed');
+      final dir = await getApplicationDocumentsDirectory();
+      final file = File('${dir.path}/nailfit_${DateTime.now().millisecondsSinceEpoch}.png');
+      await file.writeAsBytes(data.buffer.asUint8List(), flush: true);
+      if (!mounted) return;
+      setState(() => _savedCount++);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Look elmentve · NailFit PNG #$_savedCount'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('A mentés most nem sikerült.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
   int get _match {
     final base = switch (_shape) {
       'Mandula' => 97,
@@ -117,14 +223,18 @@ class _NailFitHomeState extends State<NailFitHome> {
           physics: const BouncingScrollPhysics(),
           slivers: [
             SliverPadding(
-              padding: const EdgeInsets.fromLTRB(16, 10, 16, 32),
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 36),
               sliver: SliverList(
                 delegate: SliverChildListDelegate([
                   _header(),
                   const SizedBox(height: 18),
-                  _preview(),
+                  RepaintBoundary(key: _previewKey, child: _preview()),
                   const SizedBox(height: 14),
                   _sourceButtons(),
+                  const SizedBox(height: 20),
+                  _actionBar(),
+                  const SizedBox(height: 24),
+                  _recommendedStyles(),
                   const SizedBox(height: 24),
                   _shapeSelector(),
                   const SizedBox(height: 20),
@@ -148,23 +258,8 @@ class _NailFitHomeState extends State<NailFitHome> {
       children: [
         Row(
           children: [
-            const Text(
-              'NAIL',
-              style: TextStyle(
-                fontWeight: FontWeight.w900,
-                letterSpacing: 2.8,
-                fontSize: 16,
-              ),
-            ),
-            const Text(
-              'FIT',
-              style: TextStyle(
-                color: Color(0xFFEBA6B4),
-                fontWeight: FontWeight.w900,
-                letterSpacing: 2.8,
-                fontSize: 16,
-              ),
-            ),
+            const Text('NAIL', style: TextStyle(fontWeight: FontWeight.w900, letterSpacing: 2.8, fontSize: 16)),
+            const Text('FIT', style: TextStyle(color: Color(0xFFEBA6B4), fontWeight: FontWeight.w900, letterSpacing: 2.8, fontSize: 16)),
             const Spacer(),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -186,26 +281,17 @@ class _NailFitHomeState extends State<NailFitHome> {
         ),
         const SizedBox(height: 22),
         const Text(
-          'Próbáld fel.\nMielőtt elkészül.',
-          style: TextStyle(
-            fontSize: 40,
-            height: .96,
-            fontWeight: FontWeight.w900,
-            letterSpacing: -1.9,
-          ),
+          'Találd meg.\nPróbáld fel. Szeresd.',
+          style: TextStyle(fontSize: 39, height: .96, fontWeight: FontWeight.w900, letterSpacing: -1.9),
         ),
         const SizedBox(height: 11),
         Text(
           _demo
-              ? 'Lásd a formát, a színt és a hosszt még a szalon előtt. Ezután próbáld ki a saját kezeden.'
+              ? 'Nézd meg, melyik forma, árnyalat és hossz működik rajtad — még a szalon előtt.'
               : _points.length < 5
                   ? 'Jelöld meg sorban az öt körmöt. ${_points.length}/5 kész.'
-                  : 'Kész. Most válts formát, színt és hosszt a saját kezeden.',
-          style: const TextStyle(
-            color: Color(0xFFB9B0B6),
-            height: 1.45,
-            fontSize: 14,
-          ),
+                  : 'Kész. Válassz stílust, mentsd el vagy tedd kedvencek közé.',
+          style: const TextStyle(color: Color(0xFFB9B0B6), height: 1.45, fontSize: 14),
         ),
       ],
     );
@@ -217,13 +303,7 @@ class _NailFitHomeState extends State<NailFitHome> {
         color: const Color(0xFF171217),
         borderRadius: BorderRadius.circular(29),
         border: Border.all(color: Colors.white.withValues(alpha: .08)),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x55000000),
-            blurRadius: 38,
-            offset: Offset(0, 18),
-          ),
-        ],
+        boxShadow: const [BoxShadow(color: Color(0x55000000), blurRadius: 38, offset: Offset(0, 18))],
       ),
       padding: const EdgeInsets.all(8),
       child: ClipRRect(
@@ -240,13 +320,7 @@ class _NailFitHomeState extends State<NailFitHome> {
                   fit: StackFit.expand,
                   children: [
                     if (_demo)
-                      CustomPaint(
-                        painter: DemoHandPainter(
-                          color: _color,
-                          shape: _shape,
-                          length: _length,
-                        ),
-                      )
+                      CustomPaint(painter: DemoHandPainter(color: _color, shape: _shape, length: _length))
                     else if (_photo != null)
                       Image.file(File(_photo!.path), fit: BoxFit.cover)
                     else
@@ -261,16 +335,8 @@ class _NailFitHomeState extends State<NailFitHome> {
                           calibration: _points.length < 5,
                         ),
                       ),
-                    Positioned(
-                      left: 14,
-                      top: 14,
-                      child: _chip(_demo ? 'STUDIO DEMO' : 'SAJÁT KÉZ'),
-                    ),
-                    Positioned(
-                      right: 14,
-                      top: 14,
-                      child: _chip('$_shape · $_match%'),
-                    ),
+                    Positioned(left: 14, top: 14, child: _chip(_demo ? 'STUDIO DEMO' : 'SAJÁT KÉZ')),
+                    Positioned(right: 14, top: 14, child: _chip('$_shape · $_match%')),
                     if (_demo)
                       Positioned(
                         left: 16,
@@ -283,25 +349,21 @@ class _NailFitHomeState extends State<NailFitHome> {
                             borderRadius: BorderRadius.circular(18),
                             border: Border.all(color: Colors.white.withValues(alpha: .08)),
                           ),
-                          child: Row(
+                          child: const Row(
                             children: [
-                              Container(
-                                width: 36,
-                                height: 36,
-                                decoration: const BoxDecoration(
-                                  color: Color(0xFFEBA6B4),
-                                  shape: BoxShape.circle,
-                                ),
-                                child: const Icon(Icons.auto_awesome_rounded, color: Color(0xFF2C171D), size: 18),
+                              CircleAvatar(
+                                radius: 18,
+                                backgroundColor: Color(0xFFEBA6B4),
+                                child: Icon(Icons.auto_awesome_rounded, color: Color(0xFF2C171D), size: 18),
                               ),
-                              const SizedBox(width: 11),
-                              const Expanded(
+                              SizedBox(width: 11),
+                              Expanded(
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text('Élő stíluspróba', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 13)),
                                     SizedBox(height: 2),
-                                    Text('Válts formát, színt és hosszt lent.', style: TextStyle(color: Color(0xFFAFA5AC), fontSize: 11)),
+                                    Text('Próbálj ki egy ajánlott lookot lent.', style: TextStyle(color: Color(0xFFAFA5AC), fontSize: 11)),
                                   ],
                                 ),
                               ),
@@ -345,10 +407,7 @@ class _NailFitHomeState extends State<NailFitHome> {
           borderRadius: BorderRadius.circular(99),
           border: Border.all(color: Colors.white.withValues(alpha: .09)),
         ),
-        child: Text(
-          text,
-          style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: .25),
-        ),
+        child: Text(text, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: .25)),
       );
 
   Widget _sourceButtons() {
@@ -386,14 +445,14 @@ class _NailFitHomeState extends State<NailFitHome> {
             ),
           ],
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 7),
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             TextButton.icon(
               onPressed: _useDemo,
               icon: const Icon(Icons.auto_awesome_rounded, size: 17),
-              label: const Text('Demó visszaállítása'),
+              label: const Text('Demó kéz'),
               style: TextButton.styleFrom(foregroundColor: const Color(0xFFBDB3BA)),
             ),
             if (!_demo) ...[
@@ -407,6 +466,99 @@ class _NailFitHomeState extends State<NailFitHome> {
           ],
         ),
       ],
+    );
+  }
+
+  Widget _actionBar() {
+    return Row(
+      children: [
+        Expanded(
+          child: OutlinedButton.icon(
+            onPressed: _toggleFavorite,
+            icon: Icon(_isFavorite ? Icons.favorite_rounded : Icons.favorite_border_rounded, size: 19),
+            label: Text(_isFavorite ? 'Kedvenc' : 'Kedvencekhez'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: _isFavorite ? const Color(0xFFF1A1B3) : const Color(0xFFD0C6CC),
+              minimumSize: const Size(0, 50),
+              side: BorderSide(color: _isFavorite ? const Color(0xFF8D5261) : Colors.white.withValues(alpha: .10)),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            ),
+          ),
+        ),
+        const SizedBox(width: 9),
+        Expanded(
+          child: FilledButton.icon(
+            onPressed: _saving ? null : _savePreview,
+            icon: _saving
+                ? const SizedBox(width: 17, height: 17, child: CircularProgressIndicator(strokeWidth: 2))
+                : const Icon(Icons.download_rounded, size: 19),
+            label: Text(_saving ? 'Mentés…' : 'Look mentése'),
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFF2B2025),
+              foregroundColor: const Color(0xFFF3E7EB),
+              minimumSize: const Size(0, 50),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _recommendedStyles() {
+    return _section(
+      'Neked ajánljuk',
+      SizedBox(
+        height: 118,
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          itemCount: _presets.length,
+          separatorBuilder: (_, __) => const SizedBox(width: 10),
+          itemBuilder: (_, index) {
+            final preset = _presets[index];
+            final active = _shape == preset.shape && _color.toARGB32() == preset.color.toARGB32() && (_length - preset.length).abs() < .01;
+            return GestureDetector(
+              onTap: () => _applyPreset(preset),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                width: 160,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: active ? const Color(0xFF2C2025) : const Color(0xFF171217),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: active ? const Color(0xFF95636F) : Colors.white.withValues(alpha: .07)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          width: 30,
+                          height: 30,
+                          decoration: BoxDecoration(
+                            color: preset.color,
+                            shape: BoxShape.circle,
+                            border: Border.all(color: Colors.white.withValues(alpha: .20)),
+                          ),
+                        ),
+                        const Spacer(),
+                        if (active) const Icon(Icons.check_circle_rounded, color: Color(0xFFEBA6B4), size: 18),
+                      ],
+                    ),
+                    const Spacer(),
+                    Text(preset.name, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 13)),
+                    const SizedBox(height: 2),
+                    Text(preset.subtitle, style: const TextStyle(color: Color(0xFF9E939A), fontSize: 10)),
+                    const SizedBox(height: 2),
+                    Text(preset.shape, style: const TextStyle(color: Color(0xFFE1C1C9), fontSize: 10, fontWeight: FontWeight.w700)),
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
+      ),
     );
   }
 
@@ -435,9 +587,7 @@ class _NailFitHomeState extends State<NailFitHome> {
                 fontSize: 12,
                 fontWeight: selected ? FontWeight.w900 : FontWeight.w600,
               ),
-              side: BorderSide(
-                color: selected ? const Color(0xFF8D626C) : Colors.white.withValues(alpha: .08),
-              ),
+              side: BorderSide(color: selected ? const Color(0xFF8D626C) : Colors.white.withValues(alpha: .08)),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
             );
           },
@@ -467,13 +617,8 @@ class _NailFitHomeState extends State<NailFitHome> {
                 decoration: BoxDecoration(
                   color: c,
                   shape: BoxShape.circle,
-                  border: Border.all(
-                    color: selected ? const Color(0xFFF4EAE8) : Colors.white.withValues(alpha: .18),
-                    width: selected ? 3 : 1,
-                  ),
-                  boxShadow: selected
-                      ? const [BoxShadow(color: Color(0x558F5865), blurRadius: 12, spreadRadius: 1)]
-                      : null,
+                  border: Border.all(color: selected ? const Color(0xFFF4EAE8) : Colors.white.withValues(alpha: .18), width: selected ? 3 : 1),
+                  boxShadow: selected ? const [BoxShadow(color: Color(0x558F5865), blurRadius: 12, spreadRadius: 1)] : null,
                 ),
               ),
             );
@@ -503,13 +648,7 @@ class _NailFitHomeState extends State<NailFitHome> {
                 overlayColor: const Color(0x33EBA6B4),
                 trackHeight: 3,
               ),
-              child: Slider(
-                value: _length,
-                min: .75,
-                max: 1.45,
-                divisions: 14,
-                onChanged: (v) => setState(() => _length = v),
-              ),
+              child: Slider(value: _length, min: .75, max: 1.45, divisions: 14, onChanged: (v) => setState(() => _length = v)),
             ),
             const Padding(
               padding: EdgeInsets.symmetric(horizontal: 4),
@@ -537,11 +676,7 @@ class _NailFitHomeState extends State<NailFitHome> {
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(22),
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFF241A1F), Color(0xFF151115)],
-        ),
+        gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xFF241A1F), Color(0xFF151115)]),
         border: Border.all(color: Colors.white.withValues(alpha: .07)),
       ),
       child: Row(
@@ -549,10 +684,7 @@ class _NailFitHomeState extends State<NailFitHome> {
           Container(
             width: 42,
             height: 42,
-            decoration: BoxDecoration(
-              color: const Color(0xFFEBA6B4).withValues(alpha: .13),
-              shape: BoxShape.circle,
-            ),
+            decoration: BoxDecoration(color: const Color(0xFFEBA6B4).withValues(alpha: .13), shape: BoxShape.circle),
             child: const Icon(Icons.auto_awesome_rounded, color: Color(0xFFEBA6B4), size: 20),
           ),
           const SizedBox(width: 12),
@@ -563,13 +695,14 @@ class _NailFitHomeState extends State<NailFitHome> {
                 const Text('Nail Match', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900)),
                 const SizedBox(height: 2),
                 Text('$label · $_shape', style: const TextStyle(color: Color(0xFF9F949B), fontSize: 11)),
+                if (_favoriteLooks.isNotEmpty || _savedCount > 0) ...[
+                  const SizedBox(height: 5),
+                  Text('${_favoriteLooks.length} kedvenc · $_savedCount mentett look', style: const TextStyle(color: Color(0xFF7F757B), fontSize: 10)),
+                ],
               ],
             ),
           ),
-          Text(
-            '$_match%',
-            style: const TextStyle(color: Color(0xFFEBC6A6), fontSize: 27, fontWeight: FontWeight.w900),
-          ),
+          Text('$_match%', style: const TextStyle(color: Color(0xFFEBC6A6), fontSize: 27, fontWeight: FontWeight.w900)),
         ],
       ),
     );
@@ -581,10 +714,7 @@ class _NailFitHomeState extends State<NailFitHome> {
       children: [
         Padding(
           padding: const EdgeInsets.only(left: 2, bottom: 9),
-          child: Text(
-            title,
-            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w900, letterSpacing: -.1),
-          ),
+          child: Text(title, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w900, letterSpacing: -.1)),
         ),
         child,
       ],
@@ -593,13 +723,7 @@ class _NailFitHomeState extends State<NailFitHome> {
 }
 
 class NailOverlayPainter extends CustomPainter {
-  NailOverlayPainter({
-    required this.points,
-    required this.color,
-    required this.shape,
-    required this.length,
-    required this.calibration,
-  });
+  NailOverlayPainter({required this.points, required this.color, required this.shape, required this.length, required this.calibration});
 
   final List<Offset> points;
   final Color color;
@@ -616,8 +740,7 @@ class NailOverlayPainter extends CustomPainter {
           ..color = const Color(0xFFEBA6B4).withValues(alpha: .28)
           ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 9);
         canvas.drawCircle(p, 17, halo);
-        final marker = Paint()..color = const Color(0xFFEBA6B4);
-        canvas.drawCircle(p, 10, marker);
+        canvas.drawCircle(p, 10, Paint()..color = const Color(0xFFEBA6B4));
         _drawNumber(canvas, p, i + 1);
       } else {
         final widths = [0.078, 0.061, 0.064, 0.060, 0.052];
@@ -628,10 +751,7 @@ class NailOverlayPainter extends CustomPainter {
 
   void _drawNumber(Canvas canvas, Offset p, int n) {
     final tp = TextPainter(
-      text: TextSpan(
-        text: '$n',
-        style: const TextStyle(color: Color(0xFF2A171D), fontSize: 10, fontWeight: FontWeight.w900),
-      ),
+      text: TextSpan(text: '$n', style: const TextStyle(color: Color(0xFF2A171D), fontSize: 10, fontWeight: FontWeight.w900)),
       textDirection: TextDirection.ltr,
     )..layout();
     tp.paint(canvas, p - Offset(tp.width / 2, tp.height / 2));
@@ -692,7 +812,7 @@ class DemoHandPainter extends CustomPainter {
 
     canvas.save();
     canvas.translate(size.width * .018, size.height * .022);
-    _drawHandMass(canvas, size, shadowPaint, shadowOnly: true);
+    _drawHandMass(canvas, size, shadowPaint);
     canvas.restore();
 
     final skinRect = Rect.fromLTWH(size.width * .18, size.height * .08, size.width * .66, size.height * .92);
@@ -703,13 +823,13 @@ class DemoHandPainter extends CustomPainter {
         colors: [Color(0xFFF0B89E), Color(0xFFD69478), Color(0xFFB9705C)],
         stops: [0, .58, 1],
       ).createShader(skinRect);
-    _drawHandMass(canvas, size, skinPaint, shadowOnly: false);
+    _drawHandMass(canvas, size, skinPaint);
 
     final edge = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1
       ..color = const Color(0xFF7D4438).withValues(alpha: .24);
-    _drawHandMass(canvas, size, edge, shadowOnly: false, outlineOnly: true);
+    _drawHandMass(canvas, size, edge);
 
     _drawSkinDetails(canvas, size);
 
@@ -726,42 +846,21 @@ class DemoHandPainter extends CustomPainter {
     }
   }
 
-  void _drawHandMass(
-    Canvas canvas,
-    Size size,
-    Paint paint, {
-    required bool shadowOnly,
-    bool outlineOnly = false,
-  }) {
+  void _drawHandMass(Canvas canvas, Size size, Paint paint) {
     void finger(double x, double y, double w, double h, double angle) {
       canvas.save();
       canvas.translate(size.width * x, size.height * y);
       canvas.rotate(angle);
-      final rect = Rect.fromCenter(
-        center: Offset.zero,
-        width: size.width * w,
-        height: size.height * h,
-      );
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(rect, Radius.circular(size.width * w * .48)),
-        paint,
-      );
+      final rect = Rect.fromCenter(center: Offset.zero, width: size.width * w, height: size.height * h);
+      canvas.drawRRect(RRect.fromRectAndRadius(rect, Radius.circular(size.width * w * .48)), paint);
       canvas.restore();
     }
 
-    if (!outlineOnly) {
-      finger(.355, .365, .115, .405, -.035);
-      finger(.490, .319, .118, .500, 0);
-      finger(.620, .356, .110, .444, .025);
-      finger(.735, .420, .099, .352, .055);
-      finger(.241, .568, .112, .315, -.73);
-    } else {
-      finger(.355, .365, .115, .405, -.035);
-      finger(.490, .319, .118, .500, 0);
-      finger(.620, .356, .110, .444, .025);
-      finger(.735, .420, .099, .352, .055);
-      finger(.241, .568, .112, .315, -.73);
-    }
+    finger(.355, .365, .115, .405, -.035);
+    finger(.490, .319, .118, .500, 0);
+    finger(.620, .356, .110, .444, .025);
+    finger(.735, .420, .099, .352, .055);
+    finger(.241, .568, .112, .315, -.73);
 
     final palm = Path()
       ..moveTo(size.width * .294, size.height * .443)
@@ -784,11 +883,7 @@ class DemoHandPainter extends CustomPainter {
       ..color = const Color(0xFF8B4C40).withValues(alpha: .10)
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 11);
     canvas.drawOval(
-      Rect.fromCenter(
-        center: Offset(size.width * .54, size.height * .58),
-        width: size.width * .38,
-        height: size.height * .20,
-      ),
+      Rect.fromCenter(center: Offset(size.width * .54, size.height * .58), width: size.width * .38, height: size.height * .20),
       blush,
     );
 
@@ -807,50 +902,22 @@ class DemoHandPainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1
       ..color = const Color(0xFF834F45).withValues(alpha: .22);
-
     final crease1 = Path()
       ..moveTo(size.width * .33, size.height * .64)
       ..cubicTo(size.width * .42, size.height * .59, size.width * .52, size.height * .60, size.width * .63, size.height * .66);
     canvas.drawPath(crease1, creasePaint);
-
     final crease2 = Path()
       ..moveTo(size.width * .36, size.height * .73)
       ..cubicTo(size.width * .44, size.height * .70, size.width * .52, size.height * .70, size.width * .59, size.height * .74);
     canvas.drawPath(crease2, creasePaint);
-
-    final knuckle = Paint()
-      ..color = const Color(0xFF7D4438).withValues(alpha: .10)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6);
-    for (final p in [
-      Offset(.355, .435),
-      Offset(.49, .435),
-      Offset(.62, .45),
-      Offset(.735, .485),
-    ]) {
-      canvas.drawOval(
-        Rect.fromCenter(
-          center: Offset(size.width * p.dx, size.height * p.dy),
-          width: size.width * .07,
-          height: size.height * .035,
-        ),
-        knuckle,
-      );
-    }
   }
 
   @override
-  bool shouldRepaint(covariant DemoHandPainter oldDelegate) => true;
+  bool shouldRepaint(covariant DemoHandPainter oldDelegate) =>
+      oldDelegate.color != color || oldDelegate.shape != shape || oldDelegate.length != length;
 }
 
-void _drawNail(
-  Canvas canvas,
-  Offset center,
-  double width,
-  Color color,
-  String shape,
-  double length,
-  int index,
-) {
+void _drawNail(Canvas canvas, Offset center, double width, Color color, String shape, double length, int index) {
   final height = width * (1.55 + (length - 1) * 1.25);
   final rotations = [-.70, -.04, 0.0, .035, .075];
   canvas.save();
@@ -858,76 +925,47 @@ void _drawNail(
   canvas.rotate(rotations[index]);
 
   final path = _nailPath(width, height, shape);
-
   final cuticleShadow = Paint()
     ..color = const Color(0xFF6D3D35).withValues(alpha: .35)
     ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2.4);
   canvas.save();
   canvas.translate(0, height * .115);
   canvas.scale(1.10, .45);
-  canvas.drawOval(
-    Rect.fromCenter(center: Offset.zero, width: width * .95, height: width * .48),
-    cuticleShadow,
-  );
+  canvas.drawOval(Rect.fromCenter(center: Offset.zero, width: width * .95, height: width * .48), cuticleShadow);
   canvas.restore();
 
   canvas.drawShadow(path, Colors.black.withValues(alpha: .70), 5, false);
-
   final polishRect = Rect.fromLTWH(-width / 2, -height, width, height * 1.22);
   final polish = Paint()
     ..shader = LinearGradient(
       begin: Alignment.topLeft,
       end: Alignment.bottomRight,
-      colors: [
-        Color.lerp(color, Colors.white, .20)!,
-        color,
-        Color.lerp(color, Colors.black, .14)!,
-      ],
+      colors: [Color.lerp(color, Colors.white, .20)!, color, Color.lerp(color, Colors.black, .14)!],
       stops: const [0, .50, 1],
     ).createShader(polishRect);
   canvas.drawPath(path, polish);
 
   canvas.save();
   canvas.clipPath(path);
-
   final sideShade = Paint()
     ..shader = LinearGradient(
       begin: Alignment.centerLeft,
       end: Alignment.centerRight,
-      colors: [
-        Colors.black.withValues(alpha: .10),
-        Colors.transparent,
-        Colors.white.withValues(alpha: .10),
-      ],
+      colors: [Colors.black.withValues(alpha: .10), Colors.transparent, Colors.white.withValues(alpha: .10)],
       stops: const [0, .52, 1],
     ).createShader(polishRect);
   canvas.drawRect(polishRect, sideShade);
 
   final gloss = Paint()
-    ..color = Colors.white.withValues(alpha: .26)
-    ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 1.6);
+    ..color = Colors.white.withValues(alpha: .28)
+    ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 1.6)
+    ..style = PaintingStyle.stroke
+    ..strokeWidth = math.max(1.1, width * .075)
+    ..strokeCap = StrokeCap.round;
   final glossPath = Path()
     ..moveTo(-width * .18, -height * .66)
     ..cubicTo(-width * .28, -height * .38, -width * .22, -height * .08, -width * .10, height * .02);
-  canvas.drawPath(
-    glossPath,
-    gloss
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = math.max(1.1, width * .075)
-      ..strokeCap = StrokeCap.round,
-  );
-
-  final micro = Paint()
-    ..color = Colors.white.withValues(alpha: .16)
-    ..style = PaintingStyle.stroke
-    ..strokeWidth = .7;
-  canvas.drawArc(
-    Rect.fromLTRB(-width * .36, -height * .72, width * .36, -height * .18),
-    3.65,
-    2.1,
-    false,
-    micro,
-  );
+  canvas.drawPath(glossPath, gloss);
   canvas.restore();
 
   canvas.drawPath(
@@ -947,12 +985,7 @@ Path _nailPath(double w, double h, String shape) {
 
   switch (shape) {
     case 'Kocka':
-      path.addRRect(
-        RRect.fromRectAndRadius(
-          Rect.fromLTRB(-w / 2, top, w / 2, bottom),
-          Radius.circular(w * .13),
-        ),
-      );
+      path.addRRect(RRect.fromRectAndRadius(Rect.fromLTRB(-w / 2, top, w / 2, bottom), Radius.circular(w * .13)));
       break;
     case 'Coffin':
       path
