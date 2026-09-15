@@ -1,10 +1,11 @@
-# AIMS Flow Scanner MVP
+# AIMS Flow Smart Scanner
 
-Első működő forráskód az AIMS Flow saját CMR-scanneréhez.
+Saját CMR-scanner Flutter alkalmazás a Logistic-A.I.M.S. munkafolyamataihoz.
 
-## Mit tud ez a verzió?
+## Aktuális fejlesztési verzió: v0.7
 
-- Android/iOS Flutter felület
+A v0.6 END-TO-END PASSED alapra építve a v0.7 már nem csak felismeri a dokumentumot, hanem használható offline munkafolyamatot is ad hozzá:
+
 - kamera-előnézet és saját AIMS scanner overlay
 - saját dokumentumélek-becslés Sobel-gradienssel
 - saját négypontos perspektíva-korrekció / bilineáris warp
@@ -12,20 +13,28 @@ Első működő forráskód az AIMS Flow saját CMR-scanneréhez.
 - élesség-, fényerő-, becsillanás- és dokumentumméret-ellenőrzés
 - on-device Latin OCR a Google ML Kit natív motorján keresztül
 - saját CMR-parser: CMR szám, feladó, címzett, fel-/lerakóhely, dátum, rendszám, darabszám, tömeg, áru
-- offline lokális mentés
-- fuvaradat-vs-CMR összehasonlító service előkészítve
+- szerkeszthető OCR/CMR mezők mentés előtt
+- kitöltöttségi visszajelzés
+- offline CMR mentés a készülék alkalmazás-tárhelyére
+- mentési előzmények a kezdőlapon
+- mentett CMR újranyitása és módosítása
+- mentett dokumentum törlése
+- E2E teszt: kamera → fotó → dokumentumfeldolgozás → OCR → CMR eredmény → offline mentés → újraindítás → mentés visszatöltése
 
 ## Fontos architekturális döntés
 
 A dokumentum-scanner logika nem külső scanner SDK: a detektálás, perspektíva-korrekció, minőségmérés és CMR-értelmezés a projekt saját Dart kódja. Külső komponensből a kamera plugin és az OCR motor kerül felhasználásra.
 
+A v0.7 offline mentése JSON-indexet és a feldolgozott CMR-képek tartós másolatát használja az alkalmazás saját dokumentumtárában. Egy sérült előzménybejegyzés nem blokkolhatja a scanner indulását.
+
 ## Követelmény
 
 A függőségek jelenlegi verziói miatt ajánlott:
+
 - Flutter >= 3.44
 - Dart >= 3.12
-- Android minSdk legalább 24 (a kamera plugin miatt)
-- iOS deployment target legalább 15.5 (ML Kit miatt)
+- Android minSdk legalább 24
+- iOS deployment target legalább 15.5
 
 ## Indítás
 
@@ -36,7 +45,7 @@ flutter create --platforms=android,ios .
 flutter pub get
 ```
 
-Ezután a `platform_snippets/` alatt lévő kamera permission beállításokat kell összevezetni a generált Android/iOS projekttel.
+Ezután a kamera permission beállításokat össze kell vezetni a generált Android/iOS projekttel.
 
 Majd:
 
@@ -50,6 +59,8 @@ flutter run
 flutter test
 flutter analyze
 ```
+
+A GitHub Actions Android workflow API 35 emulátoron végigfuttatja a teljes Smart Scanner folyamatot, és tesztbizonyítékokat ment.
 
 ## Következő fejlesztési lépcső
 
