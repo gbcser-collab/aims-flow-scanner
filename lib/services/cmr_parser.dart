@@ -68,7 +68,7 @@ class CmrParser {
       for (final label in labels) {
         final index = lower.indexOf(label.toLowerCase());
         if (index < 0) continue;
-        final start = (index + label.length).clamp(0, lines[i].length);
+        final start = (index + label.length).clamp(0, lines[i].length).toInt();
         final sameLine = lines[i]
             .substring(start)
             .replaceFirst(RegExp(r'^\s*[:.-]?\s*'), '')
