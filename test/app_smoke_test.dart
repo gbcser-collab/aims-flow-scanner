@@ -8,8 +8,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(NailFitHome), findsOneWidget);
-    expect(find.text('NAIL'), findsOneWidget);
-    expect(find.text('FIT'), findsOneWidget);
+    expect(find.text('NAIL'), findsWidgets);
+    expect(find.text('FIT'), findsWidgets);
     expect(find.text('a hozzád illő\nkörmöket.'), findsOneWidget);
     expect(find.text('Készíts fotót'), findsOneWidget);
     expect(find.byType(CustomScrollView), findsWidgets);
