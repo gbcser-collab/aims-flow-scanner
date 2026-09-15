@@ -1,8 +1,8 @@
-name: Build and deep-test Android APK
+name: Build and test NAILFIT Android APK
 
 on:
   push:
-    branches: [ main ]
+    branches: [ nailfit-mvp ]
   workflow_dispatch:
 
 jobs:
@@ -28,7 +28,6 @@ jobs:
         run: |
           if [ -e /dev/kvm ]; then
             sudo chmod 666 /dev/kvm
-            ls -l /dev/kvm
           else
             echo '/dev/kvm is not available on this runner'
             exit 1
@@ -36,9 +35,9 @@ jobs:
 
       - name: Generate Android platform
         run: |
-          rm -rf /tmp/aims_template
-          flutter create --platforms=android --org hu.logisticaims --project-name aims_flow_scanner /tmp/aims_template
-          cp -R /tmp/aims_template/android ./android
+          rm -rf /tmp/nailfit_template
+          flutter create --platforms=android --org hu.logisticaims --project-name aims_flow_scanner /tmp/nailfit_template
+          cp -R /tmp/nailfit_template/android ./android
 
       - name: Dependencies
         run: flutter pub get
@@ -59,14 +58,14 @@ jobs:
           tail -5 /tmp/apk-test.txt
           ls -lh build/app/outputs/flutter-apk/app-debug.apk
 
-      - name: Upload APK before device test
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: AIMS-Flow-CMR-Scanner-v0.4-MLKIT
+          name: NAILFIT-MVP-v0.5-Android
           path: build/app/outputs/flutter-apk/app-debug.apk
           if-no-files-found: error
 
-      - name: Deep smoke-test ML Kit scanner on Android emulator
+      - name: Deep launch smoke-test on Android emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
@@ -80,6 +79,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: AIMS-Flow-Scanner-test-evidence
+          name: NAILFIT-MVP-v0.5-test-evidence
           path: test-evidence/
           if-no-files-found: warn
