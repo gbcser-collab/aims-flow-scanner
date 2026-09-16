@@ -138,10 +138,10 @@ class TrackingRuntime extends ChangeNotifier {
     await _positionSubscription?.cancel();
 
     final LocationSettings settings = Platform.isAndroid
-        ? const AndroidSettings(
+        ? AndroidSettings(
             accuracy: LocationAccuracy.high,
             distanceFilter: 25,
-            intervalDuration: Duration(minutes: 1),
+            intervalDuration: const Duration(minutes: 1),
             foregroundNotificationConfig: ForegroundNotificationConfig(
               notificationTitle: 'AIMS Flow nyomkövetés aktív',
               notificationText: 'Az aktív fuvar GPS-pozíciója megosztásra kerül a Logistic-AIMS admin felé.',
@@ -220,9 +220,7 @@ class TrackingRuntime extends ChangeNotifier {
         if (pending.isEmpty) break;
         await _api.syncTrackingPoints(identity, working, pending);
         final sentIds = pending.map((point) => point.id).toSet();
-        final updated = working.points
-            .map((point) => sentIds.contains(point.id) ? point.copyWith(synced: true) : point)
-            .toList();
+        final updated = working.points.map((point) => sentIds.contains(point.id) ? point.copyWith(synced: true) : point).toList();
         working = working.copyWith(points: updated, clearLastSyncError: true);
         _session = working;
         await _repository.save(working);
