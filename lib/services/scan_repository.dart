@@ -55,6 +55,7 @@ class ScanRepository {
     required String sourceImagePath,
     required CmrData cmr,
     required ScanQuality quality,
+    ScanLocation? location,
   }) async {
     final directory = await _scanDirectory();
     final createdAt = DateTime.now();
@@ -75,6 +76,7 @@ class ScanRepository {
       imagePath: destination.path,
       cmr: cmr,
       quality: quality,
+      location: location,
     );
     final all = await loadAll();
     all.insert(0, document);
