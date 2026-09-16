@@ -2,13 +2,13 @@ name: Build and deep-test Android APK
 
 on:
   push:
-    branches: [ main, v0.8-dev ]
+    branches: [ main, v0.8-dev, v1.0-real-gps ]
   workflow_dispatch:
 
 jobs:
   build-android:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
 
@@ -40,6 +40,27 @@ jobs:
           flutter create --platforms=android --org hu.logisticaims --project-name aims_flow_scanner /tmp/aims_template
           cp -R /tmp/aims_template/android ./android
 
+      - name: Configure Android permissions and AIMS identity
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          manifest = Path('android/app/src/main/AndroidManifest.xml')
+          text = manifest.read_text()
+          permissions = '''
+              <uses-permission android:name="android.permission.CAMERA" />
+              <uses-permission android:name="android.permission.INTERNET" />
+              <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+              <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+              <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+          '''
+          text = text.replace('<application', permissions + '\n    <application', 1)
+          text = text.replace('android:label="aims_flow_scanner"', 'android:label="AIMS Flow Smart Scanner"')
+          manifest.write_text(text)
+          PY
+          cat android/app/src/main/AndroidManifest.xml
+
       - name: Dependencies
         run: flutter pub get
 
@@ -62,7 +83,7 @@ jobs:
       - name: Upload APK before device test
         uses: actions/upload-artifact@v4
         with:
-          name: AIMS-Flow-Smart-Scanner-v0.8-FLASH-END-TO-END
+          name: AIMS-Flow-Smart-Scanner-v1.0-REAL-GPS
           path: build/app/outputs/flutter-apk/app-debug.apk
           if-no-files-found: error
 
@@ -80,6 +101,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: AIMS-Flow-Scanner-v0.8-test-evidence
+          name: AIMS-Flow-Scanner-v1.0-REAL-GPS-test-evidence
           path: test-evidence/
           if-no-files-found: warn
