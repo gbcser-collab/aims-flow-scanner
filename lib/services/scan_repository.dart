@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 
 import '../models/scan_models.dart';
+import '../models/tracking_models.dart';
 
 class ScanRepository {
   const ScanRepository();
@@ -51,10 +52,16 @@ class ScanRepository {
     }
   }
 
+  Future<List<ScannedDocument>> pendingForSync() async {
+    final all = await loadAll();
+    return all.where((item) => item.needsSync).toList();
+  }
+
   Future<ScannedDocument> saveNew({
     required String sourceImagePath,
     required CmrData cmr,
     required ScanQuality quality,
+    LocationStamp? location,
   }) async {
     final directory = await _scanDirectory();
     final createdAt = DateTime.now();
@@ -75,6 +82,7 @@ class ScanRepository {
       imagePath: destination.path,
       cmr: cmr,
       quality: quality,
+      location: location,
     );
     final all = await loadAll();
     all.insert(0, document);
@@ -104,6 +112,26 @@ class ScanRepository {
     } catch (_) {
       // The index is already clean even if the old image cannot be deleted.
     }
+  }
+
+  Future<int> pruneExpiredApproved() async {
+    final now = DateTime.now().toUtc();
+    final all = await loadAll();
+    final expired = all.where((item) {
+      final deadline = item.deleteAfter?.toUtc();
+      return item.syncState == CmrSyncState.approved && deadline != null && !deadline.isAfter(now);
+    }).toList();
+    if (expired.isEmpty) return 0;
+
+    for (final document in expired) {
+      try {
+        final image = File(document.imagePath);
+        if (await image.exists()) await image.delete();
+      } catch (_) {}
+    }
+    all.removeWhere((item) => expired.any((expiredItem) => expiredItem.id == item.id));
+    await _writeAll(all);
+    return expired.length;
   }
 
   Future<void> _writeAll(List<ScannedDocument> documents) async {
