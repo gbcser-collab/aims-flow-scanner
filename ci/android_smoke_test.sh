@@ -69,9 +69,8 @@ scroll_down() {
   sleep 1
 }
 
-echo "[1/13] Install APK and grant camera"
-adb install -r "$APK"
-adb shell pm grant "$PKG" android.permission.CAMERA || true
+echo "[1/13] Install APK with declared runtime permissions"
+adb install -r -g "$APK"
 adb shell pm list packages | grep "$PKG"
 
 echo "[2/13] Cold launch"
@@ -135,11 +134,11 @@ echo "[6/13] Verify OCR/editable result UI"
 grep -q 'Felismert CMR adatok' "$EVIDENCE/result.xml" || fail_with_logs
 check_no_crash
 
-echo "[7/13] Save CMR offline"
+echo "[7/13] Save CMR with GPS stamp/offline fallback"
 rm -f /tmp/save.txt
 for i in $(seq 1 10); do
   dump_ui /sdcard/save.xml "$EVIDENCE/save.xml"
-  if find_center "$EVIDENCE/save.xml" "Mentés offline" >/tmp/save.txt 2>/dev/null; then
+  if find_center "$EVIDENCE/save.xml" "Mentés + GPS" >/tmp/save.txt 2>/dev/null; then
     break
   fi
   scroll_down
@@ -147,7 +146,7 @@ done
 test -s /tmp/save.txt || fail_with_logs
 read SX SY < /tmp/save.txt
 adb shell input tap "$SX" "$SY"
-sleep 3
+sleep 4
 check_no_crash
 adb exec-out screencap -p > "$EVIDENCE/05-saved.png" || true
 
@@ -210,4 +209,4 @@ adb shell dumpsys activity activities > "$EVIDENCE/activities.txt"
 adb logcat -d > "$EVIDENCE/logcat.txt"
 adb exec-out screencap -p > "$EVIDENCE/08-final.png" || true
 
-echo "AIMS Flow Smart Scanner v0.8 FLASH OFF+AUTO+ON END-TO-END test PASSED"
+echo "AIMS Flow Smart Scanner v1.0 REAL GPS END-TO-END test PASSED"
