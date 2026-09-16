@@ -1,5 +1,5 @@
 name: aims_flow_scanner
-version: 1.0.0+10
+version: 1.1.0+20
 publish_to: 'none'
 
 environment:
@@ -24,3 +24,5 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/aims_flow_logo.png
