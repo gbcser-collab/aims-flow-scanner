@@ -1,37 +1,60 @@
 import 'dart:io';
-import 'dart:math';
 import 'dart:isolate';
+import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:image/image.dart' as img;
 
 import '../models/scan_models.dart';
 
+class FrameCropSpec {
+  const FrameCropSpec({
+    required this.viewportAspect,
+    this.left = 0.075,
+    this.top = 0.105,
+    this.width = 0.85,
+    this.height = 0.69,
+  });
+
+  final double viewportAspect;
+  final double left;
+  final double top;
+  final double width;
+  final double height;
+}
+
 /// AIMS-owned document scanner core.
 ///
-/// This code performs document-edge estimation, perspective correction,
-/// contrast enhancement and quality scoring without a document-scanner SDK.
+/// The capture is first restricted to the exact visible scanner frame. Edge
+/// detection and perspective correction then run only inside that region, so
+/// objects/background outside the UI frame cannot leak into the final CMR.
 class AimsScanEngine {
   const AimsScanEngine();
 
   Future<ScanProcessingResult> process({
     required String inputPath,
     required String outputPath,
+    FrameCropSpec? frameCrop,
   }) {
-    return Isolate.run(() => const AimsScanEngine()._processSync(inputPath: inputPath, outputPath: outputPath));
+    return Isolate.run(() => const AimsScanEngine()._processSync(
+          inputPath: inputPath,
+          outputPath: outputPath,
+          frameCrop: frameCrop,
+        ));
   }
 
   ScanProcessingResult _processSync({
     required String inputPath,
     required String outputPath,
+    FrameCropSpec? frameCrop,
   }) {
     final bytes = File(inputPath).readAsBytesSync();
     final decoded = img.decodeImage(bytes);
-    if (decoded == null) {
-      throw const FormatException('A kép nem dekódolható.');
-    }
+    if (decoded == null) throw const FormatException('A kép nem dekódolható.');
 
     var source = img.bakeOrientation(decoded);
+    if (frameCrop != null) source = _cropToVisibleFrame(source, frameCrop);
+
     const maxWidth = 2400;
     const maxHeight = 3400;
     final scale = min(1.0, min(maxWidth / source.width, maxHeight / source.height));
@@ -52,6 +75,37 @@ class AimsScanEngine {
 
     File(outputPath).writeAsBytesSync(img.encodeJpg(enhanced, quality: 90), flush: true);
     return ScanProcessingResult(outputPath: outputPath, corners: corners, quality: quality);
+  }
+
+  img.Image _cropToVisibleFrame(img.Image source, FrameCropSpec spec) {
+    final sourceAspect = source.width / source.height;
+    final viewportAspect = spec.viewportAspect <= 0 ? sourceAspect : spec.viewportAspect;
+
+    double visibleX = 0;
+    double visibleY = 0;
+    double visibleWidth = source.width.toDouble();
+    double visibleHeight = source.height.toDouble();
+
+    // Camera preview uses BoxFit.cover. Reproduce the same center-crop mapping
+    // from the phone viewport back into the captured, orientation-corrected image.
+    if (sourceAspect > viewportAspect) {
+      visibleWidth = source.height * viewportAspect;
+      visibleX = (source.width - visibleWidth) / 2;
+    } else if (sourceAspect < viewportAspect) {
+      visibleHeight = source.width / viewportAspect;
+      visibleY = (source.height - visibleHeight) / 2;
+    }
+
+    final rawX = visibleX + visibleWidth * spec.left;
+    final rawY = visibleY + visibleHeight * spec.top;
+    final rawW = visibleWidth * spec.width;
+    final rawH = visibleHeight * spec.height;
+
+    final x = rawX.round().clamp(0, max(0, source.width - 2)).toInt();
+    final y = rawY.round().clamp(0, max(0, source.height - 2)).toInt();
+    final width = rawW.round().clamp(2, source.width - x).toInt();
+    final height = rawH.round().clamp(2, source.height - y).toInt();
+    return img.copyCrop(source, x: x, y: y, width: width, height: height);
   }
 
   DocumentCorners _detectDocument(img.Image source) {
@@ -91,8 +145,8 @@ class AimsScanEngine {
     if (magnitudes.isEmpty) return _fallbackCorners(source.width, source.height);
     magnitudes.sort();
     final threshold = magnitudes[(magnitudes.length * 0.88).floor()];
-    final marginX = w * 0.025;
-    final marginY = h * 0.025;
+    final marginX = w * 0.02;
+    final marginY = h * 0.02;
     final strong = candidates.where((p) {
       return p.magnitude >= threshold && p.x > marginX && p.x < w - marginX && p.y > marginY && p.y < h - marginY;
     }).toList();
@@ -110,9 +164,7 @@ class AimsScanEngine {
       if (bl == null || p.x - p.y < bl.x - bl.y) bl = p;
     }
 
-    if (tl == null || tr == null || br == null || bl == null) {
-      return _fallbackCorners(source.width, source.height);
-    }
+    if (tl == null || tr == null || br == null || bl == null) return _fallbackCorners(source.width, source.height);
 
     final inv = 1 / scale;
     final result = DocumentCorners(
@@ -128,8 +180,8 @@ class AimsScanEngine {
   }
 
   DocumentCorners _fallbackCorners(int width, int height) {
-    final mx = width * 0.045;
-    final my = height * 0.045;
+    final mx = width * 0.018;
+    final my = height * 0.018;
     return DocumentCorners(
       topLeft: DocPoint(mx, my),
       topRight: DocPoint(width - mx, my),
