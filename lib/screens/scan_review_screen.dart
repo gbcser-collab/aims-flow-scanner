@@ -1,7 +1,9 @@
 import 'dart:io';
 
+import 'package:cross_file/cross_file.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../models/scan_models.dart';
 import '../services/scan_repository.dart';
@@ -14,6 +16,7 @@ class ScanReviewScreen extends StatefulWidget {
     required this.cmr,
     this.savedDocument,
     this.smartOcrSource,
+    this.scanLocation,
   });
 
   final String processedImagePath;
@@ -21,6 +24,7 @@ class ScanReviewScreen extends StatefulWidget {
   final CmrData cmr;
   final ScannedDocument? savedDocument;
   final String? smartOcrSource;
+  final ScanLocation? scanLocation;
 
   @override
   State<ScanReviewScreen> createState() => _ScanReviewScreenState();
@@ -42,6 +46,8 @@ class _ScanReviewScreenState extends State<ScanReviewScreen> {
 
   ScannedDocument? _savedDocument;
   bool _saving = false;
+  bool _sharing = false;
+  bool _autoSaveAttempted = false;
 
   @override
   void initState() {
@@ -58,6 +64,10 @@ class _ScanReviewScreenState extends State<ScanReviewScreen> {
     _packageCount = _controller(cmr.packageCount?.toString());
     _grossWeight = _controller(cmr.grossWeightKg?.toString());
     _goods = _controller(cmr.goodsDescription);
+
+    if (_savedDocument == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _autoSave());
+    }
   }
 
   TextEditingController _controller(String? value) => TextEditingController(text: value ?? '');
@@ -111,7 +121,13 @@ class _ScanReviewScreenState extends State<ScanReviewScreen> {
     );
   }
 
-  Future<void> _save() async {
+  Future<void> _autoSave() async {
+    if (_autoSaveAttempted || _savedDocument != null) return;
+    _autoSaveAttempted = true;
+    await _save(silent: true);
+  }
+
+  Future<void> _save({bool silent = false}) async {
     if (_saving) return;
     setState(() => _saving = true);
     try {
@@ -122,6 +138,7 @@ class _ScanReviewScreenState extends State<ScanReviewScreen> {
           sourceImagePath: widget.processedImagePath,
           cmr: cmr,
           quality: widget.quality,
+          location: widget.scanLocation,
         );
       } else {
         saved = ScannedDocument(
@@ -130,21 +147,88 @@ class _ScanReviewScreenState extends State<ScanReviewScreen> {
           imagePath: _savedDocument!.imagePath,
           cmr: cmr,
           quality: widget.quality,
+          location: _savedDocument!.location ?? widget.scanLocation,
         );
         await _repository.update(saved);
       }
       if (!mounted) return;
       setState(() => _savedDocument = saved);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('CMR mentve offline.')),
+      if (!silent) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('CMR mentve az AIMS Flow-ba.')),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      if (!silent) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('A mentés nem sikerült: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  String _formatTimestamp(DateTime value) {
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${value.year}-${two(value.month)}-${two(value.day)} ${two(value.hour)}:${two(value.minute)}:${two(value.second)}';
+  }
+
+  String _shareText(ScannedDocument document) {
+    final location = document.location;
+    final lines = <String>[
+      'AIMS Flow • CMR scan',
+      'Időpont: ${_formatTimestamp(document.createdAt)}',
+      if (location != null) 'Hely: ${location.coordinates} (±${location.accuracyMeters.toStringAsFixed(0)} m)',
+      '',
+      document.cmr.toPlainText(),
+      '',
+      'Irodai címzett: office@logistic-aims.hu',
+    ];
+    return lines.join('\n');
+  }
+
+  Future<void> _share() async {
+    if (_sharing) return;
+    if (_savedDocument == null) {
+      await _save(silent: true);
+    } else {
+      await _save(silent: true);
+    }
+    final document = _savedDocument;
+    if (document == null || !mounted) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Előbb el kell menteni a CMR-t.')),
+        );
+      }
+      return;
+    }
+
+    setState(() => _sharing = true);
+    try {
+      final result = await SharePlus.instance.share(
+        ShareParams(
+          files: [XFile(document.imagePath)],
+          text: _shareText(document),
+          subject: 'CMR ${document.cmr.cmrNumber ?? ''} • Logistic-A.I.M.S.',
+          title: 'Küldés e-mailben vagy Viberen',
+        ),
       );
+      if (!mounted) return;
+      if (result.status == ShareResultStatus.unavailable) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Ezen a készüléken nincs elérhető megosztási cél.')),
+        );
+      }
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('A mentés nem sikerült: $e')),
+        SnackBar(content: Text('A küldés nem sikerült: $e')),
       );
     } finally {
-      if (mounted) setState(() => _saving = false);
+      if (mounted) setState(() => _sharing = false);
     }
   }
 
@@ -155,6 +239,7 @@ class _ScanReviewScreenState extends State<ScanReviewScreen> {
     final completion = filled / 10;
     final imagePath = _savedDocument?.imagePath ?? widget.processedImagePath;
     final missing = 10 - filled;
+    final location = _savedDocument?.location ?? widget.scanLocation;
 
     return Scaffold(
       backgroundColor: const Color(0xFF0C0F13),
@@ -179,9 +264,7 @@ class _ScanReviewScreenState extends State<ScanReviewScreen> {
                 fit: BoxFit.contain,
                 errorBuilder: (_, __, ___) => const SizedBox(
                   height: 220,
-                  child: Center(
-                    child: Text('Az előnézet nem tölthető be.', style: TextStyle(color: Colors.white70)),
-                  ),
+                  child: Center(child: Text('Az előnézet nem tölthető be.', style: TextStyle(color: Colors.white70))),
                 ),
               ),
             ),
@@ -191,23 +274,18 @@ class _ScanReviewScreenState extends State<ScanReviewScreen> {
               decoration: BoxDecoration(
                 color: hasText ? const Color(0xFF14231C) : const Color(0xFF2A2113),
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                  color: (hasText ? const Color(0xFF48D597) : Colors.orange).withValues(alpha: .35),
-                ),
+                border: Border.all(color: (hasText ? const Color(0xFF48D597) : Colors.orange).withValues(alpha: .35)),
               ),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(
-                    hasText ? Icons.auto_awesome_rounded : Icons.warning_amber_rounded,
-                    color: hasText ? const Color(0xFF48D597) : Colors.orange,
-                  ),
+                  Icon(hasText ? Icons.auto_awesome_rounded : Icons.warning_amber_rounded, color: hasText ? const Color(0xFF48D597) : Colors.orange),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
                       hasText
-                          ? 'Smart OCR lefutott${widget.smartOcrSource == null ? '' : ' • kiválasztott forrás: ${widget.smartOcrSource}'}. A jobb OCR-eredményt automatikusan használjuk.'
-                          : 'A feldolgozás lefutott, de az OCR nem talált biztos szöveget. A mezők kézzel is kitölthetők.',
+                          ? 'Smart OCR lefutott${widget.smartOcrSource == null ? '' : ' • forrás: ${widget.smartOcrSource}'}. A scan automatikusan az AIMS Flow-ban marad.'
+                          : 'A feldolgozás lefutott, de az OCR nem talált biztos szöveget. A scan ettől még automatikusan mentésre kerül.',
                       style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, height: 1.35),
                     ),
                   ),
@@ -222,6 +300,29 @@ class _ScanReviewScreenState extends State<ScanReviewScreen> {
                 Expanded(child: _metricCard('Képminőség', '${widget.quality.score} / 100', widget.quality.score / 100, const Color(0xFF48D597))),
               ],
             ),
+            if (location != null) ...[
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF111D28),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: Colors.lightBlueAccent.withValues(alpha: .22)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.location_on_rounded, color: Colors.lightBlueAccent),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Scan helye: ${location.coordinates}\nPontosság: ±${location.accuracyMeters.toStringAsFixed(0)} m',
+                        style: const TextStyle(color: Colors.white70, height: 1.3),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
             if (missing > 0) ...[
               const SizedBox(height: 10),
               Container(
@@ -232,7 +333,7 @@ class _ScanReviewScreenState extends State<ScanReviewScreen> {
                   border: Border.all(color: Colors.orange.withValues(alpha: .25)),
                 ),
                 child: Text(
-                  '$missing mező még hiányzik vagy ellenőrzést igényel. A mentés előtt nézd át a CMR-rel összevetve.',
+                  '$missing mező még hiányzik vagy ellenőrzést igényel.',
                   style: const TextStyle(color: Colors.orangeAccent, fontWeight: FontWeight.w700, height: 1.3),
                 ),
               ),
@@ -244,10 +345,7 @@ class _ScanReviewScreenState extends State<ScanReviewScreen> {
               style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w900),
             ),
             const SizedBox(height: 5),
-            const Text(
-              'Ellenőrizd, javítsd, majd mentsd el. Az automatikus felismerést mindig vesd össze az eredeti dokumentummal.',
-              style: TextStyle(color: Colors.white54),
-            ),
+            const Text('Ellenőrizd és javítsd a szükséges mezőket.', style: TextStyle(color: Colors.white54)),
             const SizedBox(height: 12),
             _field('CMR szám', _cmrNumber),
             _field('Feladó', _shipper, maxLines: 2),
@@ -277,6 +375,21 @@ class _ScanReviewScreenState extends State<ScanReviewScreen> {
             const SizedBox(height: 14),
             _qualityCard(),
             const SizedBox(height: 18),
+            FilledButton.icon(
+              key: const ValueKey('share-mail-viber'),
+              onPressed: _sharing ? null : _share,
+              icon: _sharing
+                  ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.send_rounded),
+              label: Text(_sharing ? 'Küldés…' : 'Küldés • Mail / Viber'),
+              style: FilledButton.styleFrom(
+                minimumSize: const Size.fromHeight(56),
+                backgroundColor: const Color(0xFF48D597),
+                foregroundColor: Colors.black,
+                textStyle: const TextStyle(fontWeight: FontWeight.w900),
+              ),
+            ),
+            const SizedBox(height: 10),
             OutlinedButton.icon(
               key: const ValueKey('copy-summary'),
               onPressed: _copySummary,
@@ -291,13 +404,13 @@ class _ScanReviewScreenState extends State<ScanReviewScreen> {
             const SizedBox(height: 10),
             FilledButton.icon(
               key: const ValueKey('save-offline'),
-              onPressed: _saving ? null : _save,
+              onPressed: _saving ? null : () => _save(),
               icon: _saving
                   ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                  : Icon(_savedDocument == null ? Icons.save_rounded : Icons.check_circle_rounded),
-              label: Text(_saving ? 'Mentés…' : (_savedDocument == null ? 'Mentés offline' : 'Módosítások mentése')),
+                  : const Icon(Icons.check_circle_rounded),
+              label: Text(_saving ? 'Mentés…' : (_savedDocument == null ? 'Mentés az AIMS Flow-ba' : 'Módosítások mentése')),
               style: FilledButton.styleFrom(
-                minimumSize: const Size.fromHeight(56),
+                minimumSize: const Size.fromHeight(54),
                 backgroundColor: const Color(0xFFE6B85C),
                 foregroundColor: Colors.black,
                 textStyle: const TextStyle(fontWeight: FontWeight.w900),
@@ -355,10 +468,7 @@ class _ScanReviewScreenState extends State<ScanReviewScreen> {
           const SizedBox(height: 7),
           Text(
             warnings.isEmpty ? 'A képminőség rendben.' : warnings.join('\n'),
-            style: TextStyle(
-              color: warnings.isEmpty ? const Color(0xFF48D597) : Colors.orangeAccent,
-              height: 1.35,
-            ),
+            style: TextStyle(color: warnings.isEmpty ? const Color(0xFF48D597) : Colors.orangeAccent, height: 1.35),
           ),
         ],
       ),
@@ -387,10 +497,7 @@ class _ScanReviewScreenState extends State<ScanReviewScreen> {
           labelStyle: TextStyle(color: empty ? Colors.orangeAccent : Colors.white54),
           filled: true,
           fillColor: empty ? const Color(0xFF201A13) : const Color(0xFF14181D),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide: BorderSide.none,
-          ),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(14),
             borderSide: const BorderSide(color: Color(0xFFE6B85C)),
