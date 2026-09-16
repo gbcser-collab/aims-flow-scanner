@@ -179,6 +179,16 @@ class ValidationIssue {
 
 enum IssueSeverity { info, warning, error }
 
+enum CmrDeliveryState { localOnly, queued, uploaded, emailed, approved, syncError }
+
+CmrDeliveryState _deliveryStateFromJson(Object? value) {
+  final name = value?.toString();
+  return CmrDeliveryState.values.firstWhere(
+    (item) => item.name == name,
+    orElse: () => CmrDeliveryState.localOnly,
+  );
+}
+
 class ScannedDocument {
   const ScannedDocument({
     required this.id,
@@ -186,6 +196,14 @@ class ScannedDocument {
     required this.imagePath,
     required this.cmr,
     required this.quality,
+    this.deliveryState = CmrDeliveryState.localOnly,
+    this.serverDocumentId,
+    this.uploadedAt,
+    this.emailedAt,
+    this.approvedAt,
+    this.deleteAfter,
+    this.lastSyncAttemptAt,
+    this.lastSyncError,
   });
 
   final String id;
@@ -193,6 +211,47 @@ class ScannedDocument {
   final String imagePath;
   final CmrData cmr;
   final ScanQuality quality;
+  final CmrDeliveryState deliveryState;
+  final String? serverDocumentId;
+  final DateTime? uploadedAt;
+  final DateTime? emailedAt;
+  final DateTime? approvedAt;
+  final DateTime? deleteAfter;
+  final DateTime? lastSyncAttemptAt;
+  final String? lastSyncError;
+
+  bool get isApproved => approvedAt != null || deliveryState == CmrDeliveryState.approved;
+  bool get isEligibleForDeletion => isApproved && deleteAfter != null;
+
+  ScannedDocument copyWith({
+    CmrData? cmr,
+    ScanQuality? quality,
+    CmrDeliveryState? deliveryState,
+    String? serverDocumentId,
+    DateTime? uploadedAt,
+    DateTime? emailedAt,
+    DateTime? approvedAt,
+    DateTime? deleteAfter,
+    DateTime? lastSyncAttemptAt,
+    String? lastSyncError,
+    bool clearLastSyncError = false,
+  }) {
+    return ScannedDocument(
+      id: id,
+      createdAt: createdAt,
+      imagePath: imagePath,
+      cmr: cmr ?? this.cmr,
+      quality: quality ?? this.quality,
+      deliveryState: deliveryState ?? this.deliveryState,
+      serverDocumentId: serverDocumentId ?? this.serverDocumentId,
+      uploadedAt: uploadedAt ?? this.uploadedAt,
+      emailedAt: emailedAt ?? this.emailedAt,
+      approvedAt: approvedAt ?? this.approvedAt,
+      deleteAfter: deleteAfter ?? this.deleteAfter,
+      lastSyncAttemptAt: lastSyncAttemptAt ?? this.lastSyncAttemptAt,
+      lastSyncError: clearLastSyncError ? null : (lastSyncError ?? this.lastSyncError),
+    );
+  }
 
   Map<String, dynamic> toJson() => {
         'id': id,
@@ -205,10 +264,23 @@ class ScannedDocument {
           'glareRatio': quality.glareRatio,
           'documentFillRatio': quality.documentFillRatio,
         },
+        'deliveryState': deliveryState.name,
+        'serverDocumentId': serverDocumentId,
+        'uploadedAt': uploadedAt?.toIso8601String(),
+        'emailedAt': emailedAt?.toIso8601String(),
+        'approvedAt': approvedAt?.toIso8601String(),
+        'deleteAfter': deleteAfter?.toIso8601String(),
+        'lastSyncAttemptAt': lastSyncAttemptAt?.toIso8601String(),
+        'lastSyncError': lastSyncError,
       };
 
   factory ScannedDocument.fromJson(Map<String, dynamic> json) {
     final q = json['quality'] as Map<String, dynamic>;
+    DateTime? parseDate(Object? value) {
+      final text = value?.toString();
+      return text == null || text.isEmpty ? null : DateTime.tryParse(text);
+    }
+
     return ScannedDocument(
       id: json['id'] as String,
       createdAt: DateTime.parse(json['createdAt'] as String),
@@ -220,6 +292,47 @@ class ScannedDocument {
         glareRatio: (q['glareRatio'] as num).toDouble(),
         documentFillRatio: (q['documentFillRatio'] as num).toDouble(),
       ),
+      deliveryState: _deliveryStateFromJson(json['deliveryState']),
+      serverDocumentId: json['serverDocumentId'] as String?,
+      uploadedAt: parseDate(json['uploadedAt']),
+      emailedAt: parseDate(json['emailedAt']),
+      approvedAt: parseDate(json['approvedAt']),
+      deleteAfter: parseDate(json['deleteAfter']),
+      lastSyncAttemptAt: parseDate(json['lastSyncAttemptAt']),
+      lastSyncError: json['lastSyncError'] as String?,
     );
   }
+}
+
+class CmrAuditRecord {
+  const CmrAuditRecord({
+    required this.documentId,
+    required this.createdAt,
+    required this.deletedAt,
+    this.cmrNumber,
+    this.plate,
+    this.serverDocumentId,
+    this.emailedAt,
+    this.approvedAt,
+  });
+
+  final String documentId;
+  final String? cmrNumber;
+  final String? plate;
+  final String? serverDocumentId;
+  final DateTime createdAt;
+  final DateTime? emailedAt;
+  final DateTime? approvedAt;
+  final DateTime deletedAt;
+
+  Map<String, dynamic> toJson() => {
+        'documentId': documentId,
+        'cmrNumber': cmrNumber,
+        'plate': plate,
+        'serverDocumentId': serverDocumentId,
+        'createdAt': createdAt.toIso8601String(),
+        'emailedAt': emailedAt?.toIso8601String(),
+        'approvedAt': approvedAt?.toIso8601String(),
+        'deletedAt': deletedAt.toIso8601String(),
+      };
 }
