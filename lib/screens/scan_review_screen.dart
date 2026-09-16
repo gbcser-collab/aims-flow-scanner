@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../models/scan_models.dart';
+import '../services/cmr_sync_service.dart';
 import '../services/scan_repository.dart';
 
 class ScanReviewScreen extends StatefulWidget {
@@ -28,6 +29,7 @@ class ScanReviewScreen extends StatefulWidget {
 
 class _ScanReviewScreenState extends State<ScanReviewScreen> {
   static const _repository = ScanRepository();
+  static const _sync = CmrSyncService();
 
   late final TextEditingController _cmrNumber;
   late final TextEditingController _shipper;
@@ -42,6 +44,8 @@ class _ScanReviewScreenState extends State<ScanReviewScreen> {
 
   ScannedDocument? _savedDocument;
   bool _saving = false;
+  bool _syncing = false;
+  String? _autoSaveError;
 
   @override
   void initState() {
@@ -58,6 +62,8 @@ class _ScanReviewScreenState extends State<ScanReviewScreen> {
     _packageCount = _controller(cmr.packageCount?.toString());
     _grossWeight = _controller(cmr.grossWeightKg?.toString());
     _goods = _controller(cmr.goodsDescription);
+
+    WidgetsBinding.instance.addPostFrameCallback((_) => _ensurePrivateSaveAndSync());
   }
 
   TextEditingController _controller(String? value) => TextEditingController(text: value ?? '');
@@ -102,6 +108,30 @@ class _ScanReviewScreenState extends State<ScanReviewScreen> {
 
   int _filledFieldCount() => _currentCmr().filledFieldCount;
 
+  Future<void> _ensurePrivateSaveAndSync() async {
+    if (_savedDocument == null) {
+      if (mounted) setState(() => _saving = true);
+      try {
+        final saved = await _repository.saveNew(
+          sourceImagePath: widget.processedImagePath,
+          cmr: _currentCmr(),
+          quality: widget.quality,
+        );
+        if (!mounted) return;
+        setState(() {
+          _savedDocument = saved;
+          _autoSaveError = null;
+        });
+      } catch (error) {
+        if (!mounted) return;
+        setState(() => _autoSaveError = error.toString());
+      } finally {
+        if (mounted) setState(() => _saving = false);
+      }
+    }
+    await _syncNow(silent: true);
+  }
+
   Future<void> _copySummary() async {
     final text = _currentCmr().toPlainText();
     await Clipboard.setData(ClipboardData(text: text));
@@ -124,20 +154,18 @@ class _ScanReviewScreenState extends State<ScanReviewScreen> {
           quality: widget.quality,
         );
       } else {
-        saved = ScannedDocument(
-          id: _savedDocument!.id,
-          createdAt: _savedDocument!.createdAt,
-          imagePath: _savedDocument!.imagePath,
-          cmr: cmr,
-          quality: widget.quality,
-        );
+        saved = _savedDocument!.copyWith(cmr: cmr, quality: widget.quality);
         await _repository.update(saved);
       }
       if (!mounted) return;
-      setState(() => _savedDocument = saved);
+      setState(() {
+        _savedDocument = saved;
+        _autoSaveError = null;
+      });
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('CMR mentve offline.')),
+        const SnackBar(content: Text('CMR az alkalmazás privát tárhelyén mentve.')),
       );
+      await _syncNow(silent: true);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -148,6 +176,61 @@ class _ScanReviewScreenState extends State<ScanReviewScreen> {
     }
   }
 
+  Future<void> _syncNow({bool silent = false}) async {
+    if (_syncing || _savedDocument == null) return;
+    setState(() => _syncing = true);
+    try {
+      final report = await _sync.syncPending();
+      final refreshed = await _repository.findById(_savedDocument!.id);
+      if (!mounted) return;
+      if (refreshed != null) setState(() => _savedDocument = refreshed);
+      if (!silent) {
+        final text = report.notConfigured
+            ? 'A céges szerver még nincs beállítva ebben a buildben.'
+            : report.failed > 0
+                ? 'Szinkron: ${report.succeeded} sikeres, ${report.failed} sikertelen.'
+                : 'Céges szinkron rendben.';
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
+      }
+    } finally {
+      if (mounted) setState(() => _syncing = false);
+    }
+  }
+
+  String _statusTitle(ScannedDocument? document) {
+    if (document == null) return 'Privát mentés folyamatban';
+    switch (document.deliveryState) {
+      case CmrDeliveryState.localOnly:
+        return 'Az appban mentve';
+      case CmrDeliveryState.queued:
+        return 'Küldésre vár';
+      case CmrDeliveryState.uploaded:
+        return 'Szerverre feltöltve';
+      case CmrDeliveryState.emailed:
+        return 'Céges e-mail elküldve';
+      case CmrDeliveryState.approved:
+        return 'Admin jóváhagyta';
+      case CmrDeliveryState.syncError:
+        return 'Szinkronhiba – újrapróbáljuk';
+    }
+  }
+
+  String _statusSubtitle(ScannedDocument? document) {
+    if (_autoSaveError != null) return 'Mentési hiba: $_autoSaveError';
+    if (document == null) return 'A CMR nem kerül a Galériába vagy a Letöltések közé.';
+    if (document.approvedAt != null && document.deleteAfter != null) {
+      return 'Jóváhagyva. Automatikus helyi törlés: ${_formatDate(document.deleteAfter!)} (15 nap).';
+    }
+    if (document.emailedAt != null) return 'Elküldve: ${_formatDate(document.emailedAt!)} • admin jóváhagyásra vár.';
+    if (document.lastSyncError != null) return 'A dokumentum biztonságosan az appban marad és újra próbálkozik.';
+    return 'Privát app-tárhely • automatikus céges szinkron, ha van internet.';
+  }
+
+  String _formatDate(DateTime value) {
+    String two(int value) => value.toString().padLeft(2, '0');
+    return '${value.year}.${two(value.month)}.${two(value.day)} ${two(value.hour)}:${two(value.minute)}';
+  }
+
   @override
   Widget build(BuildContext context) {
     final hasText = widget.cmr.rawText.trim().isNotEmpty;
@@ -155,6 +238,7 @@ class _ScanReviewScreenState extends State<ScanReviewScreen> {
     final completion = filled / 10;
     final imagePath = _savedDocument?.imagePath ?? widget.processedImagePath;
     final missing = 10 - filled;
+    final approved = _savedDocument?.isApproved == true;
 
     return Scaffold(
       backgroundColor: const Color(0xFF0C0F13),
@@ -169,44 +253,37 @@ class _ScanReviewScreenState extends State<ScanReviewScreen> {
           children: [
             Container(
               constraints: const BoxConstraints(maxHeight: 390),
-              decoration: BoxDecoration(
-                color: const Color(0xFF101216),
-                borderRadius: BorderRadius.circular(18),
-              ),
+              decoration: BoxDecoration(color: const Color(0xFF101216), borderRadius: BorderRadius.circular(18)),
               clipBehavior: Clip.antiAlias,
               child: Image.file(
                 File(imagePath),
                 fit: BoxFit.contain,
                 errorBuilder: (_, __, ___) => const SizedBox(
                   height: 220,
-                  child: Center(
-                    child: Text('Az előnézet nem tölthető be.', style: TextStyle(color: Colors.white70)),
-                  ),
+                  child: Center(child: Text('Az előnézet nem tölthető be.', style: TextStyle(color: Colors.white70))),
                 ),
               ),
             ),
+            const SizedBox(height: 12),
+            _lifecycleCard(),
             const SizedBox(height: 14),
             Container(
               padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
                 color: hasText ? const Color(0xFF14231C) : const Color(0xFF2A2113),
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                  color: (hasText ? const Color(0xFF48D597) : Colors.orange).withValues(alpha: .35),
-                ),
+                border: Border.all(color: (hasText ? const Color(0xFF48D597) : Colors.orange).withValues(alpha: .35)),
               ),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(
-                    hasText ? Icons.auto_awesome_rounded : Icons.warning_amber_rounded,
-                    color: hasText ? const Color(0xFF48D597) : Colors.orange,
-                  ),
+                  Icon(hasText ? Icons.auto_awesome_rounded : Icons.warning_amber_rounded,
+                      color: hasText ? const Color(0xFF48D597) : Colors.orange),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
                       hasText
-                          ? 'Smart OCR lefutott${widget.smartOcrSource == null ? '' : ' • kiválasztott forrás: ${widget.smartOcrSource}'}. A jobb OCR-eredményt automatikusan használjuk.'
+                          ? 'Smart OCR lefutott${widget.smartOcrSource == null ? '' : ' • forrás: ${widget.smartOcrSource}'}. A jobb OCR-eredményt használjuk.'
                           : 'A feldolgozás lefutott, de az OCR nem talált biztos szöveget. A mezők kézzel is kitölthetők.',
                       style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, height: 1.35),
                     ),
@@ -232,33 +309,42 @@ class _ScanReviewScreenState extends State<ScanReviewScreen> {
                   border: Border.all(color: Colors.orange.withValues(alpha: .25)),
                 ),
                 child: Text(
-                  '$missing mező még hiányzik vagy ellenőrzést igényel. A mentés előtt nézd át a CMR-rel összevetve.',
-                  style: const TextStyle(color: Colors.orangeAccent, fontWeight: FontWeight.w700, height: 1.3),
+                  '$missing mező még hiányzik vagy ellenőrzést igényel.',
+                  style: const TextStyle(color: Colors.orangeAccent, fontWeight: FontWeight.w700),
                 ),
               ),
             ],
             const SizedBox(height: 18),
-            const Text(
-              'Felismert CMR adatok',
-              key: ValueKey('cmr-results-title'),
-              style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w900),
-            ),
+            const Text('Felismert CMR adatok', key: ValueKey('cmr-results-title'),
+                style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w900)),
             const SizedBox(height: 5),
-            const Text(
-              'Ellenőrizd, javítsd, majd mentsd el. Az automatikus felismerést mindig vesd össze az eredeti dokumentummal.',
-              style: TextStyle(color: Colors.white54),
+            Text(
+              approved
+                  ? 'A dokumentumot az admin már jóváhagyta; az adatok csak megtekintésre szolgálnak.'
+                  : 'Ellenőrizd és javítsd, ha szükséges. A kép automatikusan az app privát tárhelyére került.',
+              style: const TextStyle(color: Colors.white54),
             ),
             const SizedBox(height: 12),
-            _field('CMR szám', _cmrNumber),
-            _field('Feladó', _shipper, maxLines: 2),
-            _field('Címzett', _consignee, maxLines: 2),
-            _field('Felrakóhely', _loadingPlace, maxLines: 2),
-            _field('Lerakóhely', _deliveryPlace, maxLines: 2),
-            _field('Dátum', _date),
-            _field('Rendszám', _plate, textCapitalization: TextCapitalization.characters),
-            _field('Darabszám', _packageCount, keyboardType: TextInputType.number),
-            _field('Bruttó tömeg (kg)', _grossWeight, keyboardType: const TextInputType.numberWithOptions(decimal: true)),
-            _field('Áru', _goods, maxLines: 3),
+            AbsorbPointer(
+              absorbing: approved,
+              child: Opacity(
+                opacity: approved ? .72 : 1,
+                child: Column(
+                  children: [
+                    _field('CMR szám', _cmrNumber),
+                    _field('Feladó', _shipper, maxLines: 2),
+                    _field('Címzett', _consignee, maxLines: 2),
+                    _field('Felrakóhely', _loadingPlace, maxLines: 2),
+                    _field('Lerakóhely', _deliveryPlace, maxLines: 2),
+                    _field('Dátum', _date),
+                    _field('Rendszám', _plate, textCapitalization: TextCapitalization.characters),
+                    _field('Darabszám', _packageCount, keyboardType: TextInputType.number),
+                    _field('Bruttó tömeg (kg)', _grossWeight, keyboardType: const TextInputType.numberWithOptions(decimal: true)),
+                    _field('Áru', _goods, maxLines: 3),
+                  ],
+                ),
+              ),
+            ),
             const SizedBox(height: 8),
             ExpansionTile(
               collapsedIconColor: Colors.white60,
@@ -282,40 +368,76 @@ class _ScanReviewScreenState extends State<ScanReviewScreen> {
               onPressed: _copySummary,
               icon: const Icon(Icons.copy_all_rounded),
               label: const Text('CMR összegzés másolása'),
-              style: OutlinedButton.styleFrom(
-                minimumSize: const Size.fromHeight(50),
-                foregroundColor: Colors.white,
-                side: const BorderSide(color: Colors.white24),
-              ),
+              style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(50), foregroundColor: Colors.white, side: const BorderSide(color: Colors.white24)),
             ),
             const SizedBox(height: 10),
-            FilledButton.icon(
-              key: const ValueKey('save-offline'),
-              onPressed: _saving ? null : _save,
-              icon: _saving
-                  ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                  : Icon(_savedDocument == null ? Icons.save_rounded : Icons.check_circle_rounded),
-              label: Text(_saving ? 'Mentés…' : (_savedDocument == null ? 'Mentés offline' : 'Módosítások mentése')),
-              style: FilledButton.styleFrom(
-                minimumSize: const Size.fromHeight(56),
-                backgroundColor: const Color(0xFFE6B85C),
-                foregroundColor: Colors.black,
-                textStyle: const TextStyle(fontWeight: FontWeight.w900),
+            if (!approved)
+              FilledButton.icon(
+                key: const ValueKey('save-offline'),
+                onPressed: _saving ? null : _save,
+                icon: _saving
+                    ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Icon(Icons.shield_rounded),
+                label: Text(_saving ? 'Mentés…' : 'Módosítások mentése az appba'),
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size.fromHeight(56),
+                  backgroundColor: const Color(0xFFE6B85C),
+                  foregroundColor: Colors.black,
+                  textStyle: const TextStyle(fontWeight: FontWeight.w900),
+                ),
               ),
+            const SizedBox(height: 10),
+            OutlinedButton.icon(
+              onPressed: _syncing ? null : () => _syncNow(),
+              icon: _syncing
+                  ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.cloud_sync_rounded),
+              label: Text(_syncing ? 'Szinkron…' : 'Céges szinkron most'),
+              style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(52), foregroundColor: Colors.white, side: const BorderSide(color: Colors.white24)),
             ),
             const SizedBox(height: 10),
             OutlinedButton.icon(
               onPressed: () => Navigator.of(context).popUntil((route) => route.isFirst),
               icon: const Icon(Icons.document_scanner_rounded),
               label: const Text('Új CMR fotózása'),
-              style: OutlinedButton.styleFrom(
-                minimumSize: const Size.fromHeight(52),
-                foregroundColor: Colors.white,
-                side: const BorderSide(color: Colors.white24),
-              ),
+              style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(52), foregroundColor: Colors.white, side: const BorderSide(color: Colors.white24)),
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _lifecycleCard() {
+    final document = _savedDocument;
+    final stateColor = document?.deliveryState == CmrDeliveryState.syncError
+        ? Colors.orangeAccent
+        : document?.isApproved == true
+            ? const Color(0xFF48D597)
+            : const Color(0xFFE6B85C);
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFF14181D),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: stateColor.withValues(alpha: .32)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(document?.isApproved == true ? Icons.verified_user_rounded : Icons.lock_rounded, color: stateColor),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(_statusTitle(document), style: TextStyle(color: stateColor, fontWeight: FontWeight.w900)),
+                const SizedBox(height: 4),
+                Text(_statusSubtitle(document), style: const TextStyle(color: Colors.white70, height: 1.35)),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -331,13 +453,7 @@ class _ScanReviewScreenState extends State<ScanReviewScreen> {
           const SizedBox(height: 5),
           Text(value, style: TextStyle(color: color, fontSize: 20, fontWeight: FontWeight.w900)),
           const SizedBox(height: 8),
-          LinearProgressIndicator(
-            value: progress.clamp(0, 1),
-            minHeight: 6,
-            borderRadius: BorderRadius.circular(8),
-            color: color,
-            backgroundColor: Colors.white12,
-          ),
+          LinearProgressIndicator(value: progress.clamp(0, 1), minHeight: 6, borderRadius: BorderRadius.circular(8), color: color, backgroundColor: Colors.white12),
         ],
       ),
     );
@@ -355,10 +471,7 @@ class _ScanReviewScreenState extends State<ScanReviewScreen> {
           const SizedBox(height: 7),
           Text(
             warnings.isEmpty ? 'A képminőség rendben.' : warnings.join('\n'),
-            style: TextStyle(
-              color: warnings.isEmpty ? const Color(0xFF48D597) : Colors.orangeAccent,
-              height: 1.35,
-            ),
+            style: TextStyle(color: warnings.isEmpty ? const Color(0xFF48D597) : Colors.orangeAccent, height: 1.35),
           ),
         ],
       ),
@@ -387,14 +500,8 @@ class _ScanReviewScreenState extends State<ScanReviewScreen> {
           labelStyle: TextStyle(color: empty ? Colors.orangeAccent : Colors.white54),
           filled: true,
           fillColor: empty ? const Color(0xFF201A13) : const Color(0xFF14181D),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide: BorderSide.none,
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide: const BorderSide(color: Color(0xFFE6B85C)),
-          ),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
+          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Color(0xFFE6B85C))),
         ),
       ),
     );
