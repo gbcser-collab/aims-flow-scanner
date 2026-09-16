@@ -29,7 +29,7 @@ class NailFitV3Home extends StatelessWidget {
         Expanded(child: nfQuick(Icons.person_outline_rounded, 'Stílusprofil', 'Ajánlásaid', () => c.go(4))),
       ]),
       const SizedBox(height: 18),
-      Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Expanded(flex: 3, child: _match()),
         const SizedBox(width: 10),
         Expanded(flex: 2, child: _season()),
