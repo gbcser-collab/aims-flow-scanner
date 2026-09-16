@@ -1,74 +1,31 @@
-# AIMS Flow Smart Scanner
+# AIMS Flow
 
-Saját CMR-scanner Flutter alkalmazás a Logistic-A.I.M.S. munkafolyamataihoz.
+AIMS Flow is the Android driver-operations application for Logistic-A.I.M.S. It combines freight execution, CMR scanning/OCR, GPS tracking, offline-first persistence and synchronization in one driver-facing workflow.
 
-## Aktuális fejlesztési verzió: v0.7
+## Driver workflow
 
-A v0.6 END-TO-END PASSED alapra építve a v0.7 már nem csak felismeri a dokumentumot, hanem használható offline munkafolyamatot is ad hozzá:
+The main navigation is intentionally reduced to three operational areas:
 
-- kamera-előnézet és saját AIMS scanner overlay
-- saját dokumentumélek-becslés Sobel-gradienssel
-- saját négypontos perspektíva-korrekció / bilineáris warp
-- automatikus kontrasztjavítás
-- élesség-, fényerő-, becsillanás- és dokumentumméret-ellenőrzés
-- on-device Latin OCR a Google ML Kit natív motorján keresztül
-- saját CMR-parser: CMR szám, feladó, címzett, fel-/lerakóhely, dátum, rendszám, darabszám, tömeg, áru
-- szerkeszthető OCR/CMR mezők mentés előtt
-- kitöltöttségi visszajelzés
-- offline CMR mentés a készülék alkalmazás-tárhelyére
-- mentési előzmények a kezdőlapon
-- mentett CMR újranyitása és módosítása
-- mentett dokumentum törlése
-- E2E teszt: kamera → fotó → dokumentumfeldolgozás → OCR → CMR eredmény → offline mentés → újraindítás → mentés visszatöltése
+- **FUVAR** — active freight, stage progression, route, checklist, incidents, waiting time, evidence, notes and manual sync.
+- **SCANNER** — camera-based CMR capture, image processing, OCR, structured CMR fields and offline document queue.
+- **FLOW** — system health, GPS/CMR queue, event log and synchronization status.
 
-## Fontos architekturális döntés
+The freight lifecycle is represented as a real state machine:
 
-A dokumentum-scanner logika nem külső scanner SDK: a detektálás, perspektíva-korrekció, minőségmérés és CMR-értelmezés a projekt saját Dart kódja. Külső komponensből a kamera plugin és az OCR motor kerül felhasználásra.
+`KIADVA → ELFOGADVA → ÚTON FELRAKÓRA → FELRAKÓN → FELRAKVA → ÚTON LERAKÓRA → LERAKÓN → CMR ELLENŐRZÉS → TELJESÍTVE → ADMIN JÓVÁHAGYVA`
 
-A v0.7 offline mentése JSON-indexet és a feldolgozott CMR-képek tartós másolatát használja az alkalmazás saját dokumentumtárában. Egy sérült előzménybejegyzés nem blokkolhatja a scanner indulását.
+## Offline-first behavior
 
-## Követelmény
+Driver-operation state is persisted locally as JSON using an atomic temporary-file replacement. CMR and GPS already maintain their own local queues. If the backend is unavailable, the app stays usable and queued data can be retried from the FLOW view.
 
-A függőségek jelenlegi verziói miatt ajánlott:
+## Safety gates
 
-- Flutter >= 3.44
-- Dart >= 3.12
-- Android minSdk legalább 24
-- iOS deployment target legalább 15.5
+- The driver cannot start the pickup leg until the pre-trip checklist is complete.
+- Critical incidents are visually separated in the event log.
+- Waiting time is measured and persisted across app restarts.
+- CMR and GPS queue counts are surfaced on the freight dashboard.
+- Device approval/revocation state is visible to the driver.
 
-## Indítás
+## Android build
 
-Ha a platform könyvtárak még nincsenek generálva:
-
-```bash
-flutter create --platforms=android,ios .
-flutter pub get
-```
-
-Ezután a kamera permission beállításokat össze kell vezetni a generált Android/iOS projekttel.
-
-Majd:
-
-```bash
-flutter run
-```
-
-## Teszt
-
-```bash
-flutter test
-flutter analyze
-```
-
-A GitHub Actions Android workflow API 35 emulátoron végigfuttatja a teljes Smart Scanner folyamatot, és tesztbizonyítékokat ment.
-
-## Következő fejlesztési lépcső
-
-1. élő kamera-frame alapú automatikus dokumentumkeret és auto-capture
-2. kézzel állítható négy sarok, ha az automata detektálás bizonytalan
-3. aláírás/bélyegző jelenlét-detektálás
-4. többoldalas scan + PDF export
-5. CMR sablonok régiónként / nyelvenként
-6. backend szinkron, felhasználók, admin/sofőr jogosultságok, 2FA, push
-7. fuvaradatok automatikus összevetése a CMR-rel
-8. audit log és GDPR-adatmegőrzés
+The `flow-production` branch is built by `.github/workflows/flow-android.yml`. CI checks branding, runs static analysis, executes the CMR parser and freight-flow tests, builds the debug APK, performs a non-empty artifact sanity check, calculates SHA-256 and publishes `AIMS-Flow-debug.apk`.
