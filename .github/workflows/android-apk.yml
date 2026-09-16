@@ -2,7 +2,7 @@ name: Build and deep-test Android APK
 
 on:
   push:
-    branches: [ main, v0.8-dev, v0.9-pro, v1.0-driver ]
+    branches: [ main, v0.8-dev, v0.9-pro, v1.0-driver, v1.1-tracking ]
   workflow_dispatch:
 
 jobs:
@@ -47,6 +47,9 @@ jobs:
           permissions = '''<manifest xmlns:android="http://schemas.android.com/apk/res/android">
               <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
               <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+              <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
               <uses-permission android:name="android.permission.INTERNET" />'''
           if 'android.permission.ACCESS_FINE_LOCATION' not in text:
               text = text.replace(marker, permissions)
@@ -75,7 +78,7 @@ jobs:
       - name: Upload APK before device test
         uses: actions/upload-artifact@v4
         with:
-          name: AIMS-Flow-Smart-Scanner-v1.0-DRIVER-END-TO-END
+          name: AIMS-Flow-Smart-Scanner-v1.1-TRACKING-END-TO-END
           path: build/app/outputs/flutter-apk/app-debug.apk
           if-no-files-found: error
 
@@ -93,6 +96,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: AIMS-Flow-Scanner-v1.0-DRIVER-test-evidence
+          name: AIMS-Flow-Scanner-v1.1-TRACKING-test-evidence
           path: test-evidence/
           if-no-files-found: warn
