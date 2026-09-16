@@ -4,6 +4,7 @@ analyzer:
   errors:
     unnecessary_import: ignore
     unused_import: ignore
+    prefer_const_constructors: ignore
 linter:
   rules:
     avoid_print: true
