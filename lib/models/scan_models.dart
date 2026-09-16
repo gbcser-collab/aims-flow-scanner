@@ -76,6 +76,36 @@ class ScanProcessingResult {
   final ScanQuality quality;
 }
 
+class ScanLocation {
+  const ScanLocation({
+    required this.latitude,
+    required this.longitude,
+    required this.accuracyMeters,
+    required this.capturedAt,
+  });
+
+  final double latitude;
+  final double longitude;
+  final double accuracyMeters;
+  final DateTime capturedAt;
+
+  String get coordinates => '${latitude.toStringAsFixed(6)}, ${longitude.toStringAsFixed(6)}';
+
+  Map<String, dynamic> toJson() => {
+        'latitude': latitude,
+        'longitude': longitude,
+        'accuracyMeters': accuracyMeters,
+        'capturedAt': capturedAt.toIso8601String(),
+      };
+
+  factory ScanLocation.fromJson(Map<String, dynamic> json) => ScanLocation(
+        latitude: (json['latitude'] as num).toDouble(),
+        longitude: (json['longitude'] as num).toDouble(),
+        accuracyMeters: (json['accuracyMeters'] as num?)?.toDouble() ?? 0,
+        capturedAt: DateTime.tryParse(json['capturedAt'] as String? ?? '') ?? DateTime.now(),
+      );
+}
+
 class CmrData {
   const CmrData({
     this.cmrNumber,
@@ -186,6 +216,7 @@ class ScannedDocument {
     required this.imagePath,
     required this.cmr,
     required this.quality,
+    this.location,
   });
 
   final String id;
@@ -193,6 +224,7 @@ class ScannedDocument {
   final String imagePath;
   final CmrData cmr;
   final ScanQuality quality;
+  final ScanLocation? location;
 
   Map<String, dynamic> toJson() => {
         'id': id,
@@ -205,10 +237,12 @@ class ScannedDocument {
           'glareRatio': quality.glareRatio,
           'documentFillRatio': quality.documentFillRatio,
         },
+        'location': location?.toJson(),
       };
 
   factory ScannedDocument.fromJson(Map<String, dynamic> json) {
     final q = json['quality'] as Map<String, dynamic>;
+    final rawLocation = json['location'];
     return ScannedDocument(
       id: json['id'] as String,
       createdAt: DateTime.parse(json['createdAt'] as String),
@@ -220,6 +254,9 @@ class ScannedDocument {
         glareRatio: (q['glareRatio'] as num).toDouble(),
         documentFillRatio: (q['documentFillRatio'] as num).toDouble(),
       ),
+      location: rawLocation is Map
+          ? ScanLocation.fromJson(Map<String, dynamic>.from(rawLocation))
+          : null,
     );
   }
 }
