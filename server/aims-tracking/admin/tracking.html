@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="hu">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AIMS Flow • Járműkövetés</title>
+  <link rel="preconnect" href="https://unpkg.com" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    :root{--bg:#0c0f13;--panel:#15191f;--panel2:#1c2128;--gold:#e6b85c;--green:#48d597;--text:#fff;--muted:#87909b;--danger:#ff6b6b}
+    *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;overflow:hidden}
+    .app{height:100vh;display:grid;grid-template-columns:330px 1fr}.side{background:#0f1217;border-right:1px solid #232a32;display:flex;flex-direction:column;min-width:0}
+    .brand{padding:20px;border-bottom:1px solid #232a32}.kicker{color:var(--gold);font-weight:900;letter-spacing:.14em;font-size:12px}.brand h1{font-size:25px;margin:5px 0}.brand p{margin:0;color:var(--muted)}
+    .summary{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:12px}.stat{background:var(--panel);border:1px solid #252d36;border-radius:14px;padding:12px}.stat b{display:block;font-size:22px;color:var(--gold)}.stat span{color:var(--muted);font-size:12px}
+    .toolbar{padding:0 12px 12px;display:flex;gap:8px}.toolbar select,.toolbar button,.login input{background:var(--panel2);border:1px solid #323b46;color:#fff;border-radius:10px;padding:10px}.toolbar select{flex:1}.toolbar button{cursor:pointer}
+    .vehicles{overflow:auto;padding:0 12px 18px;display:flex;flex-direction:column;gap:8px}.vehicle{background:var(--panel);border:1px solid #252d36;border-radius:15px;padding:13px;cursor:pointer;transition:.15s}.vehicle:hover,.vehicle.active{border-color:rgba(230,184,92,.72);transform:translateY(-1px)}
+    .row{display:flex;align-items:center;gap:8px}.dot{width:9px;height:9px;border-radius:50%;background:#68717c}.dot.online{background:var(--green);box-shadow:0 0 0 5px rgba(72,213,151,.08)}.vname{font-weight:900;font-size:16px;flex:1}.ago{color:var(--muted);font-size:11px}.meta{color:#b6bec8;margin-top:7px;display:flex;gap:12px;flex-wrap:wrap}.meta b{color:#fff}
+    #map{height:100vh;width:100%;background:#111}.map-wrap{position:relative}.topbar{position:absolute;z-index:700;top:14px;left:14px;right:14px;display:flex;gap:10px;pointer-events:none}.pill{pointer-events:auto;background:rgba(12,15,19,.92);backdrop-filter:blur(12px);border:1px solid #303843;color:white;border-radius:13px;padding:10px 13px;box-shadow:0 8px 30px rgba(0,0,0,.25)}.pill strong{color:var(--gold)}
+    .login{position:fixed;inset:0;z-index:5000;background:#090c10;display:grid;place-items:center}.login-card{width:min(420px,calc(100vw - 32px));background:var(--panel);border:1px solid #2c343e;border-radius:24px;padding:26px}.login h2{margin:4px 0 8px;font-size:28px}.login p{color:var(--muted)}.login input{width:100%;margin:8px 0 12px}.login button{width:100%;background:var(--gold);color:#111;border:0;border-radius:11px;padding:12px;font-weight:900;cursor:pointer}.err{color:#ff9696;margin-top:10px}.hidden{display:none!important}
+    .leaflet-popup-content-wrapper,.leaflet-popup-tip{background:#171c22;color:#fff}.leaflet-control-zoom a{background:#15191f!important;color:white!important;border-color:#2d3540!important}
+    @media(max-width:820px){body{overflow:auto}.app{display:block;height:auto}.side{height:auto;border-right:0}.map-wrap,#map{height:70vh}.vehicles{max-height:42vh}}
+  </style>
+</head>
+<body>
+<div id="login" class="login">
+  <div class="login-card">
+    <div class="kicker">LOGISTIC-A.I.M.S. • ADMIN</div>
+    <h2>Élő járműkövetés</h2>
+    <p>Az admin token csak ebben a böngészőfülben marad. Nincs beleégetve az oldal forrásába.</p>
+    <input id="token" type="password" autocomplete="current-password" placeholder="Admin tracking token" />
+    <button id="loginBtn">Belépés</button>
+    <div id="loginError" class="err"></div>
+  </div>
+</div>
+
+<div class="app">
+  <aside class="side">
+    <div class="brand">
+      <div class="kicker">AIMS FLOW • CONTROL</div>
+      <h1>Járműkövetés</h1>
+      <p>Élő pozíciók, útvonal és utolsó kapcsolat.</p>
+    </div>
+    <div class="summary">
+      <div class="stat"><b id="onlineCount">0</b><span>online jármű</span></div>
+      <div class="stat"><b id="totalCount">0</b><span>összes tracker</span></div>
+    </div>
+    <div class="toolbar">
+      <select id="range">
+        <option value="60">utolsó 1 óra</option>
+        <option value="180" selected>utolsó 3 óra</option>
+        <option value="720">utolsó 12 óra</option>
+        <option value="1440">utolsó 24 óra</option>
+      </select>
+      <button id="refreshBtn" title="Frissítés">↻</button>
+    </div>
+    <div id="vehicles" class="vehicles"></div>
+  </aside>
+  <main class="map-wrap">
+    <div class="topbar">
+      <div class="pill">Frissítés: <strong>10 mp</strong></div>
+      <div class="pill" id="selectedInfo">Nincs kiválasztott jármű</div>
+    </div>
+    <div id="map"></div>
+  </main>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const API='../feed.php';
+let token=sessionStorage.getItem('aimsTrackingAdminToken')||'';
+let selected='';
+let latest=[];
+let markers=new Map();
+let trailLayer=null;
+let timer=null;
+
+const map=L.map('map',{zoomControl:true}).setView([47.4979,19.0402],7);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(map);
+
+function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));}
+function age(ts){const d=(Date.now()-new Date(ts).getTime())/1000;if(d<60)return Math.max(0,Math.floor(d))+' mp';if(d<3600)return Math.floor(d/60)+' p';if(d<86400)return Math.floor(d/3600)+' ó';return Math.floor(d/86400)+' nap';}
+function isOnline(v){return Date.now()-new Date(v.receivedAt).getTime()<120000;}
+function vehicleName(v){return (v.vehicleLabel&&v.vehicleLabel.trim())||v.deviceId;}
+
+async function api(params={}){
+  const url=new URL(API,location.href);Object.entries(params).forEach(([k,v])=>url.searchParams.set(k,v));
+  const r=await fetch(url,{headers:{Authorization:'Bearer '+token},cache:'no-store'});
+  if(r.status===401)throw new Error('unauthorized');
+  if(!r.ok)throw new Error('HTTP '+r.status);
+  return r.json();
+}
+
+async function login(){
+  token=document.getElementById('token').value.trim();document.getElementById('loginError').textContent='';
+  try{await api();sessionStorage.setItem('aimsTrackingAdminToken',token);document.getElementById('login').classList.add('hidden');start();}
+  catch(e){document.getElementById('loginError').textContent=e.message==='unauthorized'?'Hibás admin token.':'A tracker API nem érhető el.';}
+}
+
+document.getElementById('loginBtn').onclick=login;document.getElementById('token').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
+
+function renderVehicles(){
+  const root=document.getElementById('vehicles');root.innerHTML='';
+  document.getElementById('totalCount').textContent=latest.length;
+  document.getElementById('onlineCount').textContent=latest.filter(isOnline).length;
+  latest.forEach(v=>{
+    const el=document.createElement('div');el.className='vehicle'+(selected===v.deviceId?' active':'');
+    el.innerHTML=`<div class="row"><span class="dot ${isOnline(v)?'online':''}"></span><span class="vname">${esc(vehicleName(v))}</span><span class="ago">${age(v.receivedAt)}</span></div><div class="meta"><span>seb.: <b>${v.speedKmh==null?'—':Math.round(v.speedKmh)+' km/h'}</b></span><span>pont.: <b>${v.accuracy==null?'—':'±'+Math.round(v.accuracy)+' m'}</b></span></div>`;
+    el.onclick=()=>selectVehicle(v.deviceId,true);root.appendChild(el);
+  });
+}
+
+function updateMarkers(){
+  const seen=new Set();
+  latest.forEach(v=>{
+    seen.add(v.deviceId);let m=markers.get(v.deviceId);
+    if(!m){m=L.circleMarker([v.latitude,v.longitude],{radius:9,weight:3,color:isOnline(v)?'#48d597':'#89919b',fillColor:'#0c0f13',fillOpacity:1}).addTo(map);markers.set(v.deviceId,m);}
+    else{m.setLatLng([v.latitude,v.longitude]);m.setStyle({color:isOnline(v)?'#48d597':'#89919b'});}
+    m.bindPopup(`<b>${esc(vehicleName(v))}</b><br>${esc(v.latitude.toFixed(5)+', '+v.longitude.toFixed(5))}<br>${v.speedKmh==null?'':Math.round(v.speedKmh)+' km/h<br>'}utolsó adat: ${esc(age(v.receivedAt))}`);
+  });
+  for(const [id,m] of markers){if(!seen.has(id)){map.removeLayer(m);markers.delete(id);}}
+}
+
+async function selectVehicle(id,focus=false){
+  selected=id;renderVehicles();const v=latest.find(x=>x.deviceId===id);if(v){document.getElementById('selectedInfo').innerHTML=`<strong>${esc(vehicleName(v))}</strong> • ${esc(age(v.receivedAt))}`;if(focus)map.setView([v.latitude,v.longitude],14);}
+  try{const data=await api({device:id,minutes:document.getElementById('range').value});if(trailLayer)map.removeLayer(trailLayer);const pts=data.trail.map(p=>[p.latitude,p.longitude]);if(pts.length>1){trailLayer=L.polyline(pts,{color:'#e6b85c',weight:4,opacity:.85}).addTo(map);} }
+  catch(e){console.warn(e);}
+}
+
+async function refresh(){
+  try{const data=await api(selected?{device:selected,minutes:document.getElementById('range').value}:{});latest=data.vehicles||[];renderVehicles();updateMarkers();if(selected&&data.trail){if(trailLayer)map.removeLayer(trailLayer);const pts=data.trail.map(p=>[p.latitude,p.longitude]);if(pts.length>1)trailLayer=L.polyline(pts,{color:'#e6b85c',weight:4,opacity:.85}).addTo(map);} }
+  catch(e){if(e.message==='unauthorized'){sessionStorage.removeItem('aimsTrackingAdminToken');location.reload();}}
+}
+
+function start(){refresh();clearInterval(timer);timer=setInterval(refresh,10000);}
+document.getElementById('refreshBtn').onclick=refresh;document.getElementById('range').onchange=()=>selected?selectVehicle(selected,false):refresh();
+if(token){document.getElementById('login').classList.add('hidden');start();}
+</script>
+</body>
+</html>
