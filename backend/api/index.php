@@ -37,11 +37,26 @@ function bearer_token(): string {
     $header = $_SERVER['HTTP_AUTHORIZATION'] ?? '';
     return preg_match('/^Bearer\s+(.+)$/i', $header, $m) ? trim($m[1]) : '';
 }
-function require_device_auth(): void {
-    $expected = envv('AIMS_DEVICE_TOKEN');
-    if ($expected === '') json_response(['error' => 'device_auth_not_configured'], 503);
-    $got = bearer_token();
-    if ($got === '' || !hash_equals($expected, $got)) json_response(['error' => 'unauthorized_device'], 401);
+function device_id_header(): string { return trim((string)($_SERVER['HTTP_X_AIMS_DEVICE_ID'] ?? '')); }
+function authenticate_device(bool $requireApproved = true): array {
+    $deviceId = device_id_header();
+    $secret = bearer_token();
+    if ($deviceId !== '' && $secret !== '') {
+        $db = db_read();
+        $row = $db['devices'][$deviceId] ?? null;
+        if (!is_array($row) || empty($row['secret_hash']) || !hash_equals((string)$row['secret_hash'], hash('sha256', $secret))) {
+            json_response(['error' => 'unauthorized_device'], 401);
+        }
+        $state = (string)($row['state'] ?? 'pending');
+        if ($requireApproved && $state !== 'approved') {
+            json_response(['error' => $state === 'revoked' ? 'device_revoked' : 'device_pending', 'deviceState' => $state], 403);
+        }
+        return $row;
+    }
+    // Temporary legacy support for pre-enrollment builds. Remove after migration.
+    $legacy = envv('AIMS_DEVICE_TOKEN');
+    if ($legacy !== '' && $secret !== '' && hash_equals($legacy, $secret)) return ['id'=>'legacy','state'=>'approved'];
+    json_response(['error' => 'unauthorized_device'], 401);
 }
 function start_admin_session(): void {
     if (session_status() === PHP_SESSION_ACTIVE) return;
@@ -64,9 +79,10 @@ function storage_dir(): string {
     return rtrim($dir, '/');
 }
 function db_path(): string { return storage_dir() . '/aims-db.json'; }
-function empty_db(): array { return ['documents'=>[], 'audit'=>[]]; }
+function empty_db(): array { return ['devices'=>[], 'documents'=>[], 'audit'=>[]]; }
 function normalize_db(mixed $db): array {
     if (!is_array($db)) return empty_db();
+    if (!isset($db['devices']) || !is_array($db['devices'])) $db['devices'] = [];
     if (!isset($db['documents']) || !is_array($db['documents'])) $db['documents'] = [];
     if (!isset($db['audit']) || !is_array($db['audit'])) $db['audit'] = [];
     return $db;
@@ -159,8 +175,28 @@ $method=strtoupper($_SERVER['REQUEST_METHOD']??'GET'); $path=request_path();
 try {
     if($method==='GET' && $path==='/health'){ db_read(); json_response(['ok'=>true,'service'=>'aims-flow-cmr','time'=>now_iso()]); }
 
+    if($method==='POST' && $path==='/device/enroll'){
+        $payload=body_json(); $deviceId=trim((string)($payload['deviceId']??'')); $secret=(string)($payload['secret']??''); $label=trim((string)($payload['label']??'Android készülék'));
+        if(strlen($deviceId)<32 || strlen($secret)<32)json_response(['error'=>'invalid_device_credentials'],422);
+        $secretHash=hash('sha256',$secret); $now=now_iso();
+        $row=db_mutate(function(array $db)use($deviceId,$secretHash,$label,$now){
+            $existing=$db['devices'][$deviceId]??null;
+            if(is_array($existing)){if(!hash_equals((string)($existing['secret_hash']??''),$secretHash))return[$db,['conflict'=>true]];return[$db,$existing];}
+            $device=['id'=>$deviceId,'label'=>$label?:'Android készülék','state'=>'pending','secret_hash'=>$secretHash,'created_at'=>$now,'updated_at'=>$now,'approved_at'=>null,'revoked_at'=>null,'last_seen_at'=>$now];
+            $db['devices'][$deviceId]=$device; return[$db,$device];
+        });
+        if(!empty($row['conflict']))json_response(['error'=>'device_id_conflict'],409);
+        audit('device_enrolled',$deviceId,$deviceId,['label'=>$label]);
+        json_response(['deviceId'=>$deviceId,'state'=>$row['state']??'pending']);
+    }
+    if($method==='GET' && $path==='/device/status'){
+        $row=authenticate_device(false); $deviceId=(string)($row['id']??device_id_header());
+        if($deviceId!=='legacy')db_mutate(function(array $db)use($deviceId){if(isset($db['devices'][$deviceId])){$db['devices'][$deviceId]['last_seen_at']=now_iso();$db['devices'][$deviceId]['updated_at']=now_iso();}return[$db,null];});
+        json_response(['deviceId'=>$deviceId,'state'=>$row['state']??'approved']);
+    }
+
     if($method==='POST' && $path==='/cmr/sync'){
-        require_device_auth(); $payload=body_json(); $localId=trim((string)($payload['localId']??'')); $deviceId=trim((string)($payload['deviceId']??''));
+        authenticate_device(true); $payload=body_json(); $localId=trim((string)($payload['localId']??'')); $deviceId=trim((string)($payload['deviceId']??''));
         if($localId===''||$deviceId==='')json_response(['error'=>'localId_and_deviceId_required'],422);
         $db=db_read(); foreach($db['documents'] as $row){if(($row['local_id']??'')===$localId&&($row['device_id']??'')===$deviceId)json_response(public_state($row));}
         $id=random_id(); $received=now_iso(); $pathSaved=save_image(is_array($payload['image']??null)?$payload['image']:[],$id); $createdAt=trim((string)($payload['createdAt']??''))?:$received;
@@ -173,10 +209,13 @@ try {
         json_response(public_state($row),201);
     }
 
-    if($method==='GET' && $path==='/cmr/status'){require_device_auth();$row=cmr_row(trim((string)($_GET['serverDocumentId']??'')),trim((string)($_GET['localId']??'')));if(!$row)json_response(['error'=>'not_found'],404);json_response(public_state($row));}
+    if($method==='GET' && $path==='/cmr/status'){authenticate_device(true);$row=cmr_row(trim((string)($_GET['serverDocumentId']??'')),trim((string)($_GET['localId']??'')));if(!$row)json_response(['error'=>'not_found'],404);json_response(public_state($row));}
 
     if($method==='POST' && $path==='/admin/login'){start_admin_session();$payload=body_json();$hash=envv('AIMS_ADMIN_PASSWORD_HASH');if($hash==='')json_response(['error'=>'admin_login_not_configured'],503);if(!password_verify((string)($payload['password']??''),$hash)){usleep(350000);audit('admin_login_failed',null,$_SERVER['REMOTE_ADDR']??'unknown');json_response(['error'=>'invalid_credentials'],401);}session_regenerate_id(true);$_SESSION['aims_admin']=true;$_SESSION['aims_admin_at']=time();audit('admin_login',null,$_SERVER['REMOTE_ADDR']??'unknown');json_response(['ok'=>true]);}
     if($method==='POST' && $path==='/admin/logout'){start_admin_session();$_SESSION=[];session_destroy();json_response(['ok'=>true]);}
+
+    if($method==='GET' && $path==='/admin/devices'){require_admin();$devices=array_values(db_read()['devices']);usort($devices,fn($a,$b)=>strcmp((string)($b['created_at']??''),(string)($a['created_at']??'')));foreach($devices as &$d)unset($d['secret_hash']);json_response(['devices'=>$devices]);}
+    if($method==='POST' && preg_match('#^/admin/devices/([^/]+)/(approve|revoke)$#',$path,$m)){require_admin();$id=rawurldecode($m[1]);$action=$m[2];$row=db_mutate(function(array $db)use($id,$action){if(!isset($db['devices'][$id]))return[$db,null];$r=$db['devices'][$id];$now=now_iso();if($action==='approve'){$r['state']='approved';$r['approved_at']=$now;$r['revoked_at']=null;}else{$r['state']='revoked';$r['revoked_at']=$now;}$r['updated_at']=$now;$db['devices'][$id]=$r;unset($r['secret_hash']);return[$db,$r];});if(!$row)json_response(['error'=>'not_found'],404);audit('device_'.$action,$id,'admin');json_response(['device'=>$row]);}
 
     if($method==='GET' && $path==='/admin/cmr'){require_admin();$limit=max(1,min(200,(int)($_GET['limit']??100)));$docs=array_values(db_read()['documents']);usort($docs,fn($a,$b)=>strcmp((string)($b['received_at']??''),(string)($a['received_at']??'')));$docs=array_slice($docs,0,$limit);$rows=[];foreach($docs as $row){$row['cmr']=json_decode($row['cmr_json']??'{}',true)?:[];unset($row['cmr_json'],$row['image_path']);$rows[]=$row;}json_response(['documents'=>$rows]);}
 
