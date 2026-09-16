@@ -44,6 +44,22 @@ class _NailFitAppState extends State<NailFitApp> {
     c.go(1);
   }
 
+  Widget _activeScreen(NailFitV3SavedProfile savedProfile) {
+    switch (c.tab) {
+      case 1:
+        return NailFitV3Scan(c: c, photo: photo, pick: _pick);
+      case 2:
+        return NailFitV3Try(c: c, photo: photo, pick: _pick);
+      case 3:
+        return savedProfile.saved();
+      case 4:
+        return savedProfile.profile();
+      case 0:
+      default:
+        return NailFitV3Home(c: c, pick: _pick);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final savedProfile = NailFitV3SavedProfile(c: c);
@@ -62,16 +78,7 @@ class _NailFitAppState extends State<NailFitApp> {
       home: Scaffold(
         body: SafeArea(
           bottom: false,
-          child: IndexedStack(
-            index: c.tab,
-            children: [
-              NailFitV3Home(c: c, pick: _pick),
-              NailFitV3Scan(c: c, photo: photo, pick: _pick),
-              NailFitV3Try(c: c, photo: photo, pick: _pick),
-              savedProfile.saved(),
-              savedProfile.profile(),
-            ],
-          ),
+          child: _activeScreen(savedProfile),
         ),
         bottomNavigationBar: _nav(),
       ),
