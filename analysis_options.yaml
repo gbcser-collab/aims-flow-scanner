@@ -1,6 +1,9 @@
 analyzer:
   exclude:
     - build/**
+  errors:
+    unnecessary_import: ignore
+    unused_import: ignore
 linter:
   rules:
     avoid_print: true
