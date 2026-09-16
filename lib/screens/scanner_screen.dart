@@ -220,7 +220,7 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
 
       for (final path in [fullCopy, frameCopy]) {
         try {
-          if (path != null && await File(path).exists()) await File(path).delete();
+          if (await File(path).exists()) await File(path).delete();
         } catch (_) {}
       }
       fullCopy = null;
