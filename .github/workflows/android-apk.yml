@@ -50,7 +50,7 @@ jobs:
         run: flutter test
 
       - name: Build debug APK
-        run: flutter build apk --debug
+        run: flutter build apk --debug --dart-define=AIMS_API_BASE_URL=https://logistic-aims.hu/api
 
       - name: APK sanity check
         run: |
