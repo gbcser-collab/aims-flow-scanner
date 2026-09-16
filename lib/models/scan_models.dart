@@ -1,3 +1,5 @@
+import 'tracking_models.dart';
+
 class DocPoint {
   const DocPoint(this.x, this.y);
   final double x;
@@ -40,6 +42,15 @@ class ScanQuality {
   bool get isBlurry => sharpness < 70;
   bool get hasTooMuchGlare => glareRatio > 0.07;
   bool get documentTooSmall => documentFillRatio < 0.35;
+
+  int get score {
+    var result = 100;
+    if (isTooDark || isTooBright) result -= 20;
+    if (isBlurry) result -= 25;
+    if (hasTooMuchGlare) result -= 20;
+    if (documentTooSmall) result -= 15;
+    return result.clamp(0, 100);
+  }
 
   List<String> get warnings {
     final result = <String>[];
@@ -130,6 +141,7 @@ class ValidationIssue {
 }
 
 enum IssueSeverity { info, warning, error }
+enum CmrSyncState { pending, uploaded, emailed, approved, failed }
 
 class ScannedDocument {
   const ScannedDocument({
@@ -138,6 +150,14 @@ class ScannedDocument {
     required this.imagePath,
     required this.cmr,
     required this.quality,
+    this.location,
+    this.syncState = CmrSyncState.pending,
+    this.serverDocumentId,
+    this.uploadedAt,
+    this.emailedAt,
+    this.approvedAt,
+    this.deleteAfter,
+    this.lastSyncError,
   });
 
   final String id;
@@ -145,6 +165,45 @@ class ScannedDocument {
   final String imagePath;
   final CmrData cmr;
   final ScanQuality quality;
+  final LocationStamp? location;
+  final CmrSyncState syncState;
+  final String? serverDocumentId;
+  final DateTime? uploadedAt;
+  final DateTime? emailedAt;
+  final DateTime? approvedAt;
+  final DateTime? deleteAfter;
+  final String? lastSyncError;
+
+  bool get needsSync => syncState == CmrSyncState.pending || syncState == CmrSyncState.failed || syncState == CmrSyncState.uploaded;
+
+  ScannedDocument copyWith({
+    CmrData? cmr,
+    LocationStamp? location,
+    bool clearLocation = false,
+    CmrSyncState? syncState,
+    String? serverDocumentId,
+    DateTime? uploadedAt,
+    DateTime? emailedAt,
+    DateTime? approvedAt,
+    DateTime? deleteAfter,
+    String? lastSyncError,
+    bool clearLastSyncError = false,
+  }) =>
+      ScannedDocument(
+        id: id,
+        createdAt: createdAt,
+        imagePath: imagePath,
+        cmr: cmr ?? this.cmr,
+        quality: quality,
+        location: clearLocation ? null : (location ?? this.location),
+        syncState: syncState ?? this.syncState,
+        serverDocumentId: serverDocumentId ?? this.serverDocumentId,
+        uploadedAt: uploadedAt ?? this.uploadedAt,
+        emailedAt: emailedAt ?? this.emailedAt,
+        approvedAt: approvedAt ?? this.approvedAt,
+        deleteAfter: deleteAfter ?? this.deleteAfter,
+        lastSyncError: clearLastSyncError ? null : (lastSyncError ?? this.lastSyncError),
+      );
 
   Map<String, dynamic> toJson() => {
         'id': id,
@@ -157,21 +216,53 @@ class ScannedDocument {
           'glareRatio': quality.glareRatio,
           'documentFillRatio': quality.documentFillRatio,
         },
+        'location': location?.toJson(),
+        'sync': {
+          'state': syncState.name,
+          'serverDocumentId': serverDocumentId,
+          'uploadedAt': uploadedAt?.toIso8601String(),
+          'emailedAt': emailedAt?.toIso8601String(),
+          'approvedAt': approvedAt?.toIso8601String(),
+          'deleteAfter': deleteAfter?.toIso8601String(),
+          'lastError': lastSyncError,
+        },
       };
 
   factory ScannedDocument.fromJson(Map<String, dynamic> json) {
-    final q = json['quality'] as Map<String, dynamic>;
+    final q = Map<String, dynamic>.from(json['quality'] as Map);
+    final locationJson = json['location'];
+    final syncJson = json['sync'] is Map ? Map<String, dynamic>.from(json['sync'] as Map) : <String, dynamic>{};
+    final stateName = syncJson['state'] as String?;
+    final state = CmrSyncState.values.where((item) => item.name == stateName).firstOrNull ?? CmrSyncState.pending;
+
+    DateTime? parseDate(dynamic value) => value is String && value.isNotEmpty ? DateTime.tryParse(value) : null;
+
     return ScannedDocument(
       id: json['id'] as String,
       createdAt: DateTime.parse(json['createdAt'] as String),
       imagePath: json['imagePath'] as String,
-      cmr: CmrData.fromJson(json['cmr'] as Map<String, dynamic>),
+      cmr: CmrData.fromJson(Map<String, dynamic>.from(json['cmr'] as Map)),
       quality: ScanQuality(
         brightness: (q['brightness'] as num).toDouble(),
         sharpness: (q['sharpness'] as num).toDouble(),
         glareRatio: (q['glareRatio'] as num).toDouble(),
         documentFillRatio: (q['documentFillRatio'] as num).toDouble(),
       ),
+      location: locationJson is Map ? LocationStamp.fromJson(Map<String, dynamic>.from(locationJson)) : null,
+      syncState: state,
+      serverDocumentId: syncJson['serverDocumentId'] as String?,
+      uploadedAt: parseDate(syncJson['uploadedAt']),
+      emailedAt: parseDate(syncJson['emailedAt']),
+      approvedAt: parseDate(syncJson['approvedAt']),
+      deleteAfter: parseDate(syncJson['deleteAfter']),
+      lastSyncError: syncJson['lastError'] as String?,
     );
+  }
+}
+
+extension _IterableFirstOrNull<T> on Iterable<T> {
+  T? get firstOrNull {
+    final iterator = this.iterator;
+    return iterator.moveNext() ? iterator.current : null;
   }
 }
