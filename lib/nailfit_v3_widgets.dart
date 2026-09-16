@@ -7,14 +7,14 @@ Widget nfBackground(Widget child) => DecoratedBox(
 );
 
 Widget nfHeader() => Row(children: [
-  const Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-    Row(children: [Text('NAIL', style: TextStyle(fontSize: 23, letterSpacing: 5, fontWeight: FontWeight.w500, color: nfInk)), Text('FIT', style: TextStyle(fontSize: 23, letterSpacing: 5, fontWeight: FontWeight.w500, color: nfRose))]),
-    Text('B E A U T Y   M E E T S   Y O U', style: TextStyle(fontSize: 6.5, letterSpacing: 1.2, color: nfMuted)),
-  ]),
-  const Spacer(),
-  Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9), decoration: BoxDecoration(color: const Color(0xFFFBE4E8), borderRadius: BorderRadius.circular(99), border: Border.all(color: Colors.white)), child: const Row(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.auto_awesome_rounded, size: 14, color: nfRose), SizedBox(width: 6), Text('BEAUTY AI', style: TextStyle(fontSize: 9, letterSpacing: 1.2, color: nfRoseDark, fontWeight: FontWeight.w800))])),
-  const SizedBox(width: 8),
-  Stack(children: [Container(width: 39, height: 39, decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle), child: const Icon(Icons.notifications_none_rounded, size: 21, color: nfInk)), const Positioned(right: 2, top: 2, child: CircleAvatar(radius: 4, backgroundColor: Color(0xFFD97C8F)))]),
+  const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+    Row(children: [Text('NAIL', style: TextStyle(fontSize: 22, letterSpacing: 3.6, fontWeight: FontWeight.w500, color: nfInk)), Text('FIT', style: TextStyle(fontSize: 22, letterSpacing: 3.6, fontWeight: FontWeight.w500, color: nfRose))]),
+    Text('B E A U T Y   M E E T S   Y O U', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 6.2, letterSpacing: 1.0, color: nfMuted)),
+  ])),
+  const SizedBox(width: 6),
+  Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8), decoration: BoxDecoration(color: const Color(0xFFFBE4E8), borderRadius: BorderRadius.circular(99), border: Border.all(color: Colors.white)), child: const Row(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.auto_awesome_rounded, size: 13, color: nfRose), SizedBox(width: 4), Text('BEAUTY AI', style: TextStyle(fontSize: 8.2, letterSpacing: .8, color: nfRoseDark, fontWeight: FontWeight.w800))])),
+  const SizedBox(width: 6),
+  Stack(children: [Container(width: 36, height: 36, decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle), child: const Icon(Icons.notifications_none_rounded, size: 20, color: nfInk)), const Positioned(right: 2, top: 2, child: CircleAvatar(radius: 4, backgroundColor: Color(0xFFD97C8F)))]),
 ]);
 
 BoxDecoration nfCard([Color? color]) => BoxDecoration(color: color ?? Colors.white.withValues(alpha: .86), borderRadius: BorderRadius.circular(22), border: Border.all(color: Colors.white), boxShadow: const [BoxShadow(color: Color(0x109B6B74), blurRadius: 16, offset: Offset(0, 7))]);
@@ -35,7 +35,7 @@ Widget nfLookCard(PremiumLook look, NailFitV3Controller c) {
 
 Widget nfLookStrip(List<PremiumLook> data, NailFitV3Controller c) => SizedBox(height: 155, child: ListView.separated(scrollDirection: Axis.horizontal, itemCount: data.length, separatorBuilder: (_, __) => const SizedBox(width: 9), itemBuilder: (_, i) => nfLookCard(data[i], c)));
 
-Widget nfQuick(IconData icon, String title, String sub, VoidCallback tap) => InkWell(onTap: tap, borderRadius: BorderRadius.circular(20), child: Container(height: 88, padding: const EdgeInsets.all(12), decoration: nfCard(), child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.center, children: [Row(children: [CircleAvatar(radius: 18, backgroundColor: const Color(0xFFF8DCE1), child: Icon(icon, color: nfInk, size: 19)), const Spacer(), const Icon(Icons.chevron_right_rounded, color: nfMuted, size: 18)]), const SizedBox(height: 6), Text(title, maxLines: 1, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 10.5)), Text(sub, maxLines: 1, style: const TextStyle(color: nfMuted, fontSize: 8.5))])));
+Widget nfQuick(IconData icon, String title, String sub, VoidCallback tap) => InkWell(onTap: tap, borderRadius: BorderRadius.circular(20), child: Container(height: 96, padding: const EdgeInsets.all(12), decoration: nfCard(), child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.center, children: [Row(children: [CircleAvatar(radius: 18, backgroundColor: const Color(0xFFF8DCE1), child: Icon(icon, color: nfInk, size: 19)), const Spacer(), const Icon(Icons.chevron_right_rounded, color: nfMuted, size: 18)]), const SizedBox(height: 6), Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 10.5)), Text(sub, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: nfMuted, fontSize: 8.5))])));
 
 Widget nfPrimary(IconData icon, String label, VoidCallback tap) => FilledButton.icon(onPressed: tap, icon: Icon(icon, size: 18), label: Text(label), style: FilledButton.styleFrom(backgroundColor: nfRose, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 15), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(23)), textStyle: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800)));
 Widget nfSecondary(IconData icon, String label, VoidCallback tap) => OutlinedButton.icon(onPressed: tap, icon: Icon(icon, size: 18), label: Text(label), style: OutlinedButton.styleFrom(backgroundColor: Colors.white.withValues(alpha: .8), foregroundColor: nfInk, side: const BorderSide(color: Colors.white), padding: const EdgeInsets.symmetric(vertical: 15), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(23)), textStyle: const TextStyle(fontSize: 9.8, fontWeight: FontWeight.w700)));
