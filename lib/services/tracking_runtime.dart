@@ -142,7 +142,7 @@ class TrackingRuntime extends ChangeNotifier {
             accuracy: LocationAccuracy.high,
             distanceFilter: 25,
             intervalDuration: const Duration(minutes: 1),
-            foregroundNotificationConfig: ForegroundNotificationConfig(
+            foregroundNotificationConfig: const ForegroundNotificationConfig(
               notificationTitle: 'AIMS Flow nyomkövetés aktív',
               notificationText: 'Az aktív fuvar GPS-pozíciója megosztásra kerül a Logistic-AIMS admin felé.',
               enableWakeLock: true,
