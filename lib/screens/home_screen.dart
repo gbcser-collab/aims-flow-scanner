@@ -4,6 +4,7 @@ import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 
 import '../models/scan_models.dart';
+import '../services/cmr_sync_service.dart';
 import '../services/scan_repository.dart';
 import 'scan_review_screen.dart';
 import 'scanner_screen.dart';
@@ -15,11 +16,13 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   static const _repository = ScanRepository();
+  static const _sync = CmrSyncService();
 
   bool _opening = false;
   bool _historyLoading = true;
+  bool _syncing = false;
   String? _error;
   String _query = '';
   List<ScannedDocument> _history = const [];
@@ -38,6 +41,7 @@ class _HomeScreenState extends State<HomeScreen> {
         cmr.date,
         cmr.plate,
         cmr.goodsDescription,
+        document.deliveryState.name,
       ].whereType<String>().join(' ').toLowerCase();
       return haystack.contains(q);
     }).toList();
@@ -46,7 +50,30 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    _loadHistory();
+    WidgetsBinding.instance.addObserver(this);
+    _refreshAll();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _refreshAll();
+  }
+
+  Future<void> _refreshAll() async {
+    if (mounted) setState(() => _syncing = true);
+    try {
+      await _repository.purgeExpiredApproved();
+      await _sync.syncPending();
+      await _loadHistory();
+    } finally {
+      if (mounted) setState(() => _syncing = false);
+    }
   }
 
   Future<void> _loadHistory() async {
@@ -82,7 +109,7 @@ class _HomeScreenState extends State<HomeScreen> {
       await Navigator.of(context).push(
         MaterialPageRoute(builder: (_) => ScannerScreen(camera: selected)),
       );
-      await _loadHistory();
+      await _refreshAll();
     } on CameraException catch (e) {
       if (!mounted) return;
       setState(() => _error = 'A kamera nem érhető el (${e.code}). Ellenőrizd a kameraengedélyt.');
@@ -105,29 +132,35 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ),
     );
-    await _loadHistory();
-  }
-
-  Future<void> _deleteSaved(ScannedDocument document) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Mentett CMR törlése?'),
-        content: const Text('A dokumentum képe és a mentett CMR-adatok végleg törlődnek erről a készülékről.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Mégse')),
-          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Törlés')),
-        ],
-      ),
-    );
-    if (confirmed != true) return;
-    await _repository.delete(document);
-    await _loadHistory();
+    await _refreshAll();
   }
 
   String _formatDate(DateTime value) {
     String two(int number) => number.toString().padLeft(2, '0');
     return '${value.year}.${two(value.month)}.${two(value.day)} ${two(value.hour)}:${two(value.minute)}';
+  }
+
+  String _stateLabel(ScannedDocument document) {
+    switch (document.deliveryState) {
+      case CmrDeliveryState.localOnly:
+        return 'APPBAN';
+      case CmrDeliveryState.queued:
+        return 'KÜLDÉSRE VÁR';
+      case CmrDeliveryState.uploaded:
+        return 'FELTÖLTVE';
+      case CmrDeliveryState.emailed:
+        return 'E-MAIL ELKÜLDVE';
+      case CmrDeliveryState.approved:
+        return 'JÓVÁHAGYVA';
+      case CmrDeliveryState.syncError:
+        return 'ÚJRAPRÓBÁLÁS';
+    }
+  }
+
+  Color _stateColor(ScannedDocument document) {
+    if (document.deliveryState == CmrDeliveryState.approved) return const Color(0xFF48D597);
+    if (document.deliveryState == CmrDeliveryState.syncError) return Colors.orangeAccent;
+    return const Color(0xFFE6B85C);
   }
 
   @override
@@ -140,11 +173,17 @@ class _HomeScreenState extends State<HomeScreen> {
         foregroundColor: Colors.white,
         title: const Text('AIMS Flow Smart Scanner'),
         actions: [
-          IconButton(
-            tooltip: 'Mentések frissítése',
-            onPressed: _historyLoading ? null : _loadHistory,
-            icon: const Icon(Icons.refresh_rounded),
-          ),
+          if (_syncing)
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 12),
+              child: Center(child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))),
+            )
+          else
+            IconButton(
+              tooltip: 'Szinkron és frissítés',
+              onPressed: _refreshAll,
+              icon: const Icon(Icons.cloud_sync_rounded),
+            ),
         ],
       ),
       body: SafeArea(
@@ -162,21 +201,14 @@ class _HomeScreenState extends State<HomeScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'AIMS FLOW • SMART • v0.9 PRO',
-                    style: TextStyle(
-                      color: Color(0xFFE6B85C),
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 1.4,
-                    ),
+                    'AIMS FLOW • SMART • PRIVATE CMR',
+                    style: TextStyle(color: Color(0xFFE6B85C), fontWeight: FontWeight.w800, letterSpacing: 1.2),
                   ),
                   SizedBox(height: 8),
-                  Text(
-                    'CMR Scanner',
-                    style: TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.w800),
-                  ),
+                  Text('CMR Scanner', style: TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.w800)),
                   SizedBox(height: 10),
                   Text(
-                    'Perspektíva-védelem, dupla OCR, intelligens CMR-mezők, képminőség-ellenőrzés, vaku KI/AUTO/BE és offline előzmények.',
+                    'A CMR automatikusan az alkalmazás privát tárhelyére kerül. Nem mentjük a Galériába vagy a Letöltések közé. Admin jóváhagyás után 15 nappal automatikusan törlődik a helyi példány.',
                     style: TextStyle(color: Colors.white70, height: 1.35),
                   ),
                 ],
@@ -197,8 +229,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 textStyle: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
               ),
             ),
-            const SizedBox(height: 14),
-            if (_error != null)
+            if (_error != null) ...[
+              const SizedBox(height: 14),
               Container(
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
@@ -208,49 +240,17 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 child: Text(_error!, style: const TextStyle(color: Colors.white)),
               ),
-            const SizedBox(height: 18),
-            const _Feature(
-              icon: Icons.auto_fix_high_rounded,
-              title: 'Perspektíva-védelem',
-              text: 'Ha a CMR eleve egyenes, nem erőlteti rá a perspektíva-korrekciót. Csak indokolt esetben húzza síkba.',
-            ),
-            const SizedBox(height: 10),
-            const _Feature(
-              icon: Icons.compare_rounded,
-              title: 'Dupla Smart OCR',
-              text: 'Az eredeti és a javított képet is kiolvassa, majd automatikusan a több CMR-adatot adó eredményt választja.',
-            ),
-            const SizedBox(height: 10),
-            const _Feature(
-              icon: Icons.flash_on_rounded,
-              title: 'Vaku KI / AUTO / BE',
-              text: 'A BE mód folyamatos fényt ad a dokumentum beállításához, az AUTO pedig a kamerára bízza a villanást.',
-            ),
-            const SizedBox(height: 10),
-            const _Feature(
-              icon: Icons.offline_pin_rounded,
-              title: 'Offline CMR előzmények',
-              text: 'A mentések a telefonon maradnak, kereshetők, újranyithatók, javíthatók és törölhetők.',
-            ),
+            ],
             const SizedBox(height: 24),
             Row(
               children: [
                 const Expanded(
-                  child: Text(
-                    'Mentett CMR-ek',
-                    style: TextStyle(color: Colors.white, fontSize: 21, fontWeight: FontWeight.w900),
-                  ),
+                  child: Text('CMR-ek az appban', style: TextStyle(color: Colors.white, fontSize: 21, fontWeight: FontWeight.w900)),
                 ),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFE6B85C).withValues(alpha: .14),
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Text(
-                    '${_history.length}',
-                    style: const TextStyle(color: Color(0xFFE6B85C), fontWeight: FontWeight.w900),
-                  ),
+                  decoration: BoxDecoration(color: const Color(0xFFE6B85C).withValues(alpha: .14), borderRadius: BorderRadius.circular(999)),
+                  child: Text('${_history.length}', style: const TextStyle(color: Color(0xFFE6B85C), fontWeight: FontWeight.w900)),
                 ),
               ],
             ),
@@ -275,10 +275,6 @@ class _HomeScreenState extends State<HomeScreen> {
                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
                 ),
               ),
-              if (_query.isNotEmpty) ...[
-                const SizedBox(height: 8),
-                Text('${filtered.length} találat', style: const TextStyle(color: Colors.white54)),
-              ],
             ],
             const SizedBox(height: 10),
             if (_historyLoading)
@@ -292,13 +288,10 @@ class _HomeScreenState extends State<HomeScreen> {
                 decoration: BoxDecoration(color: const Color(0xFF14181D), borderRadius: BorderRadius.circular(16)),
                 child: const Row(
                   children: [
-                    Icon(Icons.inbox_rounded, color: Colors.white38),
+                    Icon(Icons.lock_rounded, color: Colors.white38),
                     SizedBox(width: 12),
                     Expanded(
-                      child: Text(
-                        'Még nincs mentett CMR. Az első Smart Scan után a „Mentés offline” gombbal kerül ide.',
-                        style: TextStyle(color: Colors.white60, height: 1.35),
-                      ),
+                      child: Text('Még nincs CMR a privát alkalmazástárhelyen.', style: TextStyle(color: Colors.white60, height: 1.35)),
                     ),
                   ],
                 ),
@@ -307,10 +300,10 @@ class _HomeScreenState extends State<HomeScreen> {
               Container(
                 padding: const EdgeInsets.all(18),
                 decoration: BoxDecoration(color: const Color(0xFF14181D), borderRadius: BorderRadius.circular(16)),
-                child: const Text('Nincs a keresésnek megfelelő mentett CMR.', style: TextStyle(color: Colors.white60)),
+                child: const Text('Nincs a keresésnek megfelelő CMR.', style: TextStyle(color: Colors.white60)),
               )
             else
-              ...filtered.map((document) => _historyCard(document)),
+              ...filtered.map(_historyCard),
           ],
         ),
       ),
@@ -319,85 +312,48 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _historyCard(ScannedDocument document) {
     final image = File(document.imagePath);
-    final primary = document.cmr.cmrNumber?.trim().isNotEmpty == true
-        ? 'CMR ${document.cmr.cmrNumber}'
-        : 'Mentett CMR';
-    final secondary = [
-      document.cmr.plate,
-      document.cmr.consignee,
-      document.cmr.deliveryPlace,
-    ].whereType<String>().where((item) => item.trim().isNotEmpty).take(3).join(' • ');
+    final primary = document.cmr.cmrNumber?.trim().isNotEmpty == true ? 'CMR ${document.cmr.cmrNumber}' : 'Mentett CMR';
+    final secondary = [document.cmr.plate, document.cmr.consignee, document.cmr.deliveryPlace]
+        .whereType<String>()
+        .where((item) => item.trim().isNotEmpty)
+        .take(3)
+        .join(' • ');
+    final statusColor = _stateColor(document);
 
-    return Semantics(
-      label: 'Mentett CMR dokumentum',
-      button: true,
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 10),
-        decoration: BoxDecoration(color: const Color(0xFF14181D), borderRadius: BorderRadius.circular(16)),
-        child: ListTile(
-          onTap: () => _openSaved(document),
-          contentPadding: const EdgeInsets.fromLTRB(10, 8, 4, 8),
-          leading: ClipRRect(
-            borderRadius: BorderRadius.circular(10),
-            child: SizedBox(
-              width: 54,
-              height: 64,
-              child: image.existsSync()
-                  ? Image.file(image, fit: BoxFit.cover)
-                  : const ColoredBox(
-                      color: Colors.white10,
-                      child: Icon(Icons.description_rounded, color: Colors.white38),
-                    ),
-            ),
-          ),
-          title: Text(primary, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900)),
-          subtitle: Padding(
-            padding: const EdgeInsets.only(top: 4),
-            child: Text(
-              secondary.isEmpty ? _formatDate(document.createdAt) : '$secondary\n${_formatDate(document.createdAt)}',
-              style: const TextStyle(color: Colors.white54, height: 1.3),
-            ),
-          ),
-          isThreeLine: secondary.isNotEmpty,
-          trailing: IconButton(
-            tooltip: 'Mentés törlése',
-            onPressed: () => _deleteSaved(document),
-            icon: const Icon(Icons.delete_outline_rounded, color: Colors.white38),
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      decoration: BoxDecoration(color: const Color(0xFF14181D), borderRadius: BorderRadius.circular(16)),
+      child: ListTile(
+        onTap: () => _openSaved(document),
+        contentPadding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+        leading: ClipRRect(
+          borderRadius: BorderRadius.circular(10),
+          child: SizedBox(
+            width: 54,
+            height: 64,
+            child: image.existsSync()
+                ? Image.file(image, fit: BoxFit.cover)
+                : const ColoredBox(color: Colors.white10, child: Icon(Icons.description_rounded, color: Colors.white38)),
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _Feature extends StatelessWidget {
-  const _Feature({required this.icon, required this.title, required this.text});
-
-  final IconData icon;
-  final String title;
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(color: const Color(0xFF14181D), borderRadius: BorderRadius.circular(16)),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, color: const Color(0xFFE6B85C)),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(title, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800)),
-                const SizedBox(height: 3),
-                Text(text, style: const TextStyle(color: Colors.white60, height: 1.3)),
-              ],
-            ),
+        title: Text(primary, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900)),
+        subtitle: Padding(
+          padding: const EdgeInsets.only(top: 5),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (secondary.isNotEmpty) Text(secondary, style: const TextStyle(color: Colors.white54)),
+              const SizedBox(height: 3),
+              Text(_formatDate(document.createdAt), style: const TextStyle(color: Colors.white38, fontSize: 12)),
+              const SizedBox(height: 5),
+              Text(_stateLabel(document), style: TextStyle(color: statusColor, fontSize: 11, fontWeight: FontWeight.w900, letterSpacing: .4)),
+              if (document.deleteAfter != null)
+                Text('Törlés: ${_formatDate(document.deleteAfter!)}', style: const TextStyle(color: Colors.white38, fontSize: 11)),
+            ],
           ),
-        ],
+        ),
+        isThreeLine: true,
+        trailing: Icon(Icons.chevron_right_rounded, color: statusColor),
       ),
     );
   }
