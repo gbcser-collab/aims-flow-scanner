@@ -57,10 +57,7 @@ class CmrSyncService {
   final ScanRepository repository;
   final DeviceIdentityService deviceIdentity;
 
-  static const String _baseUrl = String.fromEnvironment(
-    'AIMS_API_BASE_URL',
-    defaultValue: 'https://logistic-aims.hu/api',
-  );
+  static const String _baseUrl = String.fromEnvironment('AIMS_API_BASE_URL', defaultValue: '');
 
   bool get isConfigured => _baseUrl.trim().isNotEmpty;
 
