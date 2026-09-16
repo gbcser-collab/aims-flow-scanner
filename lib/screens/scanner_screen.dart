@@ -11,7 +11,7 @@ import '../services/ocr_service.dart';
 import '../widgets/scanner_overlay.dart';
 import 'scan_review_screen.dart';
 
-enum _ScannerFlashMode { off, auto, torch }
+enum _ScannerFlashMode { off, auto, on }
 
 class ScannerScreen extends StatefulWidget {
   const ScannerScreen({super.key, required this.camera});
@@ -47,15 +47,20 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
     await _disposeCamera();
 
     const presets = <ResolutionPreset>[
-      ResolutionPreset.veryHigh,
       ResolutionPreset.high,
+      ResolutionPreset.veryHigh,
       ResolutionPreset.medium,
     ];
 
     Object? lastError;
     for (final preset in presets) {
       if (!mounted || generation != _cameraGeneration) break;
-      final candidate = CameraController(widget.camera, preset, enableAudio: false);
+      final candidate = CameraController(
+        widget.camera,
+        preset,
+        enableAudio: false,
+        imageFormatGroup: ImageFormatGroup.jpeg,
+      );
       try {
         await candidate.initialize();
         if (!mounted || generation != _cameraGeneration) {
@@ -63,6 +68,12 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
           break;
         }
         _controller = candidate;
+        try {
+          await candidate.setFocusMode(FocusMode.auto);
+        } catch (_) {}
+        try {
+          await candidate.setExposureMode(ExposureMode.auto);
+        } catch (_) {}
         try {
           await candidate.setFlashMode(_cameraFlashMode(_flashMode));
         } catch (_) {
@@ -133,8 +144,8 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
         return FlashMode.off;
       case _ScannerFlashMode.auto:
         return FlashMode.auto;
-      case _ScannerFlashMode.torch:
-        return FlashMode.torch;
+      case _ScannerFlashMode.on:
+        return FlashMode.always;
     }
   }
 
@@ -144,7 +155,7 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
         return 'KI';
       case _ScannerFlashMode.auto:
         return 'AUTO';
-      case _ScannerFlashMode.torch:
+      case _ScannerFlashMode.on:
         return 'BE';
     }
   }
@@ -155,7 +166,7 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
         return Icons.flash_off_rounded;
       case _ScannerFlashMode.auto:
         return Icons.flash_auto_rounded;
-      case _ScannerFlashMode.torch:
+      case _ScannerFlashMode.on:
         return Icons.flash_on_rounded;
     }
   }
@@ -184,11 +195,6 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
     }
   }
 
-  int _ocrScore(CmrData cmr) {
-    final textBonus = (cmr.rawText.trim().length / 120).floor().clamp(0, 8);
-    return cmr.filledFieldCount * 20 + textBonus;
-  }
-
   Future<void> _captureAndProcess() async {
     final controller = _controller;
     if (controller == null || !controller.value.isInitialized || _processing) return;
@@ -212,37 +218,25 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
       processedPath = '${temp.path}/aims_smart_$stamp.jpg';
       await File(shot.path).copy(originalCopy);
 
-      setState(() => _phase = 'Dokumentum elemzése és biztonságos korrekció…');
+      setState(() => _phase = 'A kereten belüli dokumentum kivágása…');
       final result = await const AimsScanEngine().process(
         inputPath: originalCopy,
         outputPath: processedPath,
+        cropToScannerFrame: true,
       );
 
       if (!mounted) return;
-      setState(() => _phase = 'Dupla OCR: eredeti és javított kép összevetése…');
+      setState(() => _phase = 'OCR és CMR-adatok feldolgozása…');
 
       final parser = const CmrParser();
       final processedText = await ocr.recognize(result.outputPath);
-      final processedCmr = parser.parse(processedText);
+      final cmr = parser.parse(processedText);
+      final reviewPath = result.outputPath;
 
-      final originalText = await ocr.recognize(originalCopy);
-      final originalCmr = parser.parse(originalText);
-
-      final useOriginal = _ocrScore(originalCmr) > _ocrScore(processedCmr);
-      final cmr = useOriginal ? originalCmr : processedCmr;
-      final reviewPath = useOriginal ? originalCopy : result.outputPath;
-
-      if (useOriginal) {
-        try {
-          if (await File(result.outputPath).exists()) await File(result.outputPath).delete();
-        } catch (_) {}
-        processedPath = null;
-      } else {
-        try {
-          if (await File(originalCopy).exists()) await File(originalCopy).delete();
-        } catch (_) {}
-        originalCopy = null;
-      }
+      try {
+        if (await File(originalCopy).exists()) await File(originalCopy).delete();
+      } catch (_) {}
+      originalCopy = null;
 
       if (!mounted) return;
       setState(() => _phase = 'CMR mezők intelligens kitöltése…');
@@ -255,7 +249,7 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
             processedImagePath: reviewPath,
             quality: result.quality,
             cmr: cmr,
-            smartOcrSource: useOriginal ? 'Eredeti fotó' : 'Javított dokumentumkép',
+            smartOcrSource: 'Scanner keret',
           ),
         ),
       );
@@ -322,7 +316,7 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                   decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(18)),
                   child: const Text(
-                    'Tedd a teljes CMR-t a keretbe',
+                    'Csak a kereten belüli rész kerül a scanbe',
                     style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
                   ),
                 ),
@@ -362,7 +356,7 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
                             borderRadius: BorderRadius.circular(20),
                             onTap: (_processing || _flashChanging) ? null : () => _setFlashMode(mode),
                             child: AnimatedContainer(
-                              duration: const Duration(milliseconds: 140),
+                              duration: const Duration(milliseconds: 120),
                               padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 8),
                               decoration: BoxDecoration(
                                 color: selected ? const Color(0xFFE6B85C) : Colors.transparent,
@@ -371,11 +365,7 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  Icon(
-                                    _flashIcon(mode),
-                                    size: 18,
-                                    color: selected ? Colors.black : Colors.white,
-                                  ),
+                                  Icon(_flashIcon(mode), size: 18, color: selected ? Colors.black : Colors.white),
                                   const SizedBox(width: 5),
                                   Text(
                                     _flashLabel(mode),
@@ -438,26 +428,9 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
                         children: [
                           const CircularProgressIndicator(color: Color(0xFFE6B85C)),
                           const SizedBox(height: 18),
-                          const Text(
-                            'SMART SCAN PRO',
-                            style: TextStyle(
-                              color: Color(0xFFE6B85C),
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: 1.4,
-                            ),
-                          ),
+                          const Text('SMART SCAN', style: TextStyle(color: Color(0xFFE6B85C), fontWeight: FontWeight.w900, letterSpacing: 1.4)),
                           const SizedBox(height: 8),
-                          Text(
-                            _phase,
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w800),
-                          ),
-                          const SizedBox(height: 8),
-                          const Text(
-                            'A rendszer automatikusan a jobb OCR-eredményt választja.',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(color: Colors.white54),
-                          ),
+                          Text(_phase, textAlign: TextAlign.center, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w800)),
                         ],
                       ),
                     ),
@@ -473,7 +446,6 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
 
 class _CameraErrorView extends StatelessWidget {
   const _CameraErrorView({required this.message, required this.onRetry});
-
   final String message;
   final VoidCallback onRetry;
 
