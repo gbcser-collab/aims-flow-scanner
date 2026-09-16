@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'screens/device_gate.dart';
 import 'screens/home_screen.dart';
 
 void main() {
@@ -21,9 +22,14 @@ class AimsFlowApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: gold, brightness: Brightness.light),
         scaffoldBackgroundColor: const Color(0xFFF5F5F2),
         cardTheme: const CardThemeData(elevation: 0, margin: EdgeInsets.zero),
-        filledButtonTheme: FilledButtonThemeData(style: FilledButton.styleFrom(minimumSize: const Size(0, 52), textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800))),
+        filledButtonTheme: FilledButtonThemeData(
+          style: FilledButton.styleFrom(
+            minimumSize: const Size(0, 52),
+            textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+          ),
+        ),
       ),
-      home: const HomeScreen(),
+      home: const DeviceGate(child: HomeScreen()),
     );
   }
 }
