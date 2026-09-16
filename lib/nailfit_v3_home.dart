@@ -46,7 +46,7 @@ class NailFitV3Home extends StatelessWidget {
   ));
 
   Widget _hero() => Container(
-    height: 300,
+    height: 312,
     clipBehavior: Clip.antiAlias,
     decoration: BoxDecoration(borderRadius: BorderRadius.circular(29), border: Border.all(color: Colors.white, width: 1.3), boxShadow: const [BoxShadow(color: Color(0x1E9C6872), blurRadius: 28, offset: Offset(0, 13))]),
     child: Stack(fit: StackFit.expand, children: [
@@ -65,17 +65,17 @@ class NailFitV3Home extends StatelessWidget {
     ]),
   );
 
-  Widget _match() => Container(height: 205, padding: const EdgeInsets.all(16), decoration: BoxDecoration(gradient: const LinearGradient(colors: [Color(0xFFFFE7EB), Color(0xFFF4D3D9)]), borderRadius: BorderRadius.circular(24), border: Border.all(color: Colors.white)), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-    const Row(children: [Icon(Icons.auto_awesome_rounded, size: 15, color: nfRose), SizedBox(width: 5), Text('AI AJÁNLÁS NEKED', style: TextStyle(color: nfRoseDark, fontSize: 8, letterSpacing: 1, fontWeight: FontWeight.w800))]),
+  Widget _match() => Container(height: 285, padding: const EdgeInsets.all(16), decoration: BoxDecoration(gradient: const LinearGradient(colors: [Color(0xFFFFE7EB), Color(0xFFF4D3D9)]), borderRadius: BorderRadius.circular(24), border: Border.all(color: Colors.white)), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+    const Row(children: [Icon(Icons.auto_awesome_rounded, size: 15, color: nfRose), SizedBox(width: 5), Expanded(child: Text('AI AJÁNLÁS NEKED', maxLines: 2, style: TextStyle(color: nfRoseDark, fontSize: 8, letterSpacing: .8, fontWeight: FontWeight.w800)))]),
     const SizedBox(height: 11),
     Text('${c.look.match}% egyezés', style: const TextStyle(fontFamily: 'serif', color: nfInk, fontSize: 30, height: 1)),
     const SizedBox(height: 7),
     const Text('Ez a stílus harmonikusan illik hozzád a kézformád és az ízlésed alapján.', style: TextStyle(color: nfMuted, fontSize: 10, height: 1.35)),
     const Spacer(),
-    FilledButton(onPressed: () => c.go(2), style: FilledButton.styleFrom(backgroundColor: nfRose, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(21))), child: const Text('Próbáld ki most  →', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800))),
+    SizedBox(width: double.infinity, child: FilledButton(onPressed: () => c.go(2), style: FilledButton.styleFrom(backgroundColor: nfRose, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(21))), child: const Text('Próbáld ki  →', maxLines: 1, style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w800)))),
   ]));
 
-  Widget _season() => Container(height: 205, padding: const EdgeInsets.all(15), decoration: nfCard(const Color(0xFFFFF4EF)), child: const Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Icon(Icons.eco_outlined, color: nfRoseDark, size: 25), Spacer(), Text('Új őszi\nkollekció', style: TextStyle(fontFamily: 'serif', fontSize: 23, color: nfInk, height: .98)), SizedBox(height: 8), Text('Természetes árnyalatok, időtlen elegancia.', style: TextStyle(color: nfMuted, fontSize: 9, height: 1.3)), SizedBox(height: 10), Text('Felfedezem  →', style: TextStyle(color: nfRoseDark, fontSize: 10, fontWeight: FontWeight.w800))]));
+  Widget _season() => Container(height: 285, padding: const EdgeInsets.all(15), decoration: nfCard(const Color(0xFFFFF4EF)), child: const Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Icon(Icons.eco_outlined, color: nfRoseDark, size: 25), Spacer(), Text('Új őszi\nkollekció', style: TextStyle(fontFamily: 'serif', fontSize: 22, color: nfInk, height: .98)), SizedBox(height: 8), Text('Természetes árnyalatok, időtlen elegancia.', style: TextStyle(color: nfMuted, fontSize: 9, height: 1.3)), SizedBox(height: 10), Text('Felfedezem  →', style: TextStyle(color: nfRoseDark, fontSize: 9.5, fontWeight: FontWeight.w800))]));
 
   Widget _chips() { const labels = ['Minimal','Francia','Nude','Menyasszony','Őszi','Merész']; const icons = [Icons.diamond_outlined,Icons.waves_rounded,Icons.circle,Icons.favorite_border_rounded,Icons.eco_outlined,Icons.auto_awesome_rounded]; return SizedBox(height: 40, child: ListView.separated(scrollDirection: Axis.horizontal, itemCount: labels.length, separatorBuilder: (_, __) => const SizedBox(width: 7), itemBuilder: (_, i) => Chip(label: Text(labels[i]), avatar: Icon(icons[i], size: 14, color: nfRoseDark), side: const BorderSide(color: Colors.white), backgroundColor: Colors.white.withValues(alpha: .75), labelStyle: const TextStyle(fontSize: 9.5)))); }
 
