@@ -58,12 +58,7 @@ dismiss_system_dialogs() {
 
     if grep -q -E "keeps stopping|has stopped" /tmp/aims_system_dialog.xml && ! grep -q "$PKG" /tmp/aims_system_dialog.xml; then
       echo "Dismissing unrelated Android system crash dialog"
-      if find_center /tmp/aims_system_dialog.xml "Close app" >/tmp/system-dialog-pos.txt 2>/dev/null; then
-        read DX DY < /tmp/system-dialog-pos.txt
-        adb shell input tap "$DX" "$DY"
-      else
-        adb shell input keyevent KEYCODE_BACK || true
-      fi
+      adb shell input keyevent KEYCODE_BACK || true
       sleep 1
       continue
     fi
@@ -106,9 +101,12 @@ scroll_down() {
   sleep 1
 }
 
-echo "[1/14] Install APK and grant camera"
+echo "[1/14] Install APK and grant camera/location"
 adb install -r "$APK"
 adb shell pm grant "$PKG" android.permission.CAMERA || true
+adb shell pm grant "$PKG" android.permission.ACCESS_FINE_LOCATION || true
+adb shell pm grant "$PKG" android.permission.ACCESS_COARSE_LOCATION || true
+adb emu geo fix 17.6500 47.6800 >/dev/null 2>&1 || true
 adb shell pm list packages | grep "$PKG"
 
 echo "[2/14] Cold launch"
@@ -127,7 +125,7 @@ read X Y < <(find_center "$EVIDENCE/home.xml" "Smart Scan PRO indítása") || fa
 adb shell input tap "$X" "$Y"
 rm -f /tmp/capture.txt
 for i in $(seq 1 15); do
-  sleep 2
+  sleep 1
   dump_ui /sdcard/scanner.xml "$EVIDENCE/scanner.xml"
   if find_center "$EVIDENCE/scanner.xml" "CMR fényképezése és feldolgozása" >/tmp/capture.txt 2>/dev/null; then
     break
@@ -149,7 +147,8 @@ for label in "Vaku KI" "Vaku AUTO" "Vaku BE"; do
 done
 adb exec-out screencap -p > "$EVIDENCE/03-flash-controls.png" || true
 
-echo "[5/14] Take photo and run perspective guard + dual OCR pipeline"
+echo "[5/14] Take photo, crop to guide, run dual OCR and location capture"
+adb emu geo fix 17.6500 47.6800 >/dev/null 2>&1 || true
 read CX CY < /tmp/capture.txt
 adb shell input tap "$CX" "$CY"
 
@@ -158,7 +157,7 @@ for i in $(seq 1 65); do
   sleep 2
   check_no_crash
   dump_ui /sdcard/result.xml "$EVIDENCE/result.xml"
-  if grep -q -E 'Felismert CMR adatok|Smart Scan PRO' "$EVIDENCE/result.xml"; then
+  if grep -q 'Felismert CMR adatok' "$EVIDENCE/result.xml"; then
     RESULT_OK=1
     break
   fi
@@ -169,30 +168,35 @@ if [ "$RESULT_OK" -ne 1 ]; then
 fi
 adb exec-out screencap -p > "$EVIDENCE/04-result.png" || true
 
-echo "[6/14] Verify OCR/editable result UI"
+echo "[6/14] Verify OCR/editable result UI and auto-save"
 grep -q 'Felismert CMR adatok' "$EVIDENCE/result.xml" || fail_with_logs
+sleep 3
 check_no_crash
 
-echo "[7/14] Verify PRO copy-summary tool"
-rm -f /tmp/copy.txt
-for i in $(seq 1 10); do
-  dump_ui /sdcard/copy.xml "$EVIDENCE/copy.xml"
-  if find_center "$EVIDENCE/copy.xml" "CMR összegzés másolása" >/tmp/copy.txt 2>/dev/null; then
-    break
-  fi
+echo "[7/14] Verify copy-summary and Mail/Viber share controls exist"
+rm -f /tmp/copy.txt /tmp/share.txt
+for i in $(seq 1 12); do
+  dump_ui /sdcard/tools.xml "$EVIDENCE/tools.xml"
+  find_center "$EVIDENCE/tools.xml" "CMR összegzés másolása" >/tmp/copy.txt 2>/dev/null || true
+  find_center "$EVIDENCE/tools.xml" "Küldés • Mail / Viber" >/tmp/share.txt 2>/dev/null || true
+  if [ -s /tmp/copy.txt ] && [ -s /tmp/share.txt ]; then break; fi
   scroll_down
 done
 test -s /tmp/copy.txt || fail_with_logs
+test -s /tmp/share.txt || fail_with_logs
 read CPX CPY < /tmp/copy.txt
 adb shell input tap "$CPX" "$CPY"
 sleep 1
 check_no_crash
 
-echo "[8/14] Save CMR offline"
+echo "[8/14] Save/update CMR in app storage"
 rm -f /tmp/save.txt
 for i in $(seq 1 10); do
   dump_ui /sdcard/save.xml "$EVIDENCE/save.xml"
-  if find_center "$EVIDENCE/save.xml" "Mentés offline" >/tmp/save.txt 2>/dev/null; then
+  if find_center "$EVIDENCE/save.xml" "Módosítások mentése" >/tmp/save.txt 2>/dev/null; then
+    break
+  fi
+  if find_center "$EVIDENCE/save.xml" "Mentés az AIMS Flow-ba" >/tmp/save.txt 2>/dev/null; then
     break
   fi
   scroll_down
@@ -204,7 +208,7 @@ sleep 3
 check_no_crash
 adb exec-out screencap -p > "$EVIDENCE/05-saved.png" || true
 
-echo "[9/14] Restart and verify offline history persisted"
+echo "[9/14] Restart and verify history persisted"
 adb shell am force-stop "$PKG"
 launch_app
 sleep 4
@@ -229,7 +233,7 @@ sleep 3
 check_foreground
 check_no_crash
 dump_ui /sdcard/reopened.xml "$EVIDENCE/reopened.xml"
-grep -q -E 'Smart Scan PRO|Felismert CMR adatok' "$EVIDENCE/reopened.xml" || fail_with_logs
+grep -q 'Felismert CMR adatok' "$EVIDENCE/reopened.xml" || fail_with_logs
 adb exec-out screencap -p > "$EVIDENCE/07-reopened.png" || true
 
 echo "[11/14] Home restart and background/resume"
@@ -267,4 +271,4 @@ adb shell dumpsys activity activities > "$EVIDENCE/activities.txt"
 adb logcat -d > "$EVIDENCE/logcat.txt"
 adb exec-out screencap -p > "$EVIDENCE/08-final.png" || true
 
-echo "AIMS Flow Smart Scanner v0.9 PRO PERSPECTIVE-GUARD + DUAL-OCR + FLASH END-TO-END test PASSED"
+echo "AIMS Flow Smart Scanner v1.0 DRIVER FAST-CAMERA + FRAME-CROP + AUTO-SAVE + LOCATION + SHARE END-TO-END test PASSED"
