@@ -2,7 +2,7 @@ name: Build and deep-test Android APK
 
 on:
   push:
-    branches: [ main, v0.8-dev, v0.9-pro ]
+    branches: [ main, v0.8-dev, v0.9-pro, v1.0-driver ]
   workflow_dispatch:
 
 jobs:
@@ -39,6 +39,19 @@ jobs:
           rm -rf /tmp/aims_template
           flutter create --platforms=android --org hu.logisticaims --project-name aims_flow_scanner /tmp/aims_template
           cp -R /tmp/aims_template/android ./android
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('android/app/src/main/AndroidManifest.xml')
+          text = p.read_text()
+          marker = '<manifest xmlns:android="http://schemas.android.com/apk/res/android">'
+          permissions = '''<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+              <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+              <uses-permission android:name="android.permission.INTERNET" />'''
+          if 'android.permission.ACCESS_FINE_LOCATION' not in text:
+              text = text.replace(marker, permissions)
+          p.write_text(text)
+          PY
 
       - name: Dependencies
         run: flutter pub get
@@ -62,7 +75,7 @@ jobs:
       - name: Upload APK before device test
         uses: actions/upload-artifact@v4
         with:
-          name: AIMS-Flow-Smart-Scanner-v0.9-PRO-END-TO-END
+          name: AIMS-Flow-Smart-Scanner-v1.0-DRIVER-END-TO-END
           path: build/app/outputs/flutter-apk/app-debug.apk
           if-no-files-found: error
 
@@ -80,6 +93,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: AIMS-Flow-Scanner-v0.9-PRO-test-evidence
+          name: AIMS-Flow-Scanner-v1.0-DRIVER-test-evidence
           path: test-evidence/
           if-no-files-found: warn
