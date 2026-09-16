@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:camera/camera.dart';
@@ -22,6 +23,8 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _historyLoading = true;
   String? _error;
   String _query = '';
+  CameraDescription? _preferredCamera;
+  Future<void>? _cameraWarmup;
   List<ScannedDocument> _history = const [];
 
   List<ScannedDocument> get _filteredHistory {
@@ -38,6 +41,7 @@ class _HomeScreenState extends State<HomeScreen> {
         cmr.date,
         cmr.plate,
         cmr.goodsDescription,
+        document.location?.coordinates,
       ].whereType<String>().join(' ').toLowerCase();
       return haystack.contains(q);
     }).toList();
@@ -47,6 +51,18 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _loadHistory();
+    _cameraWarmup = _warmCameraDiscovery();
+  }
+
+  Future<void> _warmCameraDiscovery() async {
+    try {
+      final cameras = await availableCameras();
+      if (cameras.isEmpty) return;
+      final backs = cameras.where((c) => c.lensDirection == CameraLensDirection.back).toList();
+      _preferredCamera = backs.isNotEmpty ? backs.first : cameras.first;
+    } catch (_) {
+      // The real error is surfaced only if the user opens the scanner.
+    }
   }
 
   Future<void> _loadHistory() async {
@@ -71,14 +87,21 @@ class _HomeScreenState extends State<HomeScreen> {
     });
 
     try {
-      final cameras = await availableCameras();
+      if (_preferredCamera == null) {
+        await _cameraWarmup;
+      }
+      if (_preferredCamera == null) {
+        await _warmCameraDiscovery();
+      }
+      final selected = _preferredCamera;
       if (!mounted) return;
-      if (cameras.isEmpty) {
+      if (selected == null) {
         setState(() => _error = 'Nem található használható kamera.');
         return;
       }
-      final backs = cameras.where((c) => c.lensDirection == CameraLensDirection.back).toList();
-      final selected = backs.isNotEmpty ? backs.first : cameras.first;
+
+      // Camera discovery is already warm by this point, so navigation happens
+      // immediately and camera initialization starts on the scanner screen.
       await Navigator.of(context).push(
         MaterialPageRoute(builder: (_) => ScannerScreen(camera: selected)),
       );
@@ -102,6 +125,7 @@ class _HomeScreenState extends State<HomeScreen> {
           quality: document.quality,
           cmr: document.cmr,
           savedDocument: document,
+          scanLocation: document.location,
         ),
       ),
     );
@@ -162,7 +186,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'AIMS FLOW • SMART • v0.9 PRO',
+                    'AIMS FLOW • SMART • v1.0 DRIVER',
                     style: TextStyle(
                       color: Color(0xFFE6B85C),
                       fontWeight: FontWeight.w800,
@@ -176,7 +200,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                   SizedBox(height: 10),
                   Text(
-                    'Perspektíva-védelem, dupla OCR, intelligens CMR-mezők, képminőség-ellenőrzés, vaku KI/AUTO/BE és offline előzmények.',
+                    'Gyorsabb kameraindítás, keret-pontos vágás, dupla OCR, KI/AUTO/BE vaku, helyadat és automatikus belső mentés.',
                     style: TextStyle(color: Colors.white70, height: 1.35),
                   ),
                 ],
@@ -197,8 +221,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 textStyle: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
               ),
             ),
-            const SizedBox(height: 14),
-            if (_error != null)
+            if (_error != null) ...[
+              const SizedBox(height: 12),
               Container(
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
@@ -208,38 +232,30 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 child: Text(_error!, style: const TextStyle(color: Colors.white)),
               ),
-            const SizedBox(height: 18),
+            ],
+            const SizedBox(height: 22),
             const _Feature(
-              icon: Icons.auto_fix_high_rounded,
-              title: 'Perspektíva-védelem',
-              text: 'Ha a CMR eleve egyenes, nem erőlteti rá a perspektíva-korrekciót. Csak indokolt esetben húzza síkba.',
-            ),
-            const SizedBox(height: 10),
-            const _Feature(
-              icon: Icons.compare_rounded,
-              title: 'Dupla Smart OCR',
-              text: 'Az eredeti és a javított képet is kiolvassa, majd automatikusan a több CMR-adatot adó eredményt választja.',
+              icon: Icons.crop_free_rounded,
+              title: 'Keret-pontos scan',
+              text: 'A feldolgozás csak a fehér keretben látható részt tartja meg. A kereten kívüli háttér nem kerül a végső scanbe.',
             ),
             const SizedBox(height: 10),
             const _Feature(
               icon: Icons.flash_on_rounded,
               title: 'Vaku KI / AUTO / BE',
-              text: 'A BE mód folyamatos fényt ad a dokumentum beállításához, az AUTO pedig a kamerára bízza a villanást.',
+              text: 'A BE mód a beállításhoz világít, de a fotó elkészülte után azonnal lekapcsol, nem ég végig az OCR alatt.',
             ),
             const SizedBox(height: 10),
             const _Feature(
-              icon: Icons.offline_pin_rounded,
-              title: 'Offline CMR előzmények',
-              text: 'A mentések a telefonon maradnak, kereshetők, újranyithatók, javíthatók és törölhetők.',
+              icon: Icons.location_on_rounded,
+              title: 'Scan helyadata',
+              text: 'Engedély esetén a scan időpontjához GPS-koordináta és pontosság is menthető.',
             ),
             const SizedBox(height: 24),
             Row(
               children: [
                 const Expanded(
-                  child: Text(
-                    'Mentett CMR-ek',
-                    style: TextStyle(color: Colors.white, fontSize: 21, fontWeight: FontWeight.w900),
-                  ),
+                  child: Text('Mentett CMR-ek', style: TextStyle(color: Colors.white, fontSize: 21, fontWeight: FontWeight.w900)),
                 ),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
@@ -247,10 +263,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     color: const Color(0xFFE6B85C).withValues(alpha: .14),
                     borderRadius: BorderRadius.circular(999),
                   ),
-                  child: Text(
-                    '${_history.length}',
-                    style: const TextStyle(color: Color(0xFFE6B85C), fontWeight: FontWeight.w900),
-                  ),
+                  child: Text('${_history.length}', style: const TextStyle(color: Color(0xFFE6B85C), fontWeight: FontWeight.w900)),
                 ),
               ],
             ),
@@ -263,22 +276,11 @@ class _HomeScreenState extends State<HomeScreen> {
                   hintText: 'Keresés CMR szám, rendszám, cég, hely, áru…',
                   hintStyle: const TextStyle(color: Colors.white38),
                   prefixIcon: const Icon(Icons.search_rounded, color: Colors.white54),
-                  suffixIcon: _query.isEmpty
-                      ? null
-                      : IconButton(
-                          tooltip: 'Keresés törlése',
-                          onPressed: () => setState(() => _query = ''),
-                          icon: const Icon(Icons.close_rounded, color: Colors.white54),
-                        ),
                   filled: true,
                   fillColor: const Color(0xFF14181D),
                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
                 ),
               ),
-              if (_query.isNotEmpty) ...[
-                const SizedBox(height: 8),
-                Text('${filtered.length} találat', style: const TextStyle(color: Colors.white54)),
-              ],
             ],
             const SizedBox(height: 10),
             if (_historyLoading)
@@ -290,18 +292,7 @@ class _HomeScreenState extends State<HomeScreen> {
               Container(
                 padding: const EdgeInsets.all(18),
                 decoration: BoxDecoration(color: const Color(0xFF14181D), borderRadius: BorderRadius.circular(16)),
-                child: const Row(
-                  children: [
-                    Icon(Icons.inbox_rounded, color: Colors.white38),
-                    SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        'Még nincs mentett CMR. Az első Smart Scan után a „Mentés offline” gombbal kerül ide.',
-                        style: TextStyle(color: Colors.white60, height: 1.35),
-                      ),
-                    ),
-                  ],
-                ),
+                child: const Text('Még nincs mentett CMR.', style: TextStyle(color: Colors.white60)),
               )
             else if (filtered.isEmpty)
               Container(
@@ -310,7 +301,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: const Text('Nincs a keresésnek megfelelő mentett CMR.', style: TextStyle(color: Colors.white60)),
               )
             else
-              ...filtered.map((document) => _historyCard(document)),
+              ...filtered.map(_historyCard),
           ],
         ),
       ),
@@ -319,9 +310,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _historyCard(ScannedDocument document) {
     final image = File(document.imagePath);
-    final primary = document.cmr.cmrNumber?.trim().isNotEmpty == true
-        ? 'CMR ${document.cmr.cmrNumber}'
-        : 'Mentett CMR';
+    final primary = document.cmr.cmrNumber?.trim().isNotEmpty == true ? 'CMR ${document.cmr.cmrNumber}' : 'Mentett CMR';
     final secondary = [
       document.cmr.plate,
       document.cmr.consignee,
@@ -344,10 +333,7 @@ class _HomeScreenState extends State<HomeScreen> {
               height: 64,
               child: image.existsSync()
                   ? Image.file(image, fit: BoxFit.cover)
-                  : const ColoredBox(
-                      color: Colors.white10,
-                      child: Icon(Icons.description_rounded, color: Colors.white38),
-                    ),
+                  : const ColoredBox(color: Colors.white10, child: Icon(Icons.description_rounded, color: Colors.white38)),
             ),
           ),
           title: Text(primary, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900)),
