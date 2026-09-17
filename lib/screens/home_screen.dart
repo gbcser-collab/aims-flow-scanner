@@ -269,15 +269,23 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final title = document.cmr.cmrNumber?.trim().isNotEmpty == true ? 'CMR-${document.cmr.cmrNumber}' : 'Mentett CMR';
     final route = [document.cmr.loadingPlace, document.cmr.deliveryPlace].whereType<String>().where((e) => e.trim().isNotEmpty).join(' → ');
     final processed = document.deliveryState == CmrDeliveryState.approved || document.deliveryState == CmrDeliveryState.emailed || document.deliveryState == CmrDeliveryState.uploaded;
+    final status = processed ? 'Feldolgozva' : 'Feldolgozás alatt';
     return Container(
       margin: const EdgeInsets.only(top: 8),
       decoration: BoxDecoration(color: const Color(0xFF0A2741).withValues(alpha: .78), borderRadius: BorderRadius.circular(14), border: Border.all(color: AimsFlowSkin.cyan.withValues(alpha: .35))),
-      child: ListTile(
+      child: Semantics(
+        container: true,
+        button: true,
+        excludeSemantics: true,
+        label: '$title ${route.isEmpty ? 'CMR dokumentum' : route} $status',
         onTap: () => _openSaved(document),
-        leading: ClipRRect(borderRadius: BorderRadius.circular(8), child: SizedBox(width: 42, height: 50, child: image.existsSync() ? Image.file(image, fit: BoxFit.cover) : const ColoredBox(color: Colors.white10, child: Icon(Icons.description_outlined, color: AimsFlowSkin.cyan)))),
-        title: Text(title, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900)),
-        subtitle: Text(route.isEmpty ? 'CMR dokumentum' : route, style: const TextStyle(color: AimsFlowSkin.paleBlue, fontSize: 12)),
-        trailing: SizedBox(width: 95, child: Row(mainAxisAlignment: MainAxisAlignment.end, children: [Container(width: 8, height: 8, decoration: BoxDecoration(color: processed ? AimsFlowSkin.green : AimsFlowSkin.cyan, shape: BoxShape.circle)), const SizedBox(width: 5), Flexible(child: Text(processed ? 'Feldolgozva' : 'Feldolgozás alatt', maxLines: 2, style: TextStyle(color: processed ? AimsFlowSkin.green : AimsFlowSkin.cyan, fontSize: 10, fontWeight: FontWeight.w700))), const Icon(Icons.chevron_right_rounded, color: AimsFlowSkin.paleBlue)])),
+        child: ListTile(
+          onTap: () => _openSaved(document),
+          leading: ClipRRect(borderRadius: BorderRadius.circular(8), child: SizedBox(width: 42, height: 50, child: image.existsSync() ? Image.file(image, fit: BoxFit.cover) : const ColoredBox(color: Colors.white10, child: Icon(Icons.description_outlined, color: AimsFlowSkin.cyan)))),
+          title: Text(title, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900)),
+          subtitle: Text(route.isEmpty ? 'CMR dokumentum' : route, style: const TextStyle(color: AimsFlowSkin.paleBlue, fontSize: 12)),
+          trailing: SizedBox(width: 95, child: Row(mainAxisAlignment: MainAxisAlignment.end, children: [Container(width: 8, height: 8, decoration: BoxDecoration(color: processed ? AimsFlowSkin.green : AimsFlowSkin.cyan, shape: BoxShape.circle)), const SizedBox(width: 5), Flexible(child: Text(status, maxLines: 2, style: TextStyle(color: processed ? AimsFlowSkin.green : AimsFlowSkin.cyan, fontSize: 10, fontWeight: FontWeight.w700))), const Icon(Icons.chevron_right_rounded, color: AimsFlowSkin.paleBlue)])),
+        ),
       ),
     );
   }
