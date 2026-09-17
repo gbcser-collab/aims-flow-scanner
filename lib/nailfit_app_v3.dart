@@ -22,6 +22,7 @@ class _NailFitAppState extends State<NailFitApp> {
   void initState() {
     super.initState();
     c.addListener(_refresh);
+    c.restore();
   }
 
   @override
@@ -31,17 +32,21 @@ class _NailFitAppState extends State<NailFitApp> {
     super.dispose();
   }
 
-  void _refresh() => setState(() {});
+  void _refresh() {
+    if (mounted) setState(() {});
+  }
 
   Future<void> _pick(ImageSource source) async {
     final file = await picker.pickImage(
       source: source,
-      imageQuality: 90,
-      maxWidth: 2200,
+      imageQuality: 92,
+      maxWidth: 2400,
     );
     if (!mounted || file == null) return;
+    c.resetScan();
     setState(() => photo = file);
     c.go(1);
+    await c.analyzePhoto(file);
   }
 
   Widget _activeScreen(NailFitV3SavedProfile savedProfile) {
@@ -73,6 +78,9 @@ class _NailFitAppState extends State<NailFitApp> {
         colorScheme: ColorScheme.fromSeed(
           seedColor: nfRose,
           brightness: Brightness.light,
+        ),
+        snackBarTheme: const SnackBarThemeData(
+          behavior: SnackBarBehavior.floating,
         ),
       ),
       home: Scaffold(
@@ -164,11 +172,4 @@ class _NailFitAppState extends State<NailFitApp> {
       ),
     );
   }
-}
-
-class NailFitHome extends StatelessWidget {
-  const NailFitHome({super.key});
-
-  @override
-  Widget build(BuildContext context) => const SizedBox.shrink();
 }
