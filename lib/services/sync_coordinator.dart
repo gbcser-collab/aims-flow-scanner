@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 
@@ -19,6 +20,10 @@ class SyncCoordinator extends ChangeNotifier {
   Timer? _timer;
   bool _initialized = false;
   bool _syncing = false;
+  bool _syncAgain = false;
+  bool _enrolled = false;
+  int _failureCount = 0;
+  DateTime? _nextAutomaticAttemptAt;
   String _deviceState = 'unknown';
   int _pendingCount = 0;
   String? _lastError;
@@ -35,7 +40,7 @@ class SyncCoordinator extends ChangeNotifier {
     _initialized = true;
     await _repository.pruneExpiredApproved();
     await refreshPendingCount();
-    _timer = Timer.periodic(const Duration(minutes: 2), (_) => unawaited(syncNow()));
+    _timer = Timer.periodic(const Duration(minutes: 2), (_) => unawaited(_sync(force: false)));
     unawaited(syncNow());
   }
 
@@ -45,16 +50,30 @@ class SyncCoordinator extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> syncNow() async {
-    if (_syncing) return;
+  /// Explicit user/lifecycle syncs bypass retry backoff. Automatic timer calls
+  /// use [_sync] directly and back off after repeated network failures.
+  Future<void> syncNow() => _sync(force: true);
+
+  Future<void> _sync({required bool force}) async {
+    if (_syncing) {
+      _syncAgain = true;
+      return;
+    }
+
+    final next = _nextAutomaticAttemptAt;
+    if (!force && next != null && DateTime.now().isBefore(next)) return;
+
     _syncing = true;
     _lastError = null;
     notifyListeners();
 
     try {
       final identity = await _identityService.loadOrCreate();
-      final enroll = await _api.enroll(identity, label: 'AIMS Flow Smart Scanner');
-      _deviceState = enroll['state'] as String? ?? _deviceState;
+      if (!_enrolled) {
+        final enroll = await _api.enroll(identity, label: 'AIMS Flow Smart Scanner');
+        _deviceState = enroll['state'] as String? ?? _deviceState;
+        _enrolled = true;
+      }
 
       final status = await _api.deviceStatus(identity);
       _deviceState = status['state'] as String? ?? _deviceState;
@@ -62,6 +81,8 @@ class SyncCoordinator extends ChangeNotifier {
         _lastError = _deviceState == 'revoked'
             ? 'A készülék hozzáférését az admin visszavonta.'
             : 'A készülék admin jóváhagyásra vár.';
+        _failureCount = 0;
+        _nextAutomaticAttemptAt = DateTime.now().add(const Duration(minutes: 2));
         return;
       }
 
@@ -72,6 +93,7 @@ class SyncCoordinator extends ChangeNotifier {
           final updated = _applyServerState(document, response);
           await _repository.update(updated);
         } on AimsApiException catch (e) {
+          if (e.statusCode == 401 || e.statusCode == 404) _enrolled = false;
           if (e.code == 'device_pending') {
             _deviceState = 'pending';
             _lastError = 'A készülék admin jóváhagyásra vár.';
@@ -95,20 +117,48 @@ class SyncCoordinator extends ChangeNotifier {
           _lastError = 'Nincs kapcsolat. A dokumentum offline sorban marad.';
         }
       }
+
       _lastSyncAt = DateTime.now();
       await _repository.pruneExpiredApproved();
+      if (_lastError == null) {
+        _failureCount = 0;
+        _nextAutomaticAttemptAt = null;
+      } else {
+        _scheduleBackoff();
+      }
     } on AimsApiException catch (e) {
+      if (e.statusCode == 401 || e.statusCode == 404) _enrolled = false;
       if (e.code == 'device_pending') _deviceState = 'pending';
       if (e.code == 'device_revoked') _deviceState = 'revoked';
       _lastError = 'Szinkron várakozik: ${e.code}';
+      _scheduleBackoff();
     } catch (_) {
       _lastError = 'Nincs hálózati kapcsolat. Az adatok biztonságosan offline maradnak.';
+      _scheduleBackoff();
     } finally {
       final pending = await _repository.pendingForSync();
       _pendingCount = pending.length;
       _syncing = false;
       notifyListeners();
+
+      if (_syncAgain) {
+        _syncAgain = false;
+        unawaited(_sync(force: true));
+      }
     }
+  }
+
+  void _scheduleBackoff() {
+    _failureCount = min(_failureCount + 1, 6);
+    const delays = <Duration>[
+      Duration(seconds: 30),
+      Duration(minutes: 1),
+      Duration(minutes: 2),
+      Duration(minutes: 5),
+      Duration(minutes: 10),
+      Duration(minutes: 15),
+    ];
+    _nextAutomaticAttemptAt = DateTime.now().add(delays[_failureCount - 1]);
   }
 
   ScannedDocument _applyServerState(ScannedDocument document, Map<String, dynamic> response) {
