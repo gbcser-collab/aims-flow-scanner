@@ -12,17 +12,46 @@ class LoginScreen extends StatefulWidget {
   State<LoginScreen> createState() => _LoginScreenState();
 }
 
-class _LoginScreenState extends State<LoginScreen> {
+class _LoginScreenState extends State<LoginScreen> with WidgetsBindingObserver {
   final _user = TextEditingController();
   final _password = TextEditingController();
   final _code = List.generate(6, (_) => TextEditingController());
   final _focus = List.generate(6, (_) => FocusNode());
+  final _scroll = ScrollController();
   bool _obscure = true;
   bool _busy = false;
+  bool _keyboardVisible = false;
   String? _error;
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeMetrics() {
+    final views = WidgetsBinding.instance.platformDispatcher.views;
+    if (views.isEmpty) return;
+    final view = views.first;
+    final visible = view.viewInsets.bottom > 0;
+    if (_keyboardVisible && !visible) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || !_scroll.hasClients || _scroll.offset <= 0) return;
+        _scroll.animateTo(
+          0,
+          duration: const Duration(milliseconds: 160),
+          curve: Curves.easeOutCubic,
+        );
+      });
+    }
+    _keyboardVisible = visible;
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _scroll.dispose();
     _user.dispose();
     _password.dispose();
     for (final c in _code) c.dispose();
@@ -84,6 +113,7 @@ class _LoginScreenState extends State<LoginScreen> {
         child: SafeArea(
           child: Center(
             child: SingleChildScrollView(
+              controller: _scroll,
               padding: const EdgeInsets.fromLTRB(22, 24, 22, 28),
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 520),
