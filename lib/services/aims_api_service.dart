@@ -20,6 +20,8 @@ class AimsApiException implements Exception {
 class AimsApiService {
   const AimsApiService({this.baseUrl = 'https://logistic-aims.hu/api'});
 
+  static final http.Client _client = http.Client();
+
   final String baseUrl;
 
   Map<String, String> _authHeaders(DeviceIdentity identity) => {
@@ -48,7 +50,7 @@ class AimsApiService {
   }
 
   Future<Map<String, dynamic>> enroll(DeviceIdentity identity, {required String label}) async {
-    final response = await http
+    final response = await _client
         .post(
           Uri.parse('$baseUrl/device/enroll'),
           headers: const {'content-type': 'application/json; charset=utf-8', 'accept': 'application/json'},
@@ -59,7 +61,7 @@ class AimsApiService {
   }
 
   Future<Map<String, dynamic>> deviceStatus(DeviceIdentity identity) async {
-    final response = await http
+    final response = await _client
         .get(Uri.parse('$baseUrl/device/status'), headers: _authHeaders(identity))
         .timeout(const Duration(seconds: 20));
     return _decode(response);
@@ -78,7 +80,7 @@ class AimsApiService {
       'location': document.location?.toJson(),
       'image': {'mimeType': 'image/jpeg', 'base64': base64Encode(bytes)},
     };
-    final response = await http
+    final response = await _client
         .post(
           Uri.parse('$baseUrl/cmr/sync'),
           headers: _authHeaders(identity),
@@ -92,7 +94,7 @@ class AimsApiService {
     DeviceIdentity identity,
     TrackingSession session,
   ) async {
-    final response = await http
+    final response = await _client
         .post(
           Uri.parse('$baseUrl/tracking/start'),
           headers: _authHeaders(identity),
@@ -112,7 +114,7 @@ class AimsApiService {
     TrackingSession session,
     List<TrackingPoint> points,
   ) async {
-    final response = await http
+    final response = await _client
         .post(
           Uri.parse('$baseUrl/tracking/points'),
           headers: _authHeaders(identity),
@@ -131,7 +133,7 @@ class AimsApiService {
     DeviceIdentity identity,
     TrackingSession session,
   ) async {
-    final response = await http
+    final response = await _client
         .post(
           Uri.parse('$baseUrl/tracking/stop'),
           headers: _authHeaders(identity),
