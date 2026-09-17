@@ -62,6 +62,80 @@ class AimsFlowBackground extends StatelessWidget {
   }
 }
 
+class AimsFlowMark extends StatelessWidget {
+  const AimsFlowMark({super.key, this.size = 96});
+
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox.square(
+      dimension: size,
+      child: CustomPaint(painter: const _AimsFlowMarkPainter()),
+    );
+  }
+}
+
+class _AimsFlowMarkPainter extends CustomPainter {
+  const _AimsFlowMarkPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final scaleX = size.width / 100;
+    final scaleY = size.height / 100;
+
+    Path scaled(Path source) => source.transform(Matrix4.diagonal3Values(scaleX, scaleY, 1).storage);
+
+    final glow = Paint()
+      ..style = PaintingStyle.fill
+      ..color = AimsFlowSkin.cyan.withValues(alpha: .25)
+      ..maskFilter = MaskFilter.blur(BlurStyle.normal, size.shortestSide * .08);
+
+    final gradient = Paint()
+      ..style = PaintingStyle.fill
+      ..shader = const LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [Color(0xFF65ECFF), Color(0xFF16C5FF), Color(0xFF0B76FF)],
+      ).createShader(Offset.zero & size);
+
+    final left = Path()
+      ..moveTo(12, 82)
+      ..lineTo(43, 14)
+      ..lineTo(55, 14)
+      ..lineTo(29, 82)
+      ..close();
+    final right = Path()
+      ..moveTo(49, 14)
+      ..lineTo(88, 82)
+      ..lineTo(70, 82)
+      ..lineTo(39, 28)
+      ..close();
+    final cut = Path()
+      ..moveTo(34, 66)
+      ..lineTo(69, 66)
+      ..lineTo(61, 52)
+      ..lineTo(40, 52)
+      ..close();
+
+    final mark = Path.combine(PathOperation.union, scaled(left), scaled(right));
+    canvas.drawPath(mark, glow);
+    canvas.drawPath(mark, gradient);
+    canvas.drawPath(scaled(cut), Paint()..color = AimsFlowSkin.background);
+
+    final accent = Path()
+      ..moveTo(17, 88)
+      ..lineTo(81, 88)
+      ..lineTo(89, 96)
+      ..lineTo(9, 96)
+      ..close();
+    canvas.drawPath(scaled(accent), gradient);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
 class AimsFlowBrand extends StatelessWidget {
   const AimsFlowBrand({super.key, this.compact = false});
 
@@ -73,7 +147,7 @@ class AimsFlowBrand extends StatelessWidget {
       return const Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          FlutterLogo(size: 42),
+          AimsFlowMark(size: 42),
           SizedBox(width: 10),
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -89,7 +163,7 @@ class AimsFlowBrand extends StatelessWidget {
 
     return const Column(
       children: [
-        FlutterLogo(size: 102),
+        AimsFlowMark(size: 102),
         SizedBox(height: 10),
         Text('AIMS Flow Smart Scanner', style: TextStyle(color: Color(0xFFC9EAFF), fontSize: 22, fontWeight: FontWeight.w400)),
       ],
