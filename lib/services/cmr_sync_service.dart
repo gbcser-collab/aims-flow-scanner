@@ -58,11 +58,21 @@ class CmrSyncService {
   final DeviceIdentityService deviceIdentity;
 
   static const String _baseUrl = String.fromEnvironment('AIMS_API_BASE_URL', defaultValue: '');
+  static const bool _e2eTestMode = bool.fromEnvironment('AIMS_E2E_TEST_MODE', defaultValue: false);
 
   bool get isConfigured => _baseUrl.trim().isNotEmpty;
 
   Future<CmrSyncReport> syncPending() async {
     final credentials = await deviceIdentity.getOrCreateCredentials();
+    if (_e2eTestMode) {
+      return CmrSyncReport(
+        attempted: 0,
+        succeeded: 0,
+        failed: 0,
+        deviceState: AimsDeviceState.approved,
+        deviceId: credentials.id,
+      );
+    }
     if (!isConfigured) {
       return CmrSyncReport(
         attempted: 0,
@@ -220,32 +230,28 @@ class CmrSyncService {
     Map<String, dynamic>? body,
     DeviceCredentials? credentials,
   }) async {
-    final base = _baseUrl.trim().replaceAll(RegExp(r'/+$'), '');
-    final uri = Uri.parse('$base$path');
     final client = HttpClient()..connectionTimeout = const Duration(seconds: 8);
     try {
+      final uri = Uri.parse('${_baseUrl.replaceAll(RegExp(r'/+$'), '')}$path');
       final request = method == 'POST' ? await client.postUrl(uri) : await client.getUrl(uri);
+      request.headers.contentType = ContentType.json;
       request.headers.set(HttpHeaders.acceptHeader, 'application/json');
-      request.headers.set(HttpHeaders.contentTypeHeader, 'application/json; charset=utf-8');
-      request.headers.set('X-AIMS-App', 'AIMS-Flow');
       if (credentials != null) {
-        request.headers.set('X-AIMS-Device-Id', credentials.id);
-        request.headers.set(HttpHeaders.authorizationHeader, 'Bearer ${credentials.secret}');
+        request.headers.set('X-AIMS-Device-ID', credentials.id);
+        request.headers.set('X-AIMS-Device-Secret', credentials.secret);
       }
       if (body != null) request.write(jsonEncode(body));
-
       final response = await request.close().timeout(const Duration(seconds: 24));
-      final text = await utf8.decoder.bind(response).join();
-      Map<String, dynamic> decoded = <String, dynamic>{};
-      if (text.trim().isNotEmpty) {
-        final parsed = jsonDecode(text);
-        if (parsed is Map) decoded = Map<String, dynamic>.from(parsed);
+      final payload = await utf8.decoder.bind(response).join();
+      Map<String, dynamic> json = const {};
+      if (payload.trim().isNotEmpty) {
+        final decoded = jsonDecode(payload);
+        if (decoded is Map<String, dynamic>) json = decoded;
       }
       if (response.statusCode < 200 || response.statusCode >= 300) {
-        final code = decoded['error']?.toString() ?? 'http_${response.statusCode}';
-        throw _AimsApiException(response.statusCode, code);
+        throw _AimsApiException(response.statusCode, json['error']?.toString() ?? 'request_failed');
       }
-      return decoded;
+      return json;
     } finally {
       client.close(force: true);
     }
