@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'nailfit_v3_home.dart';
@@ -22,7 +24,16 @@ class _NailFitAppState extends State<NailFitApp> {
   void initState() {
     super.initState();
     c.addListener(_refresh);
-    c.restore();
+    _bootstrap();
+  }
+
+  Future<void> _bootstrap() async {
+    await c.restore();
+    final path = c.lastPhotoPath;
+    if (!mounted || path == null) return;
+    if (await File(path).exists()) {
+      setState(() => photo = XFile(path));
+    }
   }
 
   @override
@@ -37,13 +48,15 @@ class _NailFitAppState extends State<NailFitApp> {
   }
 
   Future<void> _pick(ImageSource source) async {
-    final file = await picker.pickImage(
+    final selected = await picker.pickImage(
       source: source,
       imageQuality: 92,
       maxWidth: 2400,
     );
-    if (!mounted || file == null) return;
+    if (!mounted || selected == null) return;
     c.resetScan();
+    final file = await c.rememberPhoto(selected);
+    if (!mounted) return;
     setState(() => photo = file);
     c.go(1);
     await c.analyzePhoto(file);
