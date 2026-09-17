@@ -137,7 +137,7 @@ class NailFitV3Controller extends ChangeNotifier {
       appointment = appointmentRaw == null ? null : DateTime.tryParse(appointmentRaw);
       notifyListeners();
     } catch (_) {
-      // Corrupt state must never block the app from opening.
+      // A sérült helyi állapot nem akadályozhatja az app indulását.
     }
   }
 
@@ -155,12 +155,12 @@ class NailFitV3Controller extends ChangeNotifier {
         'appointment': appointment?.toIso8601String(),
       }), flush: true);
     } catch (_) {
-      // Persistence is best effort. Runtime state remains usable.
+      // Best effort: a futó állapot mentés nélkül is használható.
     }
   }
 
   void go(int value) {
-    tab = value.clamp(0, 4);
+    tab = value.clamp(0, 4).toInt();
     notifyListeners();
   }
 
@@ -196,7 +196,7 @@ class NailFitV3Controller extends ChangeNotifier {
   }
 
   void setLength(double value) {
-    length = value.clamp(.68, 1.35);
+    length = value.clamp(.68, 1.35).toDouble();
     notifyListeners();
   }
 
@@ -273,8 +273,8 @@ class NailFitV3Controller extends ChangeNotifier {
   void addPoint(Offset local, Size size) {
     if (points.length >= 5 || size.width <= 0 || size.height <= 0) return;
     points.add(Offset(
-      (local.dx / size.width).clamp(0.0, 1.0),
-      (local.dy / size.height).clamp(0.0, 1.0),
+      (local.dx / size.width).clamp(0.0, 1.0).toDouble(),
+      (local.dy / size.height).clamp(0.0, 1.0).toDouble(),
     ));
     notifyListeners();
   }
@@ -303,7 +303,7 @@ class NailFitV3Controller extends ChangeNotifier {
 
       final width = image.width;
       final height = image.height;
-      final step = math.max(1, (width * height / 8000).sqrtFloor());
+      final step = math.max(1, math.sqrt(width * height / 8000).floor()).toInt();
       var count = 0;
       var luminanceSum = 0.0;
       var luminanceSq = 0.0;
@@ -337,7 +337,7 @@ class NailFitV3Controller extends ChangeNotifier {
 
       final brightness = count == 0 ? 0.0 : luminanceSum / count;
       final variance = count == 0 ? 0.0 : (luminanceSq / count) - brightness * brightness;
-      final contrast = math.sqrt(math.max(0, variance));
+      final contrast = math.sqrt(math.max(0.0, variance));
       final pixelCount = width * height;
 
       final avgR = skinCount == 0 ? 178.0 : sr / skinCount;
@@ -370,7 +370,7 @@ class NailFitV3Controller extends ChangeNotifier {
       if (pixelCount < 7000) qualityScore -= 20;
       if (skinCount < count * .06) qualityScore -= 14;
       if (points.length < 5) qualityScore -= 8;
-      qualityScore = qualityScore.clamp(35, 100);
+      qualityScore = qualityScore.clamp(35, 100).toInt();
       final quality = qualityScore >= 82
           ? 'Kiváló'
           : qualityScore >= 68
@@ -465,8 +465,4 @@ extension _FirstOrNull<E> on Iterable<E> {
     final iterator = this.iterator;
     return iterator.moveNext() ? iterator.current : null;
   }
-}
-
-extension on num {
-  int sqrtFloor() => math.sqrt(toDouble()).floor();
 }
