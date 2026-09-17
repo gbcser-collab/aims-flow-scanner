@@ -14,6 +14,7 @@ class DeviceGate extends StatefulWidget {
 
 class _DeviceGateState extends State<DeviceGate> with WidgetsBindingObserver {
   static const _sync = CmrSyncService();
+  static const bool _e2eBypass = bool.fromEnvironment('AIMS_E2E_BYPASS_AUTH', defaultValue: false);
 
   AimsDeviceState _state = AimsDeviceState.unknown;
   String? _deviceId;
@@ -23,7 +24,7 @@ class _DeviceGateState extends State<DeviceGate> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _check();
+    if (!_e2eBypass) _check();
   }
 
   @override
@@ -34,7 +35,7 @@ class _DeviceGateState extends State<DeviceGate> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) _check();
+    if (!_e2eBypass && state == AppLifecycleState.resumed) _check();
   }
 
   Future<void> _check() async {
@@ -56,6 +57,7 @@ class _DeviceGateState extends State<DeviceGate> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
+    if (_e2eBypass) return widget.child;
     if (_state == AimsDeviceState.pending) {
       return _DeviceLockScreen(
         icon: Icons.hourglass_top_rounded,
