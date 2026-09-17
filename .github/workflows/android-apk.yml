@@ -2,7 +2,7 @@ name: Build and deep-test Android APK
 
 on:
   push:
-    branches: [ main, v0.8-dev, v0.9-pro, v1.0-road ]
+    branches: [ main, v0.8-dev, v0.9-pro, v1.0-road, v1.0-unified-flow-ui ]
   workflow_dispatch:
 
 jobs:
@@ -39,6 +39,14 @@ jobs:
           rm -rf /tmp/aims_template
           flutter create --platforms=android --org hu.logisticaims --project-name aims_flow_scanner /tmp/aims_template
           cp -R /tmp/aims_template/android ./android
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('android/app/src/main/AndroidManifest.xml')
+          text = path.read_text()
+          permissions = '''\n    <uses-permission android:name="android.permission.CAMERA" />\n    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />\n    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />\n    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />\n    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />\n    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />'''
+          text = text.replace('<manifest xmlns:android="http://schemas.android.com/apk/res/android">', '<manifest xmlns:android="http://schemas.android.com/apk/res/android">' + permissions)
+          path.write_text(text)
+          PY
 
       - name: Dependencies
         run: flutter pub get
@@ -62,11 +70,11 @@ jobs:
       - name: Upload APK before device test
         uses: actions/upload-artifact@v4
         with:
-          name: AIMS-Flow-Smart-Scanner-v1.0-ROAD-END-TO-END
+          name: AIMS-Flow-v1.0-UNIFIED-ANDROID
           path: build/app/outputs/flutter-apk/app-debug.apk
           if-no-files-found: error
 
-      - name: Deep end-to-end Smart Scanner test
+      - name: Deep end-to-end AIMS Flow test
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
@@ -80,6 +88,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: AIMS-Flow-Scanner-v1.0-ROAD-test-evidence
+          name: AIMS-Flow-v1.0-UNIFIED-test-evidence
           path: test-evidence/
           if-no-files-found: warn
