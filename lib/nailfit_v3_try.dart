@@ -205,17 +205,9 @@ class _NailFitV3TryState extends State<NailFitV3Try> {
         decoration: nfCard(),
         child: Row(
           children: [
-            Expanded(
-              child: _toggleSegment('Előtte', !c.showOverlay, () {
-                if (c.showOverlay) c.toggleOverlay();
-              }),
-            ),
+            Expanded(child: _toggleSegment('Előtte', !c.showOverlay, () { if (c.showOverlay) c.toggleOverlay(); })),
             const SizedBox(width: 5),
-            Expanded(
-              child: _toggleSegment('Utána', c.showOverlay, () {
-                if (!c.showOverlay) c.toggleOverlay();
-              }),
-            ),
+            Expanded(child: _toggleSegment('Utána', c.showOverlay, () { if (!c.showOverlay) c.toggleOverlay(); })),
           ],
         ),
       );
@@ -233,14 +225,7 @@ class _NailFitV3TryState extends State<NailFitV3Try> {
 
   Widget _fineTune() {
     const shapes = <String>['Mandula', 'Ovális', 'Kocka', 'Coffin'];
-    const colors = <Color>[
-      Color(0xFFD99CA6),
-      Color(0xFFE7B8B1),
-      Color(0xFFF1D5CC),
-      Color(0xFFC7A18F),
-      Color(0xFF6B1D2E),
-      Color(0xFF2C1E22),
-    ];
+    const colors = <Color>[Color(0xFFD99CA6), Color(0xFFE7B8B1), Color(0xFFF1D5CC), Color(0xFFC7A18F), Color(0xFF6B1D2E), Color(0xFF2C1E22)];
     const finishes = <NailFinish>[NailFinish.glossy, NailFinish.french, NailFinish.glitter, NailFinish.chrome];
 
     return Container(
@@ -253,36 +238,22 @@ class _NailFitV3TryState extends State<NailFitV3Try> {
           const SizedBox(height: 12),
           const Text('FORMA', style: TextStyle(color: nfMuted, fontSize: 8, letterSpacing: 1, fontWeight: FontWeight.w800)),
           const SizedBox(height: 7),
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: shapes.map((shape) => ChoiceChip(label: Text(shape), selected: c.shape == shape, onSelected: (_) => c.setShape(shape), selectedColor: const Color(0xFFF4D4DA), labelStyle: const TextStyle(fontSize: 9.5))).toList(),
-          ),
+          Wrap(spacing: 6, runSpacing: 6, children: shapes.map((shape) => ChoiceChip(label: Text(shape), selected: c.shape == shape, onSelected: (_) => c.setShape(shape), selectedColor: const Color(0xFFF4D4DA), labelStyle: const TextStyle(fontSize: 9.5))).toList()),
           const SizedBox(height: 13),
           const Text('SZÍN', style: TextStyle(color: nfMuted, fontSize: 8, letterSpacing: 1, fontWeight: FontWeight.w800)),
           const SizedBox(height: 8),
           Wrap(
             spacing: 10,
-            children: colors
-                .map((color) => InkWell(
-                      onTap: () => c.setColor(color),
-                      borderRadius: BorderRadius.circular(99),
-                      child: Container(
-                        width: 33,
-                        height: 33,
-                        decoration: BoxDecoration(color: color, shape: BoxShape.circle, border: Border.all(color: c.color.toARGB32() == color.toARGB32() ? nfRoseDark : Colors.white, width: c.color.toARGB32() == color.toARGB32() ? 3 : 1)),
-                      ),
-                    ))
-                .toList(),
+            children: colors.map((color) => InkWell(
+              onTap: () => c.setColor(color),
+              borderRadius: BorderRadius.circular(99),
+              child: Container(width: 33, height: 33, decoration: BoxDecoration(color: color, shape: BoxShape.circle, border: Border.all(color: c.color.toARGB32() == color.toARGB32() ? nfRoseDark : Colors.white, width: c.color.toARGB32() == color.toARGB32() ? 3 : 1))),
+            )).toList(),
           ),
           const SizedBox(height: 13),
           const Text('FINISH', style: TextStyle(color: nfMuted, fontSize: 8, letterSpacing: 1, fontWeight: FontWeight.w800)),
           const SizedBox(height: 7),
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: finishes.map((finish) => ChoiceChip(label: Text(_finishLabel(finish)), selected: c.finish == finish, onSelected: (_) => c.setFinish(finish), selectedColor: const Color(0xFFF4D4DA), labelStyle: const TextStyle(fontSize: 9.2))).toList(),
-          ),
+          Wrap(spacing: 6, runSpacing: 6, children: finishes.map((finish) => ChoiceChip(label: Text(_finishLabel(finish)), selected: c.finish == finish, onSelected: (_) => c.setFinish(finish), selectedColor: const Color(0xFFF4D4DA), labelStyle: const TextStyle(fontSize: 9.2))).toList()),
           const SizedBox(height: 13),
           Row(children: [const Text('HOSSZ', style: TextStyle(color: nfMuted, fontSize: 8, letterSpacing: 1, fontWeight: FontWeight.w800)), const Spacer(), Text(_lengthLabel(c.length), style: const TextStyle(color: nfRoseDark, fontSize: 9.5, fontWeight: FontWeight.w800))]),
           Slider(value: c.length, min: .68, max: 1.35, divisions: 14, activeColor: nfRose, onChanged: c.setLength),
@@ -298,14 +269,11 @@ class _NailFitV3TryState extends State<NailFitV3Try> {
           height: 62,
           decoration: nfCard(),
           padding: const EdgeInsets.symmetric(horizontal: 8),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              CircleAvatar(radius: 17, backgroundColor: const Color(0xFFF9DBE1), child: Icon(icon, color: nfInk, size: 17)),
-              const SizedBox(width: 7),
-              Flexible(child: Text(label, textAlign: TextAlign.center, maxLines: 2, style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.w800))),
-            ],
-          ),
+          child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+            CircleAvatar(radius: 17, backgroundColor: const Color(0xFFF9DBE1), child: Icon(icon, color: nfInk, size: 17)),
+            const SizedBox(width: 7),
+            Flexible(child: Text(label, textAlign: TextAlign.center, maxLines: 2, style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.w800))),
+          ]),
         ),
       );
 
@@ -313,35 +281,36 @@ class _NailFitV3TryState extends State<NailFitV3Try> {
         onTap: () => _book(context),
         borderRadius: BorderRadius.circular(22),
         child: Container(
-          height: 92,
+          height: 118,
           clipBehavior: Clip.antiAlias,
           decoration: nfCard(),
           child: Row(
             children: [
               Expanded(
                 child: Padding(
-                  padding: const EdgeInsets.all(14),
+                  padding: const EdgeInsets.all(12),
                   child: Row(
                     children: [
-                      const CircleAvatar(radius: 22, backgroundColor: Color(0xFFF8DCE2), child: Icon(Icons.calendar_month_outlined, color: nfRoseDark)),
-                      const SizedBox(width: 11),
+                      const CircleAvatar(radius: 20, backgroundColor: Color(0xFFF8DCE2), child: Icon(Icons.calendar_month_outlined, color: nfRoseDark, size: 20)),
+                      const SizedBox(width: 10),
                       Expanded(
                         child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
+                          mainAxisSize: MainAxisSize.min,
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text('Szalonidőpont tervezése', style: TextStyle(fontFamily: 'serif', fontSize: 17, color: nfInk, fontWeight: FontWeight.w600)),
-                            const SizedBox(height: 3),
-                            Text(c.appointment == null ? 'Ments egy időpontot ehhez a lookhoz.' : _appointmentLabel(c.appointment!), style: const TextStyle(color: nfMuted, fontSize: 8.8)),
+                            const Text('Szalonidőpont tervezése', maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontFamily: 'serif', fontSize: 15, height: 1.05, color: nfInk, fontWeight: FontWeight.w600)),
+                            const SizedBox(height: 4),
+                            Text(c.appointment == null ? 'Ments egy időpontot ehhez a lookhoz.' : _appointmentLabel(c.appointment!), maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(color: nfMuted, fontSize: 8.6, height: 1.2)),
                           ],
                         ),
                       ),
-                      const Icon(Icons.chevron_right_rounded, color: nfMuted),
+                      const SizedBox(width: 4),
+                      const Icon(Icons.chevron_right_rounded, color: nfMuted, size: 19),
                     ],
                   ),
                 ),
               ),
-              SizedBox(width: 105, child: nfPhoto(nfHeroUrl)),
+              SizedBox(width: 92, child: nfPhoto(nfHeroUrl)),
             ],
           ),
         ),
@@ -385,13 +354,7 @@ class _NailFitV3TryState extends State<NailFitV3Try> {
     final path = await _capturePng();
     if (path == null || !mounted) return;
     try {
-      await SharePlus.instance.share(
-        ShareParams(
-          title: 'NAILFIT look',
-          text: 'Ezt a NAILFIT lookot szeretném: ${c.look.name} · ${c.shape}',
-          files: [XFile(path)],
-        ),
-      );
+      await SharePlus.instance.share(ShareParams(title: 'NAILFIT look', text: 'Ezt a NAILFIT lookot szeretném: ${c.look.name} · ${c.shape}', files: [XFile(path)]));
     } catch (_) {
       _snack('A megosztási lap nem nyitható meg ezen az eszközön.');
     }
