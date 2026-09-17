@@ -24,7 +24,7 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey('nav-3')));
     await tester.pump(const Duration(milliseconds: 250));
-    expect(find.text('Mentett'), findsOneWidget);
+    expect(find.textContaining('kedvenc stílus'), findsOneWidget);
 
     await tester.tap(find.byKey(const ValueKey('nav-4')));
     await tester.pump(const Duration(milliseconds: 250));
