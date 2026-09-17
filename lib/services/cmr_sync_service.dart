@@ -58,11 +58,26 @@ class CmrSyncService {
   final DeviceIdentityService deviceIdentity;
 
   static const String _baseUrl = String.fromEnvironment('AIMS_API_BASE_URL', defaultValue: '');
+  static const bool _e2eTest = bool.fromEnvironment('AIMS_E2E_TEST', defaultValue: false);
 
   bool get isConfigured => _baseUrl.trim().isNotEmpty;
 
   Future<CmrSyncReport> syncPending() async {
     final credentials = await deviceIdentity.getOrCreateCredentials();
+
+    // Explicit CI-only isolation. This prevents emulator tests from enrolling
+    // fake devices or sending fake CMRs to the production backend/mailbox.
+    if (_e2eTest) {
+      await repository.purgeExpiredApproved();
+      return CmrSyncReport(
+        attempted: 0,
+        succeeded: 0,
+        failed: 0,
+        deviceState: AimsDeviceState.approved,
+        deviceId: credentials.id,
+      );
+    }
+
     if (!isConfigured) {
       return CmrSyncReport(
         attempted: 0,
