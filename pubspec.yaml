@@ -1,5 +1,5 @@
 name: nailfit
-version: 0.7.0+8
+version: 0.8.0+9
 publish_to: 'none'
 
 environment:
