@@ -118,7 +118,7 @@ class _DeviceLockScreen extends StatelessWidget {
                 padding: const EdgeInsets.all(26),
                 decoration: AimsFlowSkin.glass(radius: 24),
                 child: Column(mainAxisSize: MainAxisSize.min, children: [
-                  const FlutterLogo(size: 72),
+                  const AimsFlowMark(size: 72),
                   const SizedBox(height: 18),
                   Icon(icon, color: accent, size: 52),
                   const SizedBox(height: 16),
