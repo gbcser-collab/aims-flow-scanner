@@ -13,6 +13,7 @@ class DeviceGate extends StatefulWidget {
 
 class _DeviceGateState extends State<DeviceGate> with WidgetsBindingObserver {
   static const _sync = CmrSyncService();
+  static const _e2eTest = bool.fromEnvironment('AIMS_E2E_TEST', defaultValue: false);
 
   AimsDeviceState _state = AimsDeviceState.unknown;
   String? _deviceId;
@@ -22,7 +23,11 @@ class _DeviceGateState extends State<DeviceGate> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _check();
+    if (_e2eTest) {
+      _checking = false;
+    } else {
+      _check();
+    }
   }
 
   @override
@@ -33,10 +38,11 @@ class _DeviceGateState extends State<DeviceGate> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) _check();
+    if (!_e2eTest && state == AppLifecycleState.resumed) _check();
   }
 
   Future<void> _check() async {
+    if (_e2eTest) return;
     if (mounted) setState(() => _checking = true);
     try {
       final report = await _sync.syncPending();
@@ -60,6 +66,10 @@ class _DeviceGateState extends State<DeviceGate> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
+    // CI builds use an explicit compile-time flag. Production/user APKs never
+    // set this flag, so device approval cannot be bypassed in distributed builds.
+    if (_e2eTest) return widget.child;
+
     if (_state == AimsDeviceState.pending) {
       return _DeviceLockScreen(
         icon: Icons.hourglass_top_rounded,
