@@ -6,20 +6,39 @@ Widget nfBackground(Widget child) => DecoratedBox(
   child: child,
 );
 
-Widget nfHeader() => Row(children: [
+Widget nfHeader({VoidCallback? onAi, VoidCallback? onNotifications}) => Row(children: [
   const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
     Row(children: [Text('NAIL', style: TextStyle(fontSize: 22, letterSpacing: 3.6, fontWeight: FontWeight.w500, color: nfInk)), Text('FIT', style: TextStyle(fontSize: 22, letterSpacing: 3.6, fontWeight: FontWeight.w500, color: nfRose))]),
     Text('B E A U T Y   M E E T S   Y O U', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 6.2, letterSpacing: 1.0, color: nfMuted)),
   ])),
   const SizedBox(width: 6),
-  Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8), decoration: BoxDecoration(color: const Color(0xFFFBE4E8), borderRadius: BorderRadius.circular(99), border: Border.all(color: Colors.white)), child: const Row(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.auto_awesome_rounded, size: 13, color: nfRose), SizedBox(width: 4), Text('BEAUTY AI', style: TextStyle(fontSize: 8.2, letterSpacing: .8, color: nfRoseDark, fontWeight: FontWeight.w800))])),
+  InkWell(
+    onTap: onAi,
+    borderRadius: BorderRadius.circular(99),
+    child: Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8), decoration: BoxDecoration(color: const Color(0xFFFBE4E8), borderRadius: BorderRadius.circular(99), border: Border.all(color: Colors.white)), child: const Row(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.auto_awesome_rounded, size: 13, color: nfRose), SizedBox(width: 4), Text('BEAUTY AI', style: TextStyle(fontSize: 8.2, letterSpacing: .8, color: nfRoseDark, fontWeight: FontWeight.w800))])),
+  ),
   const SizedBox(width: 6),
-  Stack(children: [Container(width: 36, height: 36, decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle), child: const Icon(Icons.notifications_none_rounded, size: 20, color: nfInk)), const Positioned(right: 2, top: 2, child: CircleAvatar(radius: 4, backgroundColor: Color(0xFFD97C8F)))]),
+  InkWell(
+    onTap: onNotifications,
+    borderRadius: BorderRadius.circular(99),
+    child: Stack(children: [Container(width: 36, height: 36, decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle), child: const Icon(Icons.notifications_none_rounded, size: 20, color: nfInk)), const Positioned(right: 2, top: 2, child: CircleAvatar(radius: 4, backgroundColor: Color(0xFFD97C8F)))]),
+  ),
 ]);
 
 BoxDecoration nfCard([Color? color]) => BoxDecoration(color: color ?? Colors.white.withValues(alpha: .86), borderRadius: BorderRadius.circular(22), border: Border.all(color: Colors.white), boxShadow: const [BoxShadow(color: Color(0x109B6B74), blurRadius: 16, offset: Offset(0, 7))]);
 
-Widget nfSectionTitle(String title, String? trailing) => Row(crossAxisAlignment: CrossAxisAlignment.end, children: [Expanded(child: Text(title, style: const TextStyle(fontFamily: 'serif', fontSize: 25, color: nfInk, fontWeight: FontWeight.w600, height: 1))), if (trailing != null) Text('$trailing  →', style: const TextStyle(color: nfRoseDark, fontSize: 10, fontWeight: FontWeight.w800))]);
+Widget nfSectionTitle(String title, String? trailing, {VoidCallback? onTrailing}) => Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
+  Expanded(child: Text(title, style: const TextStyle(fontFamily: 'serif', fontSize: 25, color: nfInk, fontWeight: FontWeight.w600, height: 1))),
+  if (trailing != null)
+    InkWell(
+      onTap: onTrailing,
+      borderRadius: BorderRadius.circular(12),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 5),
+        child: Text('$trailing  →', style: const TextStyle(color: nfRoseDark, fontSize: 10, fontWeight: FontWeight.w800)),
+      ),
+    ),
+]);
 
 Widget nfPhoto(String url, {BoxFit fit = BoxFit.cover, Color? tint}) => ColorFiltered(
   colorFilter: tint == null ? const ColorFilter.mode(Colors.transparent, BlendMode.dst) : ColorFilter.mode(tint.withValues(alpha: .10), BlendMode.softLight),
