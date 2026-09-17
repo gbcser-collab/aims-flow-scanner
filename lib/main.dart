@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'screens/v100_shell_screen.dart';
+import 'screens/flow_shell_screen.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -15,7 +15,7 @@ class AimsFlowApp extends StatelessWidget {
     const aimsBlue = Color(0xFF1CB8FF);
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'AIMS Flow V100',
+      title: 'AIMS Flow',
       theme: ThemeData(
         useMaterial3: true,
         brightness: Brightness.dark,
@@ -40,8 +40,21 @@ class AimsFlowApp extends StatelessWidget {
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           ),
         ),
+        inputDecorationTheme: InputDecorationTheme(
+          filled: true,
+          fillColor: const Color(0xFF0A1A2C).withValues(alpha: .92),
+          labelStyle: const TextStyle(color: Colors.white60),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(15),
+            borderSide: const BorderSide(color: Color(0xFF24557D)),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(15),
+            borderSide: const BorderSide(color: aimsBlue, width: 1.4),
+          ),
+        ),
       ),
-      home: const V100ShellScreen(),
+      home: const FlowShellScreen(),
     );
   }
 }
