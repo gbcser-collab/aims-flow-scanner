@@ -8,6 +8,7 @@ import '../services/aims_scan_engine.dart';
 import '../services/cmr_parser.dart';
 import '../services/frame_crop_service.dart';
 import '../services/ocr_service.dart';
+import '../widgets/aims_skin.dart';
 import '../widgets/scanner_overlay.dart';
 import 'scan_review_screen.dart';
 
@@ -284,7 +285,7 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
             if (_cameraError != null)
               _CameraErrorView(message: _cameraError!, onRetry: _initialize)
             else if (controller == null || !controller.value.isInitialized)
-              const Center(child: CircularProgressIndicator(color: Colors.white))
+              const Center(child: CircularProgressIndicator(color: aimsCyan))
             else
               Center(child: CameraPreview(controller)),
             if (_cameraError == null) const ScannerOverlay(),
@@ -295,12 +296,25 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
               child: Center(
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                  decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(18)),
+                  decoration: BoxDecoration(
+                    color: const Color(0xE0061A35),
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(color: aimsCyan.withValues(alpha: .55)),
+                    boxShadow: [BoxShadow(color: aimsCyan.withValues(alpha: .15), blurRadius: 16)],
+                  ),
                   child: const Text('Csak a kereten belüli rész kerül a scanbe', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
                 ),
               ),
             ),
-            Positioned(top: 8, left: 8, child: IconButton.filledTonal(onPressed: _processing ? null : () => Navigator.pop(context), icon: const Icon(Icons.close_rounded))),
+            Positioned(
+              top: 8,
+              left: 8,
+              child: IconButton.filledTonal(
+                onPressed: _processing ? null : () => Navigator.pop(context),
+                style: IconButton.styleFrom(backgroundColor: const Color(0xDD0A2E59), foregroundColor: Colors.white),
+                icon: const Icon(Icons.close_rounded),
+              ),
+            ),
             if (controller != null && controller.value.isInitialized)
               Positioned(
                 left: 0,
@@ -309,7 +323,12 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
                 child: Center(
                   child: Container(
                     padding: const EdgeInsets.all(4),
-                    decoration: BoxDecoration(color: Colors.black.withValues(alpha: .68), borderRadius: BorderRadius.circular(24), border: Border.all(color: Colors.white24)),
+                    decoration: BoxDecoration(
+                      color: const Color(0xE0061A35),
+                      borderRadius: BorderRadius.circular(24),
+                      border: Border.all(color: aimsCyan.withValues(alpha: .55)),
+                      boxShadow: [BoxShadow(color: aimsBlue.withValues(alpha: .22), blurRadius: 18)],
+                    ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: _ScannerFlashMode.values.map((mode) {
@@ -325,13 +344,17 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
                             child: AnimatedContainer(
                               duration: const Duration(milliseconds: 120),
                               padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 8),
-                              decoration: BoxDecoration(color: selected ? const Color(0xFFE6B85C) : Colors.transparent, borderRadius: BorderRadius.circular(20)),
+                              decoration: BoxDecoration(
+                                gradient: selected ? const LinearGradient(colors: [aimsCyan, aimsBlue]) : null,
+                                color: selected ? null : Colors.transparent,
+                                borderRadius: BorderRadius.circular(20),
+                              ),
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  Icon(_flashIcon(mode), size: 18, color: selected ? Colors.black : Colors.white),
+                                  Icon(_flashIcon(mode), size: 18, color: Colors.white),
                                   const SizedBox(width: 5),
-                                  Text(_flashLabel(mode), style: TextStyle(color: selected ? Colors.black : Colors.white, fontWeight: FontWeight.w900, fontSize: 12)),
+                                  Text(_flashLabel(mode), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 12)),
                                 ],
                               ),
                             ),
@@ -355,11 +378,23 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
                       key: const ValueKey('capture-and-process'),
                       onTap: _processing ? null : _captureAndProcess,
                       child: Container(
-                        width: 82,
-                        height: 82,
-                        decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: Colors.white, width: 5), color: Colors.white.withValues(alpha: .18)),
+                        width: 86,
+                        height: 86,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(color: const Color(0xFF7AEAFF), width: 4),
+                          color: aimsBlue.withValues(alpha: .22),
+                          boxShadow: [BoxShadow(color: aimsCyan.withValues(alpha: .42), blurRadius: 22, spreadRadius: 2)],
+                        ),
                         alignment: Alignment.center,
-                        child: Container(width: 60, height: 60, decoration: const BoxDecoration(shape: BoxShape.circle, color: Colors.white)),
+                        child: Container(
+                          width: 60,
+                          height: 60,
+                          decoration: const BoxDecoration(
+                            shape: BoxShape.circle,
+                            gradient: LinearGradient(colors: [aimsCyan, aimsBlue]),
+                          ),
+                        ),
                       ),
                     ),
                   ),
@@ -368,16 +403,18 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
             if (_processing)
               Positioned.fill(
                 child: ColoredBox(
-                  color: Colors.black87,
+                  color: const Color(0xF2020B19),
                   child: Center(
                     child: Padding(
                       padding: const EdgeInsets.all(28),
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          const CircularProgressIndicator(color: Color(0xFFE6B85C)),
+                          const AimsFlowMark(size: 68),
                           const SizedBox(height: 18),
-                          const Text('SMART SCAN', style: TextStyle(color: Color(0xFFE6B85C), fontWeight: FontWeight.w900, letterSpacing: 1.4)),
+                          const CircularProgressIndicator(color: aimsCyan),
+                          const SizedBox(height: 18),
+                          const Text('SMART SCAN', style: TextStyle(color: aimsCyan, fontWeight: FontWeight.w900, letterSpacing: 1.4)),
                           const SizedBox(height: 8),
                           Text(_phase, textAlign: TextAlign.center, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w800)),
                         ],
@@ -400,18 +437,22 @@ class _CameraErrorView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.no_photography_rounded, color: Colors.white70, size: 52),
-            const SizedBox(height: 12),
-            Text(message, textAlign: TextAlign.center, style: const TextStyle(color: Colors.white)),
-            const SizedBox(height: 16),
-            FilledButton(onPressed: onRetry, child: const Text('Újrapróbálás')),
-          ],
+    return AimsBackdrop(
+      child: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: AimsGlassCard(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.no_photography_rounded, color: aimsCyan, size: 52),
+                const SizedBox(height: 12),
+                Text(message, textAlign: TextAlign.center, style: const TextStyle(color: Colors.white)),
+                const SizedBox(height: 16),
+                AimsNeonButton(label: 'Újrapróbálás', onPressed: onRetry, leading: const Icon(Icons.refresh_rounded, color: Colors.white)),
+              ],
+            ),
+          ),
         ),
       ),
     );
