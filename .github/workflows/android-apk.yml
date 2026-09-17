@@ -62,7 +62,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: NAILFIT-MVP-v0.5.1-Android
+          name: NAILFIT-v0.8.0-Android
           path: build/app/outputs/flutter-apk/app-debug.apk
           if-no-files-found: error
 
@@ -80,6 +80,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: NAILFIT-MVP-v0.5.1-test-evidence
+          name: NAILFIT-v0.8.0-test-evidence
           path: test-evidence/
           if-no-files-found: warn
