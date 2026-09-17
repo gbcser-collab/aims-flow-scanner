@@ -3,13 +3,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  testWidgets('AIMS Flow Smart Scanner v1.0 home renders', (tester) async {
+  testWidgets('AIMS Flow Smart Scanner brutal home renders its primary controls', (tester) async {
     await tester.pumpWidget(const AimsFlowApp());
-    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pump(const Duration(milliseconds: 250));
 
+    expect(find.text('AIMS FLOW'), findsOneWidget);
     expect(find.text('AIMS Flow Smart Scanner'), findsOneWidget);
-    expect(find.text('AIMS FLOW • SMART • v1.0'), findsOneWidget);
-    expect(find.text('CMR Scanner + GPS'), findsOneWidget);
+    expect(find.text('Gyorsabb folyamatok. Okosabb működés.'), findsOneWidget);
     expect(find.byType(FlutterLogo), findsOneWidget);
 
     await tester.scrollUntilVisible(
@@ -18,6 +18,12 @@ void main() {
       scrollable: find.byType(Scrollable).first,
     );
     expect(find.text('Smart Scan indítása'), findsOneWidget);
+
+    expect(
+      find.textContaining('GPS'),
+      findsAtLeastNWidgets(1),
+      reason: 'A home screen must expose the GPS workflow next to Smart Scan.',
+    );
 
     await tester.scrollUntilVisible(
       find.text('Legutóbbi mentések'),
