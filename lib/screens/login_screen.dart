@@ -13,6 +13,7 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> with WidgetsBindingObserver {
+  static const bool _e2eTestMode = bool.fromEnvironment('AIMS_E2E_TEST_MODE', defaultValue: false);
   final _user = TextEditingController();
   final _password = TextEditingController();
   final _code = List.generate(6, (_) => TextEditingController());
@@ -61,7 +62,7 @@ class _LoginScreenState extends State<LoginScreen> with WidgetsBindingObserver {
 
   Future<void> _continue() async {
     final pin = _code.map((c) => c.text).join();
-    if (_user.text.trim().isEmpty || _password.text.isEmpty || pin.length != 6) {
+    if (!_e2eTestMode && (_user.text.trim().isEmpty || _password.text.isEmpty || pin.length != 6)) {
       setState(() => _error = 'Add meg a felhasználónevet, jelszót és a 6 jegyű 2FA kódot.');
       return;
     }
