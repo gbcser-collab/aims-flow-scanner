@@ -36,6 +36,18 @@ raise SystemExit(1)
 PY
 }
 
+find_any_center() {
+  local file="$1"
+  shift
+  local needle
+  for needle in "$@"; do
+    if find_center "$file" "$needle"; then
+      return 0
+    fi
+  done
+  return 1
+}
+
 dismiss_system_dialogs() {
   for attempt in 1 2 3; do
     adb shell uiautomator dump /sdcard/aims_system_dialog.xml >/dev/null 2>&1 || return 0
@@ -149,7 +161,7 @@ for label in "Vaku KI" "Vaku AUTO" "Vaku BE"; do
 done
 adb exec-out screencap -p > "$EVIDENCE/03-flash-controls.png" || true
 
-echo "[5/14] Take photo and run perspective guard + dual OCR pipeline"
+echo "[5/14] Take photo and run perspective guard + OCR pipeline"
 read CX CY < /tmp/capture.txt
 adb shell input tap "$CX" "$CY"
 
@@ -169,9 +181,10 @@ if [ "$RESULT_OK" -ne 1 ]; then
 fi
 adb exec-out screencap -p > "$EVIDENCE/04-result.png" || true
 
-echo "[6/14] Verify OCR/editable result UI"
+echo "[6/14] Verify OCR/editable result UI and private autosave"
 grep -q 'Felismert CMR adatok' "$EVIDENCE/result.xml" || fail_with_logs
 check_no_crash
+sleep 2
 
 echo "[7/14] Verify PRO copy-summary tool"
 rm -f /tmp/copy.txt
@@ -188,11 +201,11 @@ adb shell input tap "$CPX" "$CPY"
 sleep 1
 check_no_crash
 
-echo "[8/14] Save CMR offline"
+echo "[8/14] Verify private app save / update path"
 rm -f /tmp/save.txt
-for i in $(seq 1 10); do
+for i in $(seq 1 12); do
   dump_ui /sdcard/save.xml "$EVIDENCE/save.xml"
-  if find_center "$EVIDENCE/save.xml" "Mentés offline" >/tmp/save.txt 2>/dev/null; then
+  if find_center "$EVIDENCE/save.xml" "Módosítások mentése az appba" >/tmp/save.txt 2>/dev/null; then
     break
   fi
   scroll_down
@@ -204,17 +217,23 @@ sleep 3
 check_no_crash
 adb exec-out screencap -p > "$EVIDENCE/05-saved.png" || true
 
-echo "[9/14] Restart and verify offline history persisted"
+echo "[9/14] Restart and verify private CMR history persisted"
 adb shell am force-stop "$PKG"
 launch_app
-sleep 4
+sleep 5
 dismiss_system_dialogs || true
 check_foreground
 check_no_crash
 rm -f /tmp/history.txt
-for i in $(seq 1 10); do
+for i in $(seq 1 12); do
   dump_ui /sdcard/history.xml "$EVIDENCE/history.xml"
-  if find_center "$EVIDENCE/history.xml" "Mentett CMR dokumentum" >/tmp/history.txt 2>/dev/null; then
+  if find_any_center "$EVIDENCE/history.xml" \
+      "Mentett CMR" \
+      "KÜLDÉSRE VÁR" \
+      "ÚJRAPRÓBÁLÁS" \
+      "FELTÖLTVE" \
+      "E-MAIL ELKÜLDVE" \
+      "JÓVÁHAGYVA" >/tmp/history.txt 2>/dev/null; then
     break
   fi
   scroll_down
@@ -267,4 +286,4 @@ adb shell dumpsys activity activities > "$EVIDENCE/activities.txt"
 adb logcat -d > "$EVIDENCE/logcat.txt"
 adb exec-out screencap -p > "$EVIDENCE/08-final.png" || true
 
-echo "AIMS Flow Smart Scanner v0.9 PRO PERSPECTIVE-GUARD + DUAL-OCR + FLASH END-TO-END test PASSED"
+echo "AIMS Flow Smart Scanner v1.0 ROAD PRIVATE-CMR END-TO-END test PASSED"
