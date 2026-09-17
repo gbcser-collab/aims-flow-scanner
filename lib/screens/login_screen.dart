@@ -120,7 +120,7 @@ class _LoginScreenState extends State<LoginScreen> with WidgetsBindingObserver {
                 constraints: const BoxConstraints(maxWidth: 520),
                 child: Column(
                   children: [
-                    const FlutterLogo(size: 110),
+                    const AimsFlowMark(size: 110),
                     const SizedBox(height: 26),
                     const Text('Belépés', style: TextStyle(color: Colors.white, fontSize: 38, fontWeight: FontWeight.w900)),
                     const SizedBox(height: 6),
