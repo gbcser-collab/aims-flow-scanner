@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
-import 'screens/device_gate.dart';
-import 'screens/home_screen.dart';
+import 'screens/login_screen.dart';
+import 'widgets/aims_flow_skin.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -13,23 +13,28 @@ class AimsFlowApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const gold = Color(0xFFE6B85C);
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'AIMS Flow Scanner',
+      title: 'AIMS Flow',
       theme: ThemeData(
         useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(seedColor: gold, brightness: Brightness.light),
-        scaffoldBackgroundColor: const Color(0xFFF5F5F2),
-        cardTheme: const CardThemeData(elevation: 0, margin: EdgeInsets.zero),
-        filledButtonTheme: FilledButtonThemeData(
-          style: FilledButton.styleFrom(
-            minimumSize: const Size(0, 52),
-            textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
-          ),
+        brightness: Brightness.dark,
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: AimsFlowSkin.cyan,
+          brightness: Brightness.dark,
+          surface: AimsFlowSkin.panelSolid,
         ),
+        scaffoldBackgroundColor: AimsFlowSkin.background,
+        appBarTheme: const AppBarTheme(
+          backgroundColor: AimsFlowSkin.background,
+          foregroundColor: Colors.white,
+          surfaceTintColor: Colors.transparent,
+        ),
+        filledButtonTheme: FilledButtonThemeData(style: AimsFlowSkin.primaryButton()),
+        cardTheme: const CardThemeData(elevation: 0, margin: EdgeInsets.zero),
+        dialogTheme: const DialogThemeData(backgroundColor: AimsFlowSkin.panelSolid),
       ),
-      home: const DeviceGate(child: HomeScreen()),
+      home: const LoginScreen(),
     );
   }
 }
