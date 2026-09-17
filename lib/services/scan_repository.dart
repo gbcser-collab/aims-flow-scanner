@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -8,6 +9,11 @@ import '../models/tracking_models.dart';
 
 class ScanRepository {
   const ScanRepository();
+
+  // All repository instances share the same mutation queue. The UI, background
+  // sync and lifecycle callbacks may otherwise perform read-modify-write cycles
+  // at the same time and silently overwrite each other's index changes.
+  static Future<void> _mutationTail = Future<void>.value();
 
   Future<Directory> _scanDirectory() async {
     final root = await getApplicationDocumentsDirectory();
@@ -23,32 +29,46 @@ class ScanRepository {
     return File('${directory.path}/index.json');
   }
 
-  Future<List<ScannedDocument>> loadAll() async {
-    try {
-      final file = await _indexFile();
-      if (!await file.exists()) return <ScannedDocument>[];
+  Future<File> _backupFile() async {
+    final index = await _indexFile();
+    return File('${index.path}.bak');
+  }
 
+  Future<List<ScannedDocument>> loadAll() async {
+    final file = await _indexFile();
+    final backup = await _backupFile();
+
+    final primary = await _readIndex(file);
+    if (primary != null) return primary;
+
+    // If Android or the process stopped between the two rename operations of an
+    // atomic update, the last complete index is still available here.
+    final recovered = await _readIndex(backup);
+    return recovered ?? <ScannedDocument>[];
+  }
+
+  Future<List<ScannedDocument>?> _readIndex(File file) async {
+    try {
+      if (!await file.exists()) return null;
       final raw = await file.readAsString();
-      if (raw.trim().isEmpty) return <ScannedDocument>[];
+      if (raw.trim().isEmpty) return null;
       final decoded = jsonDecode(raw);
-      if (decoded is! List) return <ScannedDocument>[];
+      if (decoded is! List) return null;
 
       final documents = <ScannedDocument>[];
       for (final item in decoded) {
         if (item is! Map) continue;
         try {
           final document = ScannedDocument.fromJson(Map<String, dynamic>.from(item));
-          if (await File(document.imagePath).exists()) {
-            documents.add(document);
-          }
+          if (await File(document.imagePath).exists()) documents.add(document);
         } catch (_) {
-          // One damaged history entry should never make the whole scanner unusable.
+          // One damaged history entry must not make the whole scanner unusable.
         }
       }
       documents.sort((a, b) => b.createdAt.compareTo(a.createdAt));
       return documents;
     } catch (_) {
-      return <ScannedDocument>[];
+      return null;
     }
   }
 
@@ -62,84 +82,124 @@ class ScanRepository {
     required CmrData cmr,
     required ScanQuality quality,
     LocationStamp? location,
-  }) async {
-    final directory = await _scanDirectory();
-    final createdAt = DateTime.now();
-    final id = createdAt.microsecondsSinceEpoch.toString();
-    final destination = File('${directory.path}/cmr_$id.jpg');
-    final source = File(sourceImagePath);
+  }) {
+    return _mutate(() async {
+      final directory = await _scanDirectory();
+      final createdAt = DateTime.now();
+      final id = createdAt.microsecondsSinceEpoch.toString();
+      final destination = File('${directory.path}/cmr_$id.jpg');
+      final source = File(sourceImagePath);
 
-    if (!await source.exists()) {
-      throw const FileSystemException('A feldolgozott CMR-kép nem található.');
-    }
-    if (source.absolute.path != destination.absolute.path) {
-      await source.copy(destination.path);
-    }
+      if (!await source.exists()) {
+        throw const FileSystemException('A feldolgozott CMR-kép nem található.');
+      }
+      if (source.absolute.path != destination.absolute.path) {
+        await source.copy(destination.path);
+      }
 
-    final document = ScannedDocument(
-      id: id,
-      createdAt: createdAt,
-      imagePath: destination.path,
-      cmr: cmr,
-      quality: quality,
-      location: location,
-    );
-    final all = await loadAll();
-    all.insert(0, document);
-    await _writeAll(all);
-    return document;
-  }
-
-  Future<void> update(ScannedDocument document) async {
-    final all = await loadAll();
-    final index = all.indexWhere((item) => item.id == document.id);
-    if (index >= 0) {
-      all[index] = document;
-    } else {
+      final document = ScannedDocument(
+        id: id,
+        createdAt: createdAt,
+        imagePath: destination.path,
+        cmr: cmr,
+        quality: quality,
+        location: location,
+      );
+      final all = await loadAll();
+      all.removeWhere((item) => item.id == document.id);
       all.insert(0, document);
-    }
-    all.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-    await _writeAll(all);
+      await _writeAll(all);
+      return document;
+    });
   }
 
-  Future<void> delete(ScannedDocument document) async {
-    final all = await loadAll();
-    all.removeWhere((item) => item.id == document.id);
-    await _writeAll(all);
-    try {
-      final image = File(document.imagePath);
-      if (await image.exists()) await image.delete();
-    } catch (_) {
-      // The index is already clean even if the old image cannot be deleted.
-    }
+  Future<void> update(ScannedDocument document) {
+    return _mutate(() async {
+      final all = await loadAll();
+      final index = all.indexWhere((item) => item.id == document.id);
+      if (index >= 0) {
+        all[index] = document;
+      } else {
+        all.insert(0, document);
+      }
+      all.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      await _writeAll(all);
+    });
   }
 
-  Future<int> pruneExpiredApproved() async {
-    final now = DateTime.now().toUtc();
-    final all = await loadAll();
-    final expired = all.where((item) {
-      final deadline = item.deleteAfter?.toUtc();
-      return item.syncState == CmrSyncState.approved && deadline != null && !deadline.isAfter(now);
-    }).toList();
-    if (expired.isEmpty) return 0;
-
-    for (final document in expired) {
+  Future<void> delete(ScannedDocument document) {
+    return _mutate(() async {
+      final all = await loadAll();
+      all.removeWhere((item) => item.id == document.id);
+      await _writeAll(all);
       try {
         final image = File(document.imagePath);
         if (await image.exists()) await image.delete();
-      } catch (_) {}
-    }
-    all.removeWhere((item) => expired.any((expiredItem) => expiredItem.id == item.id));
-    await _writeAll(all);
-    return expired.length;
+      } catch (_) {
+        // The index is already clean even if the old image cannot be deleted.
+      }
+    });
+  }
+
+  Future<int> pruneExpiredApproved() {
+    return _mutate(() async {
+      final now = DateTime.now().toUtc();
+      final all = await loadAll();
+      final expired = all.where((item) {
+        final deadline = item.deleteAfter?.toUtc();
+        return item.syncState == CmrSyncState.approved && deadline != null && !deadline.isAfter(now);
+      }).toList();
+      if (expired.isEmpty) return 0;
+
+      for (final document in expired) {
+        try {
+          final image = File(document.imagePath);
+          if (await image.exists()) await image.delete();
+        } catch (_) {}
+      }
+      final expiredIds = expired.map((item) => item.id).toSet();
+      all.removeWhere((item) => expiredIds.contains(item.id));
+      await _writeAll(all);
+      return expired.length;
+    });
+  }
+
+  Future<T> _mutate<T>(Future<T> Function() action) {
+    final completer = Completer<T>();
+    _mutationTail = _mutationTail.catchError((_) {}).then((_) async {
+      try {
+        completer.complete(await action());
+      } catch (error, stackTrace) {
+        completer.completeError(error, stackTrace);
+      }
+    });
+    return completer.future;
   }
 
   Future<void> _writeAll(List<ScannedDocument> documents) async {
     final file = await _indexFile();
+    final backup = File('${file.path}.bak');
     final temp = File('${file.path}.tmp');
     final payload = jsonEncode(documents.map((item) => item.toJson()).toList());
+
+    if (await temp.exists()) await temp.delete();
     await temp.writeAsString(payload, flush: true);
-    if (await file.exists()) await file.delete();
-    await temp.rename(file.path);
+
+    if (!await file.exists()) {
+      await temp.rename(file.path);
+      if (await backup.exists()) await backup.delete();
+      return;
+    }
+
+    if (await backup.exists()) await backup.delete();
+    await file.rename(backup.path);
+    try {
+      await temp.rename(file.path);
+      if (await backup.exists()) await backup.delete();
+    } catch (_) {
+      if (await file.exists()) await file.delete();
+      if (await backup.exists()) await backup.rename(file.path);
+      rethrow;
+    }
   }
 }
