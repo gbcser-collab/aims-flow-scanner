@@ -57,7 +57,7 @@ jobs:
       - name: Unit tests
         run: flutter test
 
-      - name: Build debug APK
+      - name: Build protected debug APK
         run: flutter build apk --debug --dart-define=AIMS_API_BASE_URL=https://logistic-aims.hu/api
 
       - name: APK sanity check
@@ -67,12 +67,15 @@ jobs:
           tail -5 /tmp/apk-test.txt
           ls -lh build/app/outputs/flutter-apk/app-debug.apk
 
-      - name: Upload APK before device test
+      - name: Upload protected APK before device test
         uses: actions/upload-artifact@v4
         with:
           name: AIMS-Flow-v1.0-UNIFIED-ANDROID
           path: build/app/outputs/flutter-apk/app-debug.apk
           if-no-files-found: error
+
+      - name: Build isolated E2E APK
+        run: flutter build apk --debug --dart-define=AIMS_API_BASE_URL=https://logistic-aims.hu/api --dart-define=AIMS_E2E_TEST_MODE=true
 
       - name: Deep end-to-end AIMS Flow test
         uses: reactivecircus/android-emulator-runner@v2
