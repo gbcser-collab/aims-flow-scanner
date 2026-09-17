@@ -4,6 +4,7 @@ analyzer:
   errors:
     unnecessary_import: ignore
     unused_import: ignore
+    unnecessary_non_null_assertion: ignore
 linter:
   rules:
     avoid_print: true
