@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import '../models/scan_models.dart';
 import '../services/cmr_sync_service.dart';
 import '../services/scan_repository.dart';
+import '../widgets/aims_skin.dart';
 
 class ScanReviewScreen extends StatefulWidget {
   const ScanReviewScreen({
@@ -241,168 +242,169 @@ class _ScanReviewScreenState extends State<ScanReviewScreen> {
     final approved = _savedDocument?.isApproved == true;
 
     return Scaffold(
-      backgroundColor: const Color(0xFF0C0F13),
+      backgroundColor: aimsNavy,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF0C0F13),
+        backgroundColor: const Color(0xFF03152C),
         foregroundColor: Colors.white,
         title: const Text('CMR • Smart Scan PRO'),
       ),
-      body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 10, 16, 24),
-          children: [
-            Container(
-              constraints: const BoxConstraints(maxHeight: 390),
-              decoration: BoxDecoration(color: const Color(0xFF101216), borderRadius: BorderRadius.circular(18)),
-              clipBehavior: Clip.antiAlias,
-              child: Image.file(
-                File(imagePath),
-                fit: BoxFit.contain,
-                errorBuilder: (_, __, ___) => const SizedBox(
-                  height: 220,
-                  child: Center(child: Text('Az előnézet nem tölthető be.', style: TextStyle(color: Colors.white70))),
+      body: AimsBackdrop(
+        child: SafeArea(
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 24),
+            children: [
+              Container(
+                constraints: const BoxConstraints(maxHeight: 390),
+                decoration: BoxDecoration(
+                  color: const Color(0xD9081B35),
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(color: aimsCyan.withValues(alpha: .4)),
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: Image.file(
+                  File(imagePath),
+                  fit: BoxFit.contain,
+                  errorBuilder: (_, __, ___) => const SizedBox(
+                    height: 220,
+                    child: Center(child: Text('Az előnézet nem tölthető be.', style: TextStyle(color: Colors.white70))),
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(height: 12),
-            _lifecycleCard(),
-            const SizedBox(height: 14),
-            Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: hasText ? const Color(0xFF14231C) : const Color(0xFF2A2113),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: (hasText ? const Color(0xFF48D597) : Colors.orange).withValues(alpha: .35)),
+              const SizedBox(height: 12),
+              _lifecycleCard(),
+              const SizedBox(height: 14),
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: hasText ? const Color(0xB5092D3C) : const Color(0xB52A2318),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: (hasText ? aimsMint : Colors.orange).withValues(alpha: .45)),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(hasText ? Icons.auto_awesome_rounded : Icons.warning_amber_rounded, color: hasText ? aimsMint : Colors.orange),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        hasText
+                            ? 'Smart OCR lefutott${widget.smartOcrSource == null ? '' : ' • forrás: ${widget.smartOcrSource}'}. A jobb OCR-eredményt használjuk.'
+                            : 'A feldolgozás lefutott, de az OCR nem talált biztos szöveget. A mezők kézzel is kitölthetők.',
+                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, height: 1.35),
+                      ),
+                    ),
+                  ],
+                ),
               ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              const SizedBox(height: 14),
+              Row(
                 children: [
-                  Icon(hasText ? Icons.auto_awesome_rounded : Icons.warning_amber_rounded,
-                      color: hasText ? const Color(0xFF48D597) : Colors.orange),
+                  Expanded(child: _metricCard('Adatkitöltés', '$filled / 10', completion, aimsCyan)),
                   const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      hasText
-                          ? 'Smart OCR lefutott${widget.smartOcrSource == null ? '' : ' • forrás: ${widget.smartOcrSource}'}. A jobb OCR-eredményt használjuk.'
-                          : 'A feldolgozás lefutott, de az OCR nem talált biztos szöveget. A mezők kézzel is kitölthetők.',
-                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, height: 1.35),
+                  Expanded(child: _metricCard('Képminőség', '${widget.quality.score} / 100', widget.quality.score / 100, aimsMint)),
+                ],
+              ),
+              if (missing > 0) ...[
+                const SizedBox(height: 10),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.withValues(alpha: .09),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: Colors.orange.withValues(alpha: .25)),
+                  ),
+                  child: Text(
+                    '$missing mező még hiányzik vagy ellenőrzést igényel.',
+                    style: const TextStyle(color: Colors.orangeAccent, fontWeight: FontWeight.w700),
+                  ),
+                ),
+              ],
+              const SizedBox(height: 18),
+              const Text(
+                'Felismert CMR adatok',
+                key: ValueKey('cmr-results-title'),
+                style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w900),
+              ),
+              const SizedBox(height: 5),
+              Text(
+                approved
+                    ? 'A dokumentumot az admin már jóváhagyta; az adatok csak megtekintésre szolgálnak.'
+                    : 'Ellenőrizd és javítsd, ha szükséges. A kép automatikusan az app privát tárhelyére került.',
+                style: const TextStyle(color: Colors.white54),
+              ),
+              const SizedBox(height: 12),
+              AbsorbPointer(
+                absorbing: approved,
+                child: Opacity(
+                  opacity: approved ? .72 : 1,
+                  child: Column(
+                    children: [
+                      _field('CMR szám', _cmrNumber),
+                      _field('Feladó', _shipper, maxLines: 2),
+                      _field('Címzett', _consignee, maxLines: 2),
+                      _field('Felrakóhely', _loadingPlace, maxLines: 2),
+                      _field('Lerakóhely', _deliveryPlace, maxLines: 2),
+                      _field('Dátum', _date),
+                      _field('Rendszám', _plate, textCapitalization: TextCapitalization.characters),
+                      _field('Darabszám', _packageCount, keyboardType: TextInputType.number),
+                      _field('Bruttó tömeg (kg)', _grossWeight, keyboardType: const TextInputType.numberWithOptions(decimal: true)),
+                      _field('Áru', _goods, maxLines: 3),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              ExpansionTile(
+                collapsedIconColor: Colors.white60,
+                iconColor: aimsCyan,
+                title: const Text('OCR nyers szöveg', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 14),
+                    child: SelectableText(
+                      widget.cmr.rawText.trim().isEmpty ? 'Nem sikerült szöveget felismerni.' : widget.cmr.rawText,
+                      style: const TextStyle(color: Colors.white70, height: 1.35),
                     ),
                   ),
                 ],
               ),
-            ),
-            const SizedBox(height: 14),
-            Row(
-              children: [
-                Expanded(child: _metricCard('Adatkitöltés', '$filled / 10', completion, const Color(0xFFE6B85C))),
-                const SizedBox(width: 10),
-                Expanded(child: _metricCard('Képminőség', '${widget.quality.score} / 100', widget.quality.score / 100, const Color(0xFF48D597))),
-              ],
-            ),
-            if (missing > 0) ...[
+              const SizedBox(height: 14),
+              _qualityCard(),
+              const SizedBox(height: 18),
+              OutlinedButton.icon(
+                key: const ValueKey('copy-summary'),
+                onPressed: _copySummary,
+                icon: const Icon(Icons.copy_all_rounded),
+                label: const Text('CMR összegzés másolása'),
+                style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(50), foregroundColor: Colors.white, side: BorderSide(color: aimsCyan.withValues(alpha: .4))),
+              ),
               const SizedBox(height: 10),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.orange.withValues(alpha: .09),
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: Colors.orange.withValues(alpha: .25)),
+              if (!approved)
+                AimsNeonButton(
+                  label: _saving ? 'Mentés…' : 'Módosítások mentése az appba',
+                  onPressed: _saving ? null : _save,
+                  leading: _saving
+                      ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                      : const Icon(Icons.shield_rounded, color: Colors.white),
                 ),
-                child: Text(
-                  '$missing mező még hiányzik vagy ellenőrzést igényel.',
-                  style: const TextStyle(color: Colors.orangeAccent, fontWeight: FontWeight.w700),
-                ),
+              const SizedBox(height: 10),
+              OutlinedButton.icon(
+                onPressed: _syncing ? null : () => _syncNow(),
+                icon: _syncing
+                    ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: aimsCyan))
+                    : const Icon(Icons.cloud_sync_rounded),
+                label: Text(_syncing ? 'Szinkron…' : 'Céges szinkron most'),
+                style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(52), foregroundColor: Colors.white, side: BorderSide(color: aimsCyan.withValues(alpha: .4))),
+              ),
+              const SizedBox(height: 10),
+              OutlinedButton.icon(
+                onPressed: () => Navigator.of(context).popUntil((route) => route.isFirst),
+                icon: const Icon(Icons.document_scanner_rounded),
+                label: const Text('Új CMR fotózása'),
+                style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(52), foregroundColor: Colors.white, side: BorderSide(color: aimsCyan.withValues(alpha: .4))),
               ),
             ],
-            const SizedBox(height: 18),
-            const Text('Felismert CMR adatok', key: ValueKey('cmr-results-title'),
-                style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w900)),
-            const SizedBox(height: 5),
-            Text(
-              approved
-                  ? 'A dokumentumot az admin már jóváhagyta; az adatok csak megtekintésre szolgálnak.'
-                  : 'Ellenőrizd és javítsd, ha szükséges. A kép automatikusan az app privát tárhelyére került.',
-              style: const TextStyle(color: Colors.white54),
-            ),
-            const SizedBox(height: 12),
-            AbsorbPointer(
-              absorbing: approved,
-              child: Opacity(
-                opacity: approved ? .72 : 1,
-                child: Column(
-                  children: [
-                    _field('CMR szám', _cmrNumber),
-                    _field('Feladó', _shipper, maxLines: 2),
-                    _field('Címzett', _consignee, maxLines: 2),
-                    _field('Felrakóhely', _loadingPlace, maxLines: 2),
-                    _field('Lerakóhely', _deliveryPlace, maxLines: 2),
-                    _field('Dátum', _date),
-                    _field('Rendszám', _plate, textCapitalization: TextCapitalization.characters),
-                    _field('Darabszám', _packageCount, keyboardType: TextInputType.number),
-                    _field('Bruttó tömeg (kg)', _grossWeight, keyboardType: const TextInputType.numberWithOptions(decimal: true)),
-                    _field('Áru', _goods, maxLines: 3),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 8),
-            ExpansionTile(
-              collapsedIconColor: Colors.white60,
-              iconColor: const Color(0xFFE6B85C),
-              title: const Text('OCR nyers szöveg', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 14),
-                  child: SelectableText(
-                    widget.cmr.rawText.trim().isEmpty ? 'Nem sikerült szöveget felismerni.' : widget.cmr.rawText,
-                    style: const TextStyle(color: Colors.white70, height: 1.35),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 14),
-            _qualityCard(),
-            const SizedBox(height: 18),
-            OutlinedButton.icon(
-              key: const ValueKey('copy-summary'),
-              onPressed: _copySummary,
-              icon: const Icon(Icons.copy_all_rounded),
-              label: const Text('CMR összegzés másolása'),
-              style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(50), foregroundColor: Colors.white, side: const BorderSide(color: Colors.white24)),
-            ),
-            const SizedBox(height: 10),
-            if (!approved)
-              FilledButton.icon(
-                key: const ValueKey('save-offline'),
-                onPressed: _saving ? null : _save,
-                icon: _saving
-                    ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                    : const Icon(Icons.shield_rounded),
-                label: Text(_saving ? 'Mentés…' : 'Módosítások mentése az appba'),
-                style: FilledButton.styleFrom(
-                  minimumSize: const Size.fromHeight(56),
-                  backgroundColor: const Color(0xFFE6B85C),
-                  foregroundColor: Colors.black,
-                  textStyle: const TextStyle(fontWeight: FontWeight.w900),
-                ),
-              ),
-            const SizedBox(height: 10),
-            OutlinedButton.icon(
-              onPressed: _syncing ? null : () => _syncNow(),
-              icon: _syncing
-                  ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                  : const Icon(Icons.cloud_sync_rounded),
-              label: Text(_syncing ? 'Szinkron…' : 'Céges szinkron most'),
-              style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(52), foregroundColor: Colors.white, side: const BorderSide(color: Colors.white24)),
-            ),
-            const SizedBox(height: 10),
-            OutlinedButton.icon(
-              onPressed: () => Navigator.of(context).popUntil((route) => route.isFirst),
-              icon: const Icon(Icons.document_scanner_rounded),
-              label: const Text('Új CMR fotózása'),
-              style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(52), foregroundColor: Colors.white, side: const BorderSide(color: Colors.white24)),
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -413,15 +415,11 @@ class _ScanReviewScreenState extends State<ScanReviewScreen> {
     final stateColor = document?.deliveryState == CmrDeliveryState.syncError
         ? Colors.orangeAccent
         : document?.isApproved == true
-            ? const Color(0xFF48D597)
-            : const Color(0xFFE6B85C);
-    return Container(
+            ? aimsMint
+            : aimsCyan;
+    return AimsGlassCard(
       padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: const Color(0xFF14181D),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: stateColor.withValues(alpha: .32)),
-      ),
+      radius: 16,
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -443,9 +441,9 @@ class _ScanReviewScreenState extends State<ScanReviewScreen> {
   }
 
   Widget _metricCard(String label, String value, double progress, Color color) {
-    return Container(
+    return AimsGlassCard(
       padding: const EdgeInsets.all(13),
-      decoration: BoxDecoration(color: const Color(0xFF14181D), borderRadius: BorderRadius.circular(16)),
+      radius: 16,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -461,9 +459,9 @@ class _ScanReviewScreenState extends State<ScanReviewScreen> {
 
   Widget _qualityCard() {
     final warnings = widget.quality.warnings;
-    return Container(
+    return AimsGlassCard(
       padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(color: const Color(0xFF14181D), borderRadius: BorderRadius.circular(14)),
+      radius: 14,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -471,7 +469,7 @@ class _ScanReviewScreenState extends State<ScanReviewScreen> {
           const SizedBox(height: 7),
           Text(
             warnings.isEmpty ? 'A képminőség rendben.' : warnings.join('\n'),
-            style: TextStyle(color: warnings.isEmpty ? const Color(0xFF48D597) : Colors.orangeAccent, height: 1.35),
+            style: TextStyle(color: warnings.isEmpty ? aimsMint : Colors.orangeAccent, height: 1.35),
           ),
         ],
       ),
@@ -497,11 +495,12 @@ class _ScanReviewScreenState extends State<ScanReviewScreen> {
         style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
         decoration: InputDecoration(
           labelText: empty ? '$label • ellenőrizd' : label,
-          labelStyle: TextStyle(color: empty ? Colors.orangeAccent : Colors.white54),
+          labelStyle: TextStyle(color: empty ? Colors.orangeAccent : const Color(0xFFB7E6FF)),
           filled: true,
-          fillColor: empty ? const Color(0xFF201A13) : const Color(0xFF14181D),
+          fillColor: empty ? const Color(0xCC242016) : const Color(0xCC0A2447),
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
-          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Color(0xFFE6B85C))),
+          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: aimsCyan.withValues(alpha: .32))),
+          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: aimsCyan, width: 1.5)),
         ),
       ),
     );
