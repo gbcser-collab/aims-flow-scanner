@@ -122,8 +122,12 @@ PY
   fi
   read UX UY <<<"${EDITS[0]}"; adb shell input tap "$UX" "$UY"; adb shell input text e2e_user
   read PX PY <<<"${EDITS[1]}"; adb shell input tap "$PX" "$PY"; adb shell input text e2e_pass
+  adb shell input keyevent KEYCODE_BACK || true
+  sleep 1
   read CX CY <<<"${EDITS[2]}"; adb shell input tap "$CX" "$CY"
   for d in 1 2 3 4 5 6; do adb shell input text "$d"; sleep .3; done
+  adb shell input keyevent KEYCODE_BACK || true
+  sleep 1
   dump_ui /sdcard/login-ready.xml "$EVIDENCE/login-ready.xml"
   read TX TY < <(find_center "$EVIDENCE/login-ready.xml" "Tovább") || fail_with_logs
   adb shell input tap "$TX" "$TY"
