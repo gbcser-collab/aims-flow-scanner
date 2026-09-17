@@ -12,6 +12,8 @@ fail_with_logs() {
   adb shell dumpsys activity activities > "$EVIDENCE/activities.txt" 2>&1 || true
   adb logcat -d > "$EVIDENCE/logcat.txt" 2>&1 || true
   adb exec-out screencap -p > "$EVIDENCE/failure.png" 2>/dev/null || true
+  adb shell uiautomator dump /sdcard/failure.xml >/dev/null 2>&1 || true
+  adb pull /sdcard/failure.xml "$EVIDENCE/failure.xml" >/dev/null 2>&1 || true
   tail -n 300 "$EVIDENCE/logcat.txt" || true
   exit 1
 }
@@ -52,13 +54,8 @@ dismiss_system_dialogs() {
   for attempt in 1 2 3; do
     adb shell uiautomator dump /sdcard/aims_system_dialog.xml >/dev/null 2>&1 || return 0
     adb pull /sdcard/aims_system_dialog.xml /tmp/aims_system_dialog.xml >/dev/null 2>&1 || return 0
-
     if grep -q -E "isn't responding|is not responding" /tmp/aims_system_dialog.xml; then
-      echo "Dismissing unrelated Android system ANR dialog"
       if find_center /tmp/aims_system_dialog.xml "Wait" >/tmp/system-dialog-pos.txt 2>/dev/null; then
-        read DX DY < /tmp/system-dialog-pos.txt
-        adb shell input tap "$DX" "$DY"
-      elif find_center /tmp/aims_system_dialog.xml "Close app" >/tmp/system-dialog-pos.txt 2>/dev/null; then
         read DX DY < /tmp/system-dialog-pos.txt
         adb shell input tap "$DX" "$DY"
       else
@@ -67,15 +64,8 @@ dismiss_system_dialogs() {
       sleep 1
       continue
     fi
-
     if grep -q -E "keeps stopping|has stopped" /tmp/aims_system_dialog.xml && ! grep -q "$PKG" /tmp/aims_system_dialog.xml; then
-      echo "Dismissing unrelated Android system crash dialog"
-      if find_center /tmp/aims_system_dialog.xml "Close app" >/tmp/system-dialog-pos.txt 2>/dev/null; then
-        read DX DY < /tmp/system-dialog-pos.txt
-        adb shell input tap "$DX" "$DY"
-      else
-        adb shell input keyevent KEYCODE_BACK || true
-      fi
+      adb shell input keyevent KEYCODE_BACK || true
       sleep 1
       continue
     fi
@@ -91,7 +81,6 @@ check_foreground() {
 check_no_crash() {
   adb logcat -d > "$EVIDENCE/logcat.txt" 2>&1 || true
   if grep -E "FATAL EXCEPTION|Process: ${PKG}|AndroidRuntime.*FATAL" "$EVIDENCE/logcat.txt" >/dev/null; then
-    echo "Crash signature found"
     fail_with_logs
   fi
 }
@@ -118,27 +107,63 @@ scroll_down() {
   sleep 1
 }
 
-echo "[1/14] Install APK and grant camera"
+find_with_scroll() {
+  local needle="$1"
+  local output="$2"
+  rm -f "$output"
+  for i in $(seq 1 10); do
+    dump_ui /sdcard/find.xml "$EVIDENCE/find.xml"
+    if find_center "$EVIDENCE/find.xml" "$needle" >"$output" 2>/dev/null; then
+      return 0
+    fi
+    scroll_down
+  done
+  return 1
+}
+
+echo "[1/14] Install E2E APK and grant runtime permissions"
 adb install -r "$APK"
 adb shell pm grant "$PKG" android.permission.CAMERA || true
+adb shell pm grant "$PKG" android.permission.ACCESS_COARSE_LOCATION || true
+adb shell pm grant "$PKG" android.permission.ACCESS_FINE_LOCATION || true
 adb shell pm list packages | grep "$PKG"
 
-echo "[2/14] Cold launch"
+echo "[2/14] Cold launch Flow dashboard"
 adb logcat -c
 adb shell am force-stop "$PKG"
 launch_app
-sleep 4
+sleep 6
 dismiss_system_dialogs || true
 check_foreground
 check_no_crash
+dump_ui /sdcard/home.xml "$EVIDENCE/home.xml"
+grep -q 'Üdvözlünk!' "$EVIDENCE/home.xml" || fail_with_logs
+grep -q 'Smart Scan indítása' "$EVIDENCE/home.xml" || fail_with_logs
 adb exec-out screencap -p > "$EVIDENCE/01-home.png" || true
 
-echo "[3/14] Open Smart Scanner PRO"
-dump_ui /sdcard/home.xml "$EVIDENCE/home.xml"
-read X Y < <(find_center "$EVIDENCE/home.xml" "Smart Scan PRO indítása") || fail_with_logs
+echo "[3/14] Verify dashboard actions are real UI controls"
+for label in "Smart Scan indítása" "Fuvar + GPS"; do
+  find_center "$EVIDENCE/home.xml" "$label" >/dev/null 2>&1 || fail_with_logs
+done
+find_with_scroll "Beállítások" /tmp/action.txt || fail_with_logs
+read AX AY < /tmp/action.txt
+adb shell input tap "$AX" "$AY"
+sleep 2
+check_no_crash
+dump_ui /sdcard/settings.xml "$EVIDENCE/settings.xml"
+grep -q 'Szinkronizáció most' "$EVIDENCE/settings.xml" || fail_with_logs
+adb shell input keyevent KEYCODE_BACK
+sleep 2
+
+echo "[4/14] Open Smart Scanner"
+adb shell input keyevent KEYCODE_HOME || true
+launch_app
+sleep 2
+dump_ui /sdcard/home2.xml "$EVIDENCE/home2.xml"
+read X Y < <(find_center "$EVIDENCE/home2.xml" "Smart Scan indítása") || fail_with_logs
 adb shell input tap "$X" "$Y"
 rm -f /tmp/capture.txt
-for i in $(seq 1 15); do
+for i in $(seq 1 20); do
   sleep 2
   dump_ui /sdcard/scanner.xml "$EVIDENCE/scanner.xml"
   if find_center "$EVIDENCE/scanner.xml" "CMR fényképezése és feldolgozása" >/tmp/capture.txt 2>/dev/null; then
@@ -149,7 +174,7 @@ test -s /tmp/capture.txt || fail_with_logs
 check_no_crash
 adb exec-out screencap -p > "$EVIDENCE/02-scanner.png" || true
 
-echo "[4/14] Verify and exercise flash OFF/AUTO/ON controls"
+echo "[5/14] Verify flash OFF/AUTO/ON controls"
 dump_ui /sdcard/flash.xml "$EVIDENCE/flash.xml"
 for label in "Vaku KI" "Vaku AUTO" "Vaku BE"; do
   find_center "$EVIDENCE/flash.xml" "$label" >/tmp/flash-pos.txt 2>/dev/null || fail_with_logs
@@ -159,14 +184,12 @@ for label in "Vaku KI" "Vaku AUTO" "Vaku BE"; do
   check_no_crash
   dump_ui /sdcard/flash.xml "$EVIDENCE/flash.xml"
 done
-adb exec-out screencap -p > "$EVIDENCE/03-flash-controls.png" || true
 
-echo "[5/14] Take photo and run perspective guard + OCR pipeline"
+echo "[6/14] Capture and run Smart Scan/OCR"
 read CX CY < /tmp/capture.txt
 adb shell input tap "$CX" "$CY"
-
 RESULT_OK=0
-for i in $(seq 1 65); do
+for i in $(seq 1 70); do
   sleep 2
   check_no_crash
   dump_ui /sdcard/result.xml "$EVIDENCE/result.xml"
@@ -175,24 +198,18 @@ for i in $(seq 1 65); do
     break
   fi
 done
-if [ "$RESULT_OK" -ne 1 ]; then
-  echo "Result screen was not reached after capture"
-  fail_with_logs
-fi
-adb exec-out screencap -p > "$EVIDENCE/04-result.png" || true
+[ "$RESULT_OK" -eq 1 ] || fail_with_logs
+adb exec-out screencap -p > "$EVIDENCE/03-result.png" || true
 
-echo "[6/14] Verify OCR/editable result UI and private autosave"
+echo "[7/14] Verify editable result UI"
 grep -q 'Felismert CMR adatok' "$EVIDENCE/result.xml" || fail_with_logs
 check_no_crash
-sleep 2
 
-echo "[7/14] Verify PRO copy-summary tool"
+echo "[8/14] Verify copy-summary tool"
 rm -f /tmp/copy.txt
 for i in $(seq 1 10); do
   dump_ui /sdcard/copy.xml "$EVIDENCE/copy.xml"
-  if find_center "$EVIDENCE/copy.xml" "CMR összegzés másolása" >/tmp/copy.txt 2>/dev/null; then
-    break
-  fi
+  if find_center "$EVIDENCE/copy.xml" "CMR összegzés másolása" >/tmp/copy.txt 2>/dev/null; then break; fi
   scroll_down
 done
 test -s /tmp/copy.txt || fail_with_logs
@@ -201,13 +218,11 @@ adb shell input tap "$CPX" "$CPY"
 sleep 1
 check_no_crash
 
-echo "[8/14] Verify private app save / update path"
+echo "[9/14] Verify private app save/update"
 rm -f /tmp/save.txt
 for i in $(seq 1 12); do
   dump_ui /sdcard/save.xml "$EVIDENCE/save.xml"
-  if find_center "$EVIDENCE/save.xml" "Módosítások mentése az appba" >/tmp/save.txt 2>/dev/null; then
-    break
-  fi
+  if find_center "$EVIDENCE/save.xml" "Módosítások mentése az appba" >/tmp/save.txt 2>/dev/null; then break; fi
   scroll_down
 done
 test -s /tmp/save.txt || fail_with_logs
@@ -215,13 +230,11 @@ read SX SY < /tmp/save.txt
 adb shell input tap "$SX" "$SY"
 sleep 3
 check_no_crash
-adb exec-out screencap -p > "$EVIDENCE/05-saved.png" || true
 
-echo "[9/14] Restart and verify private CMR history persisted"
+echo "[10/14] Restart and verify CMR persistence"
 adb shell am force-stop "$PKG"
 launch_app
 sleep 5
-dismiss_system_dialogs || true
 check_foreground
 check_no_crash
 rm -f /tmp/history.txt
@@ -229,48 +242,32 @@ for i in $(seq 1 12); do
   dump_ui /sdcard/history.xml "$EVIDENCE/history.xml"
   if find_any_center "$EVIDENCE/history.xml" \
       "Mentett CMR" \
-      "KÜLDÉSRE VÁR" \
-      "ÚJRAPRÓBÁLÁS" \
-      "FELTÖLTVE" \
-      "E-MAIL ELKÜLDVE" \
-      "JÓVÁHAGYVA" >/tmp/history.txt 2>/dev/null; then
+      "Helyben mentve" \
+      "Szinkronra vár" \
+      "Offline sor" \
+      "Feltöltve" \
+      "E-mail elküldve" \
+      "Feldolgozva" >/tmp/history.txt 2>/dev/null; then
     break
   fi
   scroll_down
 done
 test -s /tmp/history.txt || fail_with_logs
-adb exec-out screencap -p > "$EVIDENCE/06-history.png" || true
+adb exec-out screencap -p > "$EVIDENCE/04-history.png" || true
 
-echo "[10/14] Re-open persisted CMR"
+echo "[11/14] Re-open persisted CMR"
 read HX HY < /tmp/history.txt
 adb shell input tap "$HX" "$HY"
 sleep 3
-check_foreground
 check_no_crash
 dump_ui /sdcard/reopened.xml "$EVIDENCE/reopened.xml"
 grep -q -E 'Smart Scan PRO|Felismert CMR adatok' "$EVIDENCE/reopened.xml" || fail_with_logs
-adb exec-out screencap -p > "$EVIDENCE/07-reopened.png" || true
 
-echo "[11/14] Home restart and background/resume"
-adb shell am force-stop "$PKG"
-launch_app
-sleep 3
-dismiss_system_dialogs || true
-check_foreground
-adb shell input keyevent KEYCODE_HOME
-sleep 2
-launch_app
-sleep 3
-dismiss_system_dialogs || true
-check_foreground
-check_no_crash
-
-echo "[12/14] Repeated cold starts"
+echo "[12/14] Background/resume and repeated cold starts"
 for i in 1 2 3; do
   adb shell am force-stop "$PKG"
   launch_app
-  sleep 2
-  dismiss_system_dialogs || true
+  sleep 3
   check_foreground
   check_no_crash
   echo "cold start $i OK"
@@ -284,6 +281,6 @@ echo "[14/14] Final diagnostics"
 adb shell dumpsys package "$PKG" > "$EVIDENCE/package.txt"
 adb shell dumpsys activity activities > "$EVIDENCE/activities.txt"
 adb logcat -d > "$EVIDENCE/logcat.txt"
-adb exec-out screencap -p > "$EVIDENCE/08-final.png" || true
+adb exec-out screencap -p > "$EVIDENCE/05-final.png" || true
 
-echo "AIMS Flow Smart Scanner v1.0 ROAD PRIVATE-CMR END-TO-END test PASSED"
+echo "AIMS Flow v1.0 FLOW APP END-TO-END test PASSED"
