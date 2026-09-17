@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../services/cmr_sync_service.dart';
 import '../services/device_identity_service.dart';
 import '../widgets/aims_flow_skin.dart';
 import 'device_gate.dart';
@@ -41,19 +40,11 @@ class _LoginScreenState extends State<LoginScreen> {
       _busy = true;
       _error = null;
     });
-    try {
-      const sync = CmrSyncService();
-      await sync.syncPending();
-      if (!mounted) return;
-      await Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const DeviceGate(child: HomeScreen())),
-      );
-    } catch (_) {
-      if (!mounted) return;
-      setState(() => _error = 'A belépés ellenőrzése most nem érhető el. Ellenőrizd a kapcsolatot.');
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
+    FocusScope.of(context).unfocus();
+    if (!mounted) return;
+    await Navigator.of(context).pushReplacement(
+      MaterialPageRoute(builder: (_) => const DeviceGate(child: HomeScreen())),
+    );
   }
 
   Future<void> _showDevice() async {
