@@ -71,7 +71,7 @@ class NailFitV3Scan extends StatelessWidget {
             nfSecondary(Icons.photo_library_outlined, 'Kép kiválasztása a galériából', () => pick(ImageSource.gallery)),
             const SizedBox(height: 12),
             const Text(
-              'A szkennelés jelenleg helyi képfeldolgozást és manuális 5 pontos kalibrációt használ. Pontos press-on méretezéshez később referencia-méret vagy AR kalibráció szükséges.',
+              'A szkennelés helyi képfeldolgozást és 5 pontos kalibrációt használ. A Smart pontok csak kiindulópontok: húzás helyett töröld/jelöld újra, ha nem a körmök közepére kerültek. Pontos press-on méretezéshez referencia-méret vagy AR kalibráció szükséges.',
               style: TextStyle(color: nfMuted, fontSize: 9.2, height: 1.35),
             ),
           ],
@@ -202,10 +202,14 @@ class NailFitV3Scan extends StatelessWidget {
             Expanded(
               child: _miniAction(
                 Icons.auto_fix_high_rounded,
-                'Auto pontok',
+                'Smart pontok',
                 photo == null ? null : () {
                   c.seedCalibration();
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Automatikus kiinduló pontok beállítva. Érintéssel újrakalibrálhatod.')));
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                    content: Text(c.hasSmartCalibration
+                        ? 'Képalapú kiindulópontok beállítva. Ellenőrizd mind az 5 pontot.'
+                        : 'Biztos kézterületet nem találtam, ezért sablonpontokat tettem le. Jelöld újra kézzel.'),
+                  ));
                 },
               ),
             ),
@@ -246,17 +250,24 @@ class NailFitV3Scan extends StatelessWidget {
           CircleAvatar(
             radius: 20,
             backgroundColor: const Color(0xFFF8DCE2),
-            child: Icon(score >= 68 ? Icons.check_circle_outline_rounded : Icons.light_mode_outlined, color: nfRoseDark, size: 21),
+            child: Icon(score >= 70 ? Icons.check_circle_outline_rounded : Icons.light_mode_outlined, color: nfRoseDark, size: 21),
           ),
           const SizedBox(width: 11),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Fotóminőség', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800)),
+                Row(
+                  children: [
+                    const Expanded(child: Text('Fotóminőség', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800))),
+                    if (result != null) Text(result.resolution, style: const TextStyle(color: nfMuted, fontSize: 7.8)),
+                  ],
+                ),
                 const SizedBox(height: 2),
                 Text(text, style: const TextStyle(color: nfMuted, fontSize: 9.4)),
                 if (result != null) ...[
+                  const SizedBox(height: 3),
+                  Text(result.hint, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(color: nfMuted, fontSize: 8.4, height: 1.2)),
                   const SizedBox(height: 5),
                   ClipRRect(
                     borderRadius: BorderRadius.circular(99),
@@ -266,7 +277,6 @@ class NailFitV3Scan extends StatelessWidget {
               ],
             ),
           ),
-          if (result != null) Text(result.resolution, style: const TextStyle(color: nfMuted, fontSize: 7.8)),
         ],
       ),
     );
@@ -318,7 +328,7 @@ class NailFitV3Scan extends StatelessWidget {
             const SizedBox(height: 6),
             Text(
               result == null
-                  ? 'A rendszer ellenőrzi a fényt és kontrasztot, majd az 5 pontból becsli a kéz arányait.'
+                  ? 'A rendszer ellenőrzi a fényt, kontrasztot és kézterületet, majd az 5 pontból becsli a kéz arányait.'
                   : '${result.tone}, ${result.undertone} tónusbecslés · ${result.handShape}. A javaslat vizuális segítség, nem milliméterpontos mérés.',
               style: const TextStyle(color: nfMuted, fontSize: 10, height: 1.35),
             ),
@@ -340,8 +350,8 @@ class NailFitV3Scan extends StatelessWidget {
     if (c.points.length < 5) c.seedCalibration();
     final result = await c.analyzePhoto(photo!);
     if (!context.mounted || result == null) return;
-    if (result.qualityScore < 52) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('A fotó minősége gyenge. A Try-On működik, de egy világosabb, élesebb kép pontosabb lesz.')));
+    if (result.qualityScore < 54) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('A fotó minősége gyenge: ${result.hint}. A Try-On elindul, de érdemes új fotót készíteni.')));
     }
     c.go(2);
   }
