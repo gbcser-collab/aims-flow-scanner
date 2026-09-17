@@ -1,0 +1,80 @@
+name: Build AIMS Flow Android APK
+
+on:
+  push:
+    branches: [ flow-pro ]
+  workflow_dispatch:
+
+jobs:
+  build-flow-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Generate Android platform
+        run: |
+          rm -rf /tmp/aims_template
+          flutter create --platforms=android --org hu.logisticaims --project-name aims_flow_scanner /tmp/aims_template
+          cp -R /tmp/aims_template/android ./android
+
+      - name: Configure Android permissions and identity
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('android/app/src/main/AndroidManifest.xml')
+          s=p.read_text()
+          permissions='''
+              <uses-permission android:name="android.permission.CAMERA" />
+              <uses-permission android:name="android.permission.INTERNET" />
+              <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+              <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+              <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+          '''
+          s=s.replace('<application', permissions+'\n    <application',1)
+          s=s.replace('android:label="aims_flow_scanner"','android:label="AIMS Flow"')
+          p.write_text(s)
+          PY
+
+      - name: Dependencies
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Unit and UI tests
+        run: flutter test test/cmr_parser_test.dart test/app_smoke_test.dart
+
+      - name: Build debug APK
+        run: flutter build apk --debug
+
+      - name: APK sanity check
+        run: |
+          test -s build/app/outputs/flutter-apk/app-debug.apk
+          cp build/app/outputs/flutter-apk/app-debug.apk AIMS-FLOW-debug.apk
+          sha256sum AIMS-FLOW-debug.apk | tee AIMS-FLOW-debug.apk.sha256
+          ls -lh AIMS-FLOW-debug.apk
+
+      - name: Upload Android APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: AIMS-FLOW-ANDROID
+          path: |
+            AIMS-FLOW-debug.apk
+            AIMS-FLOW-debug.apk.sha256
+          if-no-files-found: error
+          retention-days: 90
