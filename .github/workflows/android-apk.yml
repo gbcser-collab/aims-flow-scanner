@@ -56,10 +56,15 @@ jobs:
               <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
           '''
           text = text.replace('<application', permissions + '\n    <application', 1)
-          text = text.replace('android:label="aims_flow_scanner"', 'android:label="AIMS Flow Smart Scanner"')
+          text = text.replace(
+              'android:label="aims_flow_scanner"',
+              'android:label="AIMS Flow Smart Scanner"\n        android:allowBackup="false"\n        android:usesCleartextTraffic="false"',
+          )
           manifest.write_text(text)
           PY
           cat android/app/src/main/AndroidManifest.xml
+          grep -q 'android:allowBackup="false"' android/app/src/main/AndroidManifest.xml
+          grep -q 'android:usesCleartextTraffic="false"' android/app/src/main/AndroidManifest.xml
 
       - name: Dependencies
         run: flutter pub get
