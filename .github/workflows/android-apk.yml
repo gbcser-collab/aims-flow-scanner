@@ -2,13 +2,13 @@ name: Build and deep-test Android APK
 
 on:
   push:
-    branches: [ main, v0.8-dev, v0.9-pro, v1.0-road ]
+    branches: [ main, v0.8-dev, v0.9-pro, v1.0-road, v1.0-flow-app ]
   workflow_dispatch:
 
 jobs:
   build-android:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 55
     steps:
       - uses: actions/checkout@v4
 
@@ -40,6 +40,24 @@ jobs:
           flutter create --platforms=android --org hu.logisticaims --project-name aims_flow_scanner /tmp/aims_template
           cp -R /tmp/aims_template/android ./android
 
+      - name: Add Android location permissions
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('android/app/src/main/AndroidManifest.xml')
+          text = p.read_text()
+          marker = '<manifest xmlns:android="http://schemas.android.com/apk/res/android">'
+          perms = '''<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+              <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />'''
+          if marker not in text:
+              raise SystemExit('manifest marker missing')
+          p.write_text(text.replace(marker, perms, 1))
+          PY
+          cat android/app/src/main/AndroidManifest.xml
+
       - name: Dependencies
         run: flutter pub get
 
@@ -49,22 +67,25 @@ jobs:
       - name: Unit tests
         run: flutter test
 
-      - name: Build debug APK
+      - name: Build production debug APK
         run: flutter build apk --debug --dart-define=AIMS_API_BASE_URL=https://logistic-aims.hu/api
 
-      - name: APK sanity check
+      - name: Production APK sanity check
         run: |
           test -s build/app/outputs/flutter-apk/app-debug.apk
           unzip -t build/app/outputs/flutter-apk/app-debug.apk > /tmp/apk-test.txt
           tail -5 /tmp/apk-test.txt
           ls -lh build/app/outputs/flutter-apk/app-debug.apk
 
-      - name: Upload APK before device test
+      - name: Upload production APK
         uses: actions/upload-artifact@v4
         with:
-          name: AIMS-Flow-Smart-Scanner-v1.0-ROAD-END-TO-END
+          name: AIMS-Flow-v1.0-FLOW-APP
           path: build/app/outputs/flutter-apk/app-debug.apk
           if-no-files-found: error
+
+      - name: Build isolated E2E APK
+        run: flutter build apk --debug --dart-define=AIMS_API_BASE_URL=https://logistic-aims.hu/api --dart-define=AIMS_E2E_BYPASS_AUTH=true
 
       - name: Deep end-to-end Smart Scanner test
         uses: reactivecircus/android-emulator-runner@v2
@@ -80,6 +101,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: AIMS-Flow-Scanner-v1.0-ROAD-test-evidence
+          name: AIMS-Flow-v1.0-FLOW-APP-test-evidence
           path: test-evidence/
           if-no-files-found: warn
