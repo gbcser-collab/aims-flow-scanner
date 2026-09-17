@@ -64,6 +64,8 @@ class ScanResult {
     required this.brightness,
     required this.contrast,
     required this.resolution,
+    required this.skinCoverage,
+    required this.hint,
   });
 
   final String tone;
@@ -76,6 +78,8 @@ class ScanResult {
   final double brightness;
   final double contrast;
   final String resolution;
+  final double skinCoverage;
+  final String hint;
 }
 
 class NailFitV3Controller extends ChangeNotifier {
@@ -94,11 +98,17 @@ class NailFitV3Controller extends ChangeNotifier {
   DateTime? appointment;
   String preferredShape = 'Mandula';
   String preferredStyle = 'Nude';
+  String? lastPhotoPath;
+  int photoWidth = 0;
+  int photoHeight = 0;
+  DateTime? lastScanAt;
 
   String shape = premiumLooks.first.shape;
   Color color = premiumLooks.first.color;
   NailFinish finish = premiumLooks.first.finish;
   double length = premiumLooks.first.length;
+
+  Rect? _skinBounds;
 
   static const List<Offset> defaultPoints = <Offset>[
     Offset(.79, .57),
@@ -108,9 +118,12 @@ class NailFitV3Controller extends ChangeNotifier {
     Offset(.72, .34),
   ];
 
+  bool get hasSmartCalibration => _skinBounds != null;
+  double get photoAspectRatio => photoWidth > 0 && photoHeight > 0 ? photoWidth / photoHeight : 1.0;
+
   Future<File> get _stateFile async {
     final dir = await getApplicationDocumentsDirectory();
-    return File('${dir.path}/nailfit_state_v3.json');
+    return File('${dir.path}/nailfit_state_v4.json');
   }
 
   Future<void> restore() async {
@@ -121,23 +134,67 @@ class NailFitV3Controller extends ChangeNotifier {
       favorites
         ..clear()
         ..addAll((raw['favorites'] as List<dynamic>? ?? const []).map((e) => '$e'));
-      savedPngPaths
-        ..clear()
-        ..addAll((raw['savedPngPaths'] as List<dynamic>? ?? const []).map((e) => '$e'));
-      saved
-        ..clear()
-        ..addAll((raw['saved'] as List<dynamic>? ?? const <dynamic>[])
+
+      savedPngPaths.clear();
+      for (final value in (raw['savedPngPaths'] as List<dynamic>? ?? const [])) {
+        final path = '$value';
+        if (await File(path).exists()) savedPngPaths.add(path);
+      }
+
+      saved.clear();
+      final rawSaved = raw['savedLooks'] as List<dynamic>?;
+      if (rawSaved != null) {
+        saved.addAll(rawSaved.whereType<Map<String, dynamic>>().map(_lookFromJson));
+      } else {
+        saved.addAll((raw['saved'] as List<dynamic>? ?? const <dynamic>[])
             .map((e) => premiumLooks.where((p) => p.name == '$e').firstOrNull)
             .whereType<PremiumLook>());
+      }
+
       notificationsEnabled = raw['notificationsEnabled'] as bool? ?? true;
       tryCount = raw['tryCount'] as int? ?? 0;
       preferredShape = raw['preferredShape'] as String? ?? 'Mandula';
       preferredStyle = raw['preferredStyle'] as String? ?? 'Nude';
+      shape = raw['shape'] as String? ?? preferredShape;
+      final colorValue = raw['color'] as int?;
+      if (colorValue != null) color = Color(colorValue);
+      final finishName = raw['finish'] as String?;
+      if (finishName != null) finish = NailFinish.values.where((e) => e.name == finishName).firstOrNull ?? finish;
+      length = (raw['length'] as num?)?.toDouble().clamp(.68, 1.35).toDouble() ?? length;
+
+      points
+        ..clear()
+        ..addAll((raw['points'] as List<dynamic>? ?? const []).whereType<List<dynamic>>().where((e) => e.length >= 2).map((e) => Offset((e[0] as num).toDouble(), (e[1] as num).toDouble())));
+
+      photoWidth = raw['photoWidth'] as int? ?? 0;
+      photoHeight = raw['photoHeight'] as int? ?? 0;
+      final storedPhoto = raw['lastPhotoPath'] as String?;
+      lastPhotoPath = storedPhoto != null && await File(storedPhoto).exists() ? storedPhoto : null;
+      final scanAtRaw = raw['lastScanAt'] as String?;
+      lastScanAt = scanAtRaw == null ? null : DateTime.tryParse(scanAtRaw);
       final appointmentRaw = raw['appointment'] as String?;
       appointment = appointmentRaw == null ? null : DateTime.tryParse(appointmentRaw);
       notifyListeners();
+      if (savedPngPaths.length != ((raw['savedPngPaths'] as List<dynamic>? ?? const []).length)) unawaited(_persist());
     } catch (_) {
       // A sérült helyi állapot nem akadályozhatja az app indulását.
+    }
+  }
+
+  Future<XFile> rememberPhoto(XFile source) async {
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final ext = source.path.contains('.') ? source.path.substring(source.path.lastIndexOf('.')) : '.jpg';
+      final target = File('${dir.path}/nailfit_last_hand$ext');
+      final sourceFile = File(source.path);
+      if (sourceFile.absolute.path != target.absolute.path) await sourceFile.copy(target.path);
+      lastPhotoPath = target.path;
+      unawaited(_persist());
+      return XFile(target.path);
+    } catch (_) {
+      lastPhotoPath = source.path;
+      unawaited(_persist());
+      return source;
     }
   }
 
@@ -147,17 +204,51 @@ class NailFitV3Controller extends ChangeNotifier {
       await file.writeAsString(jsonEncode(<String, dynamic>{
         'favorites': favorites.toList(),
         'saved': saved.map((e) => e.name).toList(),
+        'savedLooks': saved.map(_lookToJson).toList(),
         'savedPngPaths': savedPngPaths,
         'notificationsEnabled': notificationsEnabled,
         'tryCount': tryCount,
         'preferredShape': preferredShape,
         'preferredStyle': preferredStyle,
+        'shape': shape,
+        'color': color.toARGB32(),
+        'finish': finish.name,
+        'length': length,
+        'points': points.map((e) => <double>[e.dx, e.dy]).toList(),
+        'lastPhotoPath': lastPhotoPath,
+        'photoWidth': photoWidth,
+        'photoHeight': photoHeight,
+        'lastScanAt': lastScanAt?.toIso8601String(),
         'appointment': appointment?.toIso8601String(),
       }), flush: true);
     } catch (_) {
       // Best effort: a futó állapot mentés nélkül is használható.
     }
   }
+
+  Map<String, dynamic> _lookToJson(PremiumLook p) => <String, dynamic>{
+        'name': p.name,
+        'subtitle': p.subtitle,
+        'color': p.color.toARGB32(),
+        'match': p.match,
+        'image': p.image,
+        'category': p.category,
+        'shape': p.shape,
+        'finish': p.finish.name,
+        'length': p.length,
+      };
+
+  PremiumLook _lookFromJson(Map<String, dynamic> raw) => PremiumLook(
+        raw['name'] as String? ?? 'Mentett look',
+        raw['subtitle'] as String? ?? 'Saját beállítás',
+        Color(raw['color'] as int? ?? nfRose.toARGB32()),
+        raw['match'] as int? ?? 90,
+        raw['image'] as String? ?? nfHeroUrl,
+        raw['category'] as String? ?? 'Egyedi',
+        shape: raw['shape'] as String? ?? 'Mandula',
+        finish: NailFinish.values.where((e) => e.name == raw['finish']).firstOrNull ?? NailFinish.glossy,
+        length: (raw['length'] as num?)?.toDouble() ?? 1.0,
+      );
 
   void go(int value) {
     tab = value.clamp(0, 4).toInt();
@@ -173,9 +264,9 @@ class NailFitV3Controller extends ChangeNotifier {
     if (tryOn) {
       tab = 2;
       tryCount++;
-      unawaited(_persist());
     }
     notifyListeners();
+    unawaited(_persist());
   }
 
   void setShape(String value) {
@@ -188,16 +279,19 @@ class NailFitV3Controller extends ChangeNotifier {
   void setColor(Color value) {
     color = value;
     notifyListeners();
+    unawaited(_persist());
   }
 
   void setFinish(NailFinish value) {
     finish = value;
     notifyListeners();
+    unawaited(_persist());
   }
 
   void setLength(double value) {
     length = value.clamp(.68, 1.35).toDouble();
     notifyListeners();
+    unawaited(_persist());
   }
 
   void toggleOverlay() {
@@ -217,10 +311,28 @@ class NailFitV3Controller extends ChangeNotifier {
   }
 
   void saveCurrent() {
-    if (!saved.any((e) => e.name == look.name)) saved.insert(0, look);
+    final customized = shape != look.shape || color.toARGB32() != look.color.toARGB32() || finish != look.finish || (length - look.length).abs() > .01;
+    final item = customized
+        ? PremiumLook(
+            '${look.name} · egyedi',
+            '$shape · ${finish.name} · saját finomhangolás',
+            color,
+            look.match,
+            look.image,
+            'Egyedi',
+            shape: shape,
+            finish: finish,
+            length: length,
+          )
+        : look;
+    final signature = _lookSignature(item);
+    saved.removeWhere((e) => _lookSignature(e) == signature);
+    saved.insert(0, item);
     notifyListeners();
     unawaited(_persist());
   }
+
+  String _lookSignature(PremiumLook p) => '${p.name}|${p.shape}|${p.color.toARGB32()}|${p.finish.name}|${p.length.toStringAsFixed(2)}';
 
   void rememberPng(String path) {
     savedPngPaths.remove(path);
@@ -230,6 +342,9 @@ class NailFitV3Controller extends ChangeNotifier {
   }
 
   void clearSaved() {
+    for (final path in List<String>.from(savedPngPaths)) {
+      unawaited(File(path).delete().catchError((_) => File(path)));
+    }
     favorites.clear();
     saved.clear();
     savedPngPaths.clear();
@@ -260,14 +375,26 @@ class NailFitV3Controller extends ChangeNotifier {
     points.clear();
     scan = null;
     analyzing = false;
+    _skinBounds = null;
     notifyListeners();
+    unawaited(_persist());
   }
 
   void seedCalibration() {
+    final b = _skinBounds;
     points
       ..clear()
-      ..addAll(defaultPoints);
+      ..addAll(b == null
+          ? defaultPoints
+          : <Offset>[
+              Offset(b.left + b.width * .88, b.top + b.height * .55),
+              Offset(b.left + b.width * .20, b.top + b.height * .25),
+              Offset(b.left + b.width * .41, b.top + b.height * .14),
+              Offset(b.left + b.width * .62, b.top + b.height * .22),
+              Offset(b.left + b.width * .78, b.top + b.height * .34),
+            ].map((p) => Offset(p.dx.clamp(.02, .98).toDouble(), p.dy.clamp(.02, .98).toDouble())));
     notifyListeners();
+    unawaited(_persist());
   }
 
   void addPoint(Offset local, Size size) {
@@ -277,33 +404,47 @@ class NailFitV3Controller extends ChangeNotifier {
       (local.dy / size.height).clamp(0.0, 1.0).toDouble(),
     ));
     notifyListeners();
+    unawaited(_persist());
   }
 
   void undoPoint() {
     if (points.isEmpty) return;
     points.removeLast();
     notifyListeners();
+    unawaited(_persist());
   }
 
   void clearPoints() {
     points.clear();
     notifyListeners();
+    unawaited(_persist());
   }
 
   Future<ScanResult?> analyzePhoto(XFile file) async {
     analyzing = true;
     notifyListeners();
+    ui.Codec? originalCodec;
+    ui.Image? originalImage;
+    ui.Codec? analysisCodec;
+    ui.Image? analysisImage;
     try {
       final bytes = await file.readAsBytes();
-      final codec = await ui.instantiateImageCodec(bytes, targetWidth: 180);
-      final frame = await codec.getNextFrame();
-      final image = frame.image;
-      final data = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
+
+      originalCodec = await ui.instantiateImageCodec(bytes);
+      final originalFrame = await originalCodec.getNextFrame();
+      originalImage = originalFrame.image;
+      photoWidth = originalImage.width;
+      photoHeight = originalImage.height;
+
+      analysisCodec = await ui.instantiateImageCodec(bytes, targetWidth: 360);
+      final analysisFrame = await analysisCodec.getNextFrame();
+      analysisImage = analysisFrame.image;
+      final data = await analysisImage.toByteData(format: ui.ImageByteFormat.rawRgba);
       if (data == null) throw StateError('No pixel data');
 
-      final width = image.width;
-      final height = image.height;
-      final step = math.max(1, math.sqrt(width * height / 8000).floor()).toInt();
+      final width = analysisImage.width;
+      final height = analysisImage.height;
+      final step = math.max(1, math.sqrt(width * height / 14000).floor()).toInt();
       var count = 0;
       var luminanceSum = 0.0;
       var luminanceSq = 0.0;
@@ -311,6 +452,10 @@ class NailFitV3Controller extends ChangeNotifier {
       var sr = 0.0;
       var sg = 0.0;
       var sb = 0.0;
+      var minX = width;
+      var maxX = 0;
+      var minY = height;
+      var maxY = 0;
 
       for (var y = 0; y < height; y += step) {
         for (var x = 0; x < width; x += step) {
@@ -325,12 +470,16 @@ class NailFitV3Controller extends ChangeNotifier {
 
           final maxC = math.max(r, math.max(g, b));
           final minC = math.min(r, math.min(g, b));
-          final skinLike = r > 70 && g > 40 && b > 25 && r >= g && (maxC - minC) > 12 && (r - b) > 8;
+          final skinLike = r > 65 && g > 35 && b > 20 && r >= g * .92 && r > b && (maxC - minC) > 10 && (r - b) > 6;
           if (skinLike) {
             skinCount++;
             sr += r;
             sg += g;
             sb += b;
+            if (x < minX) minX = x;
+            if (x > maxX) maxX = x;
+            if (y < minY) minY = y;
+            if (y > maxY) maxY = y;
           }
         }
       }
@@ -338,7 +487,21 @@ class NailFitV3Controller extends ChangeNotifier {
       final brightness = count == 0 ? 0.0 : luminanceSum / count;
       final variance = count == 0 ? 0.0 : (luminanceSq / count) - brightness * brightness;
       final contrast = math.sqrt(math.max(0.0, variance));
-      final pixelCount = width * height;
+      final originalPixels = photoWidth * photoHeight;
+      final skinCoverage = count == 0 ? 0.0 : skinCount / count;
+
+      if (skinCount > 20 && maxX > minX && maxY > minY) {
+        final padX = (maxX - minX) * .05;
+        final padY = (maxY - minY) * .04;
+        _skinBounds = Rect.fromLTRB(
+          ((minX - padX) / width).clamp(0.0, 1.0).toDouble(),
+          ((minY - padY) / height).clamp(0.0, 1.0).toDouble(),
+          ((maxX + padX) / width).clamp(0.0, 1.0).toDouble(),
+          ((maxY + padY) / height).clamp(0.0, 1.0).toDouble(),
+        );
+      } else {
+        _skinBounds = null;
+      }
 
       final avgR = skinCount == 0 ? 178.0 : sr / skinCount;
       final avgG = skinCount == 0 ? 142.0 : sg / skinCount;
@@ -352,9 +515,13 @@ class NailFitV3Controller extends ChangeNotifier {
               : skinLum > 120
                   ? 'Közepes'
                   : 'Mélyebb';
-      final undertone = (avgR - avgB) > 42
+      final redBlue = avgR - avgB;
+      final greenBalance = avgG - avgB;
+      final undertone = redBlue > 48 && greenBalance > 8
           ? 'meleg'
-          : ((avgR - avgB).abs() < 24 ? 'semleges' : 'hűvös');
+          : redBlue < 28
+              ? 'hűvös'
+              : 'semleges';
 
       final hand = _estimateHandShape();
       final nailBed = _estimateNailBed();
@@ -365,17 +532,35 @@ class NailFitV3Controller extends ChangeNotifier {
               : preferredShape;
 
       var qualityScore = 100;
-      if (brightness < 70 || brightness > 225) qualityScore -= 24;
-      if (contrast < 24) qualityScore -= 22;
-      if (pixelCount < 7000) qualityScore -= 20;
-      if (skinCount < count * .06) qualityScore -= 14;
-      if (points.length < 5) qualityScore -= 8;
-      qualityScore = qualityScore.clamp(35, 100).toInt();
-      final quality = qualityScore >= 82
+      final hints = <String>[];
+      if (brightness < 65) {
+        qualityScore -= 24;
+        hints.add('Túl sötét a kép');
+      } else if (brightness > 225) {
+        qualityScore -= 20;
+        hints.add('Túl erős a fény');
+      }
+      if (contrast < 22) {
+        qualityScore -= 22;
+        hints.add('Kevés a részlet/kontraszt');
+      }
+      if (originalPixels < 700000) {
+        qualityScore -= 18;
+        hints.add('Alacsony a felbontás');
+      }
+      if (skinCoverage < .055) {
+        qualityScore -= 20;
+        hints.add('A kéz túl kicsi vagy nem jól felismerhető');
+      } else if (skinCoverage > .82) {
+        qualityScore -= 8;
+        hints.add('Hagyj egy kis teret a kéz körül');
+      }
+      qualityScore = qualityScore.clamp(30, 100).toInt();
+      final quality = qualityScore >= 84
           ? 'Kiváló'
-          : qualityScore >= 68
+          : qualityScore >= 70
               ? 'Jó'
-              : qualityScore >= 52
+              : qualityScore >= 54
                   ? 'Elfogadható'
                   : 'Fotózd újra';
 
@@ -389,14 +574,20 @@ class NailFitV3Controller extends ChangeNotifier {
         qualityScore: qualityScore,
         brightness: brightness,
         contrast: contrast,
-        resolution: '${image.width}×${image.height} elemzési minta',
+        resolution: '${photoWidth}×$photoHeight',
+        skinCoverage: skinCoverage,
+        hint: hints.isEmpty ? 'A kép alkalmas a Try-Onhoz.' : hints.join(' · '),
       );
+      lastScanAt = DateTime.now();
 
       final candidate = premiumLooks.where((p) => p.shape == recommended).firstOrNull ?? premiumLooks.first;
-      select(candidate, tryOn: false);
+      look = candidate;
       shape = recommended;
-      image.dispose();
-      codec.dispose();
+      color = candidate.color;
+      finish = candidate.finish;
+      length = candidate.length;
+      notifyListeners();
+      unawaited(_persist());
       return scan;
     } catch (_) {
       scan = const ScanResult(
@@ -406,13 +597,19 @@ class NailFitV3Controller extends ChangeNotifier {
         nailBed: 'Manuális becslés',
         recommendedShape: 'Mandula',
         quality: 'Fotózd újra',
-        qualityScore: 35,
+        qualityScore: 30,
         brightness: 0,
         contrast: 0,
         resolution: 'Elemzés sikertelen',
+        skinCoverage: 0,
+        hint: 'A képet nem sikerült biztonságosan feldolgozni.',
       );
       return scan;
     } finally {
+      originalImage?.dispose();
+      originalCodec?.dispose();
+      analysisImage?.dispose();
+      analysisCodec?.dispose();
       analyzing = false;
       notifyListeners();
     }
@@ -424,9 +621,10 @@ class NailFitV3Controller extends ChangeNotifier {
     final ys = points.map((e) => e.dy).toList()..sort();
     final spreadX = xs.last - xs.first;
     final spreadY = ys.last - ys.first;
-    final ratio = spreadY == 0 ? 1.0 : spreadX / spreadY;
-    if (ratio < 1.35) return 'Karcsú, hosszúkás · becslés';
-    if (ratio > 2.15) return 'Szélesebb kéz · becslés';
+    final correctedX = spreadX * photoAspectRatio;
+    final ratio = spreadY == 0 ? 1.0 : correctedX / spreadY;
+    if (ratio < 1.08) return 'Karcsú, hosszúkás · becslés';
+    if (ratio > 1.85) return 'Szélesebb kéz · becslés';
     return 'Arányos kéz · becslés';
   }
 
@@ -436,11 +634,11 @@ class NailFitV3Controller extends ChangeNotifier {
     if (ordered.length < 3) return 'Közepes · manuális becslés';
     var gap = 0.0;
     for (var i = 1; i < ordered.length; i++) {
-      gap += (ordered[i].dx - ordered[i - 1].dx).abs();
+      gap += (ordered[i].dx - ordered[i - 1].dx).abs() * photoAspectRatio;
     }
     final avgGap = gap / (ordered.length - 1);
-    if (avgGap < .105) return 'Keskenyebb · becslés';
-    if (avgGap > .165) return 'Szélesebb · becslés';
+    if (avgGap < .085) return 'Keskenyebb · becslés';
+    if (avgGap > .16) return 'Szélesebb · becslés';
     return 'Közepes · becslés';
   }
 
