@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../services/gps_tracking_service.dart';
 import '../widgets/aims_skin.dart';
@@ -49,7 +50,7 @@ class _GpsScreenState extends State<GpsScreen> {
       builder: (context) => AlertDialog(
         backgroundColor: const Color(0xFF071B35),
         title: const Text('Fuvar lezárása?', style: TextStyle(color: Colors.white)),
-        content: const Text('A GPS nyomkövetés azonnal leáll.', style: TextStyle(color: Colors.white70)),
+        content: const Text('A GPS nyomkövetés azonnal leáll, a fuvar bekerül a helyi fuvarlistába.', style: TextStyle(color: Colors.white70)),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Mégse')),
           FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Lezárás')),
@@ -64,6 +65,43 @@ class _GpsScreenState extends State<GpsScreen> {
     final v = value.toLocal();
     String two(int n) => n.toString().padLeft(2, '0');
     return '${two(v.hour)}:${two(v.minute)}:${two(v.second)}';
+  }
+
+  String _date(DateTime value) {
+    final v = value.toLocal();
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${v.year}.${two(v.month)}.${two(v.day)} ${two(v.hour)}:${two(v.minute)}';
+  }
+
+  String _duration(Duration value) {
+    if (value.inHours > 0) return '${value.inHours} ó ${value.inMinutes.remainder(60)} p';
+    return '${value.inMinutes} p';
+  }
+
+  Future<void> _openLastPosition(GpsTripRecord record) async {
+    if (record.latitude == null || record.longitude == null) return;
+    final uri = Uri.https('www.google.com', '/maps/search/', {
+      'api': '1',
+      'query': '${record.latitude},${record.longitude}',
+    });
+    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!ok && mounted) setState(() => _localError = 'A térkép nem nyitható meg.');
+  }
+
+  Future<void> _deleteTrip(GpsTripRecord record) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF071B35),
+        title: const Text('Fuvar törlése?', style: TextStyle(color: Colors.white)),
+        content: Text(record.plate, style: const TextStyle(color: Colors.white70)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Mégse')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Törlés')),
+        ],
+      ),
+    );
+    if (ok == true) await _runtime.deleteHistoryRecord(record.id);
   }
 
   Widget _metric(String label, String value) {
@@ -81,6 +119,40 @@ class _GpsScreenState extends State<GpsScreen> {
     );
   }
 
+  Widget _tripCard(GpsTripRecord record) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: AimsGlassCard(
+        padding: EdgeInsets.zero,
+        radius: 16,
+        child: ListTile(
+          leading: const Icon(Icons.local_shipping_outlined, color: aimsCyan, size: 30),
+          title: Text(record.plate, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900)),
+          subtitle: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (record.reference.isNotEmpty) Text(record.reference, style: const TextStyle(color: Color(0xFF9FD5FF))),
+              Text('${_date(record.startedAt)} • ${_duration(record.duration)}', style: const TextStyle(color: Colors.white54, fontSize: 11)),
+            ],
+          ),
+          trailing: PopupMenuButton<String>(
+            iconColor: const Color(0xFF9EDBFF),
+            color: const Color(0xFF071B35),
+            onSelected: (value) {
+              if (value == 'map') _openLastPosition(record);
+              if (value == 'delete') _deleteTrip(record);
+            },
+            itemBuilder: (_) => [
+              if (record.latitude != null && record.longitude != null)
+                const PopupMenuItem(value: 'map', child: Text('Utolsó pozíció térképen')),
+              const PopupMenuItem(value: 'delete', child: Text('Törlés')),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
@@ -88,6 +160,7 @@ class _GpsScreenState extends State<GpsScreen> {
       builder: (context, _) {
         final Position? point = _runtime.latest;
         final error = _localError ?? _runtime.error;
+        final history = _runtime.history;
         return Scaffold(
           backgroundColor: aimsNavy,
           appBar: AppBar(
@@ -210,6 +283,15 @@ class _GpsScreenState extends State<GpsScreen> {
                     ],
                   ),
                 ),
+                const SizedBox(height: 20),
+                AimsSectionTitle('Fuvarok megtekintése', trailing: Text('${history.length}', style: const TextStyle(color: aimsCyan, fontWeight: FontWeight.w900))),
+                const SizedBox(height: 10),
+                if (history.isEmpty)
+                  const AimsGlassCard(
+                    child: Text('Még nincs lezárt fuvar ezen a készüléken.', style: TextStyle(color: Colors.white70)),
+                  )
+                else
+                  ...history.map(_tripCard),
               ],
             ),
           ),
