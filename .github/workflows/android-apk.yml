@@ -2,13 +2,13 @@ name: Build and deep-test Android APK
 
 on:
   push:
-    branches: [ main, v0.8-dev, v1.0-real-gps ]
+    branches: [ main, v0.8-dev, v1.0-real-gps, v1.0-brutal ]
   workflow_dispatch:
 
 jobs:
   build-android:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 55
     steps:
       - uses: actions/checkout@v4
 
@@ -73,18 +73,26 @@ jobs:
       - name: Build debug APK
         run: flutter build apk --debug
 
+      - name: Build release APK
+        run: flutter build apk --release
+
       - name: APK sanity check
         run: |
           test -s build/app/outputs/flutter-apk/app-debug.apk
-          unzip -t build/app/outputs/flutter-apk/app-debug.apk > /tmp/apk-test.txt
-          tail -5 /tmp/apk-test.txt
-          ls -lh build/app/outputs/flutter-apk/app-debug.apk
+          test -s build/app/outputs/flutter-apk/app-release.apk
+          unzip -t build/app/outputs/flutter-apk/app-debug.apk > /tmp/apk-debug-test.txt
+          unzip -t build/app/outputs/flutter-apk/app-release.apk > /tmp/apk-release-test.txt
+          tail -5 /tmp/apk-debug-test.txt
+          tail -5 /tmp/apk-release-test.txt
+          ls -lh build/app/outputs/flutter-apk/app-debug.apk build/app/outputs/flutter-apk/app-release.apk
 
       - name: Upload APK before device test
         uses: actions/upload-artifact@v4
         with:
-          name: AIMS-Flow-Smart-Scanner-v1.0-REAL-GPS
-          path: build/app/outputs/flutter-apk/app-debug.apk
+          name: AIMS-Flow-Smart-Scanner-v1.0-BRUTAL
+          path: |
+            build/app/outputs/flutter-apk/app-debug.apk
+            build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
 
       - name: Deep end-to-end Smart Scanner test
@@ -101,6 +109,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: AIMS-Flow-Scanner-v1.0-REAL-GPS-test-evidence
+          name: AIMS-Flow-Scanner-v1.0-BRUTAL-test-evidence
           path: test-evidence/
           if-no-files-found: warn
