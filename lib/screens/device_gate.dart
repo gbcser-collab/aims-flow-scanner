@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../services/cmr_sync_service.dart';
+import '../widgets/aims_skin.dart';
 
 class DeviceGate extends StatefulWidget {
   const DeviceGate({super.key, required this.child});
@@ -41,18 +42,13 @@ class _DeviceGateState extends State<DeviceGate> with WidgetsBindingObserver {
     try {
       final report = await _sync.syncPending();
       if (!mounted) return;
-
-      // If the server cannot be reached we keep the last known decision.
-      // This preserves offline scanning for an already usable installation.
       final next = report.deviceState;
       setState(() {
         _deviceId = report.deviceId ?? _deviceId;
-        if (next != AimsDeviceState.unreachable && next != AimsDeviceState.unknown) {
-          _state = next;
-        }
+        if (next != AimsDeviceState.unreachable && next != AimsDeviceState.unknown) _state = next;
       });
     } catch (_) {
-      // Network/server failures must not destroy offline scanner availability.
+      // Existing approved/offline installations keep working when the server is temporarily unreachable.
     } finally {
       if (mounted) setState(() => _checking = false);
     }
@@ -70,19 +66,17 @@ class _DeviceGateState extends State<DeviceGate> with WidgetsBindingObserver {
         onRefresh: _check,
       );
     }
-
     if (_state == AimsDeviceState.revoked) {
       return _DeviceLockScreen(
         icon: Icons.phonelink_erase_rounded,
         title: 'Hozzáférés visszavonva',
-        message: 'Ez a készülék már nem jogosult az AIMS Flow használatára. Az alkalmazást távolítsd el a készülékről.',
+        message: 'Ez a készülék már nem jogosult az AIMS Flow használatára.',
         deviceId: _deviceId,
         checking: _checking,
         onRefresh: _check,
         revoked: true,
       );
     }
-
     return widget.child;
   }
 }
@@ -108,46 +102,45 @@ class _DeviceLockScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const gold = Color(0xFFE6B85C);
+    final accent = revoked ? const Color(0xFFFF6B7D) : aimsCyan;
     return Scaffold(
-      backgroundColor: const Color(0xFF0C0F13),
-      body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
-            child: Container(
-              width: double.infinity,
-              constraints: const BoxConstraints(maxWidth: 520),
-              padding: const EdgeInsets.all(26),
-              decoration: BoxDecoration(
-                color: const Color(0xFF171A1F),
-                borderRadius: BorderRadius.circular(24),
-                border: Border.all(color: (revoked ? Colors.redAccent : gold).withValues(alpha: .42)),
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(icon, color: revoked ? Colors.redAccent : gold, size: 58),
-                  const SizedBox(height: 18),
-                  Text(title, textAlign: TextAlign.center, style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.w900)),
-                  const SizedBox(height: 10),
-                  Text(message, textAlign: TextAlign.center, style: const TextStyle(color: Colors.white70, height: 1.45)),
-                  if (deviceId != null) ...[
-                    const SizedBox(height: 18),
-                    const Text('KÉSZÜLÉKAZONOSÍTÓ', style: TextStyle(color: Colors.white38, fontSize: 11, letterSpacing: 1.2, fontWeight: FontWeight.w800)),
-                    const SizedBox(height: 6),
-                    SelectableText(deviceId!, textAlign: TextAlign.center, style: const TextStyle(color: gold, fontSize: 12, fontWeight: FontWeight.w800)),
-                  ],
-                  const SizedBox(height: 22),
-                  FilledButton.icon(
-                    onPressed: checking ? null : onRefresh,
-                    icon: checking
-                        ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                        : const Icon(Icons.refresh_rounded),
-                    label: Text(checking ? 'Ellenőrzés…' : 'Jogosultság ellenőrzése'),
-                    style: FilledButton.styleFrom(backgroundColor: gold, foregroundColor: Colors.black, minimumSize: const Size.fromHeight(52)),
+      backgroundColor: aimsNavy,
+      body: AimsBackdrop(
+        child: SafeArea(
+          child: Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(24),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 520),
+                child: AimsGlassCard(
+                  padding: const EdgeInsets.all(26),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const AimsFlowMark(size: 82),
+                      const SizedBox(height: 16),
+                      Icon(icon, color: accent, size: 54),
+                      const SizedBox(height: 16),
+                      Text(title, textAlign: TextAlign.center, style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.w900)),
+                      const SizedBox(height: 10),
+                      Text(message, textAlign: TextAlign.center, style: const TextStyle(color: Colors.white70, height: 1.45)),
+                      if (deviceId != null) ...[
+                        const SizedBox(height: 18),
+                        const Text('KÉSZÜLÉKAZONOSÍTÓ', style: TextStyle(color: Colors.white38, fontSize: 11, letterSpacing: 1.2, fontWeight: FontWeight.w800)),
+                        const SizedBox(height: 6),
+                        SelectableText(deviceId!, textAlign: TextAlign.center, style: TextStyle(color: accent, fontSize: 12, fontWeight: FontWeight.w800)),
+                      ],
+                      const SizedBox(height: 22),
+                      AimsNeonButton(
+                        label: checking ? 'Ellenőrzés…' : 'Jogosultság ellenőrzése',
+                        onPressed: checking ? null : onRefresh,
+                        leading: checking
+                            ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                            : const Icon(Icons.refresh_rounded, color: Colors.white),
+                      ),
+                    ],
                   ),
-                ],
+                ),
               ),
             ),
           ),
