@@ -6,6 +6,55 @@ import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:path_provider/path_provider.dart';
 
+class GpsTripRecord {
+  const GpsTripRecord({
+    required this.id,
+    required this.plate,
+    required this.reference,
+    required this.startedAt,
+    required this.stoppedAt,
+    this.latitude,
+    this.longitude,
+  });
+
+  final String id;
+  final String plate;
+  final String reference;
+  final DateTime startedAt;
+  final DateTime stoppedAt;
+  final double? latitude;
+  final double? longitude;
+
+  Duration get duration => stoppedAt.difference(startedAt);
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'plate': plate,
+        'reference': reference,
+        'startedAt': startedAt.toUtc().toIso8601String(),
+        'stoppedAt': stoppedAt.toUtc().toIso8601String(),
+        'latitude': latitude,
+        'longitude': longitude,
+      };
+
+  static GpsTripRecord? fromJson(Object? value) {
+    if (value is! Map) return null;
+    final map = Map<String, dynamic>.from(value);
+    final start = DateTime.tryParse(map['startedAt']?.toString() ?? '')?.toLocal();
+    final stop = DateTime.tryParse(map['stoppedAt']?.toString() ?? '')?.toLocal();
+    if (start == null || stop == null) return null;
+    return GpsTripRecord(
+      id: map['id']?.toString() ?? 'trip_${start.microsecondsSinceEpoch}',
+      plate: map['plate']?.toString() ?? '',
+      reference: map['reference']?.toString() ?? '',
+      startedAt: start,
+      stoppedAt: stop,
+      latitude: (map['latitude'] as num?)?.toDouble(),
+      longitude: (map['longitude'] as num?)?.toDouble(),
+    );
+  }
+}
+
 class GpsTrackingService extends ChangeNotifier {
   GpsTrackingService._();
 
@@ -21,6 +70,7 @@ class GpsTrackingService extends ChangeNotifier {
   DateTime? _stoppedAt;
   Position? _latest;
   String? _error;
+  List<GpsTripRecord> _history = const [];
 
   bool get active => _active;
   bool get busy => _busy;
@@ -30,6 +80,7 @@ class GpsTrackingService extends ChangeNotifier {
   DateTime? get stoppedAt => _stoppedAt;
   Position? get latest => _latest;
   String? get error => _error;
+  List<GpsTripRecord> get history => List.unmodifiable(_history);
 
   Future<File> _file() async {
     final root = await getApplicationSupportDirectory();
@@ -49,6 +100,10 @@ class GpsTrackingService extends ChangeNotifier {
           _reference = decoded['reference']?.toString() ?? '';
           _startedAt = DateTime.tryParse(decoded['startedAt']?.toString() ?? '')?.toLocal();
           _stoppedAt = DateTime.tryParse(decoded['stoppedAt']?.toString() ?? '')?.toLocal();
+          final rows = decoded['history'];
+          if (rows is List) {
+            _history = rows.map(GpsTripRecord.fromJson).whereType<GpsTripRecord>().toList();
+          }
         }
       }
     } catch (_) {}
@@ -76,6 +131,7 @@ class GpsTrackingService extends ChangeNotifier {
       _reference = reference.trim();
       _startedAt = DateTime.now();
       _stoppedAt = null;
+      _latest = null;
       _active = true;
       await _save();
       await _startStream();
@@ -98,13 +154,31 @@ class GpsTrackingService extends ChangeNotifier {
     try {
       await _subscription?.cancel();
       _subscription = null;
+      final stop = DateTime.now();
+      final start = _startedAt ?? stop;
+      final record = GpsTripRecord(
+        id: 'trip_${start.microsecondsSinceEpoch}',
+        plate: _plate,
+        reference: _reference,
+        startedAt: start,
+        stoppedAt: stop,
+        latitude: _latest?.latitude,
+        longitude: _latest?.longitude,
+      );
+      _history = [record, ..._history].take(100).toList();
       _active = false;
-      _stoppedAt = DateTime.now();
+      _stoppedAt = stop;
       await _save();
     } finally {
       _busy = false;
       notifyListeners();
     }
+  }
+
+  Future<void> deleteHistoryRecord(String id) async {
+    _history = _history.where((record) => record.id != id).toList();
+    await _save();
+    notifyListeners();
   }
 
   Future<void> _ensurePermission() async {
@@ -165,6 +239,7 @@ class GpsTrackingService extends ChangeNotifier {
               'speed': _latest!.speed,
               'timestamp': _latest!.timestamp.toUtc().toIso8601String(),
             },
+      'history': _history.map((record) => record.toJson()).toList(),
     }), flush: true);
   }
 }
