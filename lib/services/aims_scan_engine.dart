@@ -25,9 +25,10 @@ class FrameCropSpec {
 
 /// AIMS-owned document scanner core.
 ///
-/// The capture is first restricted to the exact visible scanner frame. Edge
-/// detection and perspective correction then run only inside that region, so
-/// objects/background outside the UI frame cannot leak into the final CMR.
+/// The capture is first restricted to the exact visible scanner frame. The
+/// hardened v0.9 document checks are then applied so internal CMR grid lines
+/// cannot easily be mistaken for page edges. Perspective correction is only
+/// used when the detected geometry is plausible; otherwise a safe crop wins.
 class AimsScanEngine {
   const AimsScanEngine();
 
@@ -35,11 +36,13 @@ class AimsScanEngine {
     required String inputPath,
     required String outputPath,
     FrameCropSpec? frameCrop,
+    String? frameOutputPath,
   }) {
     return Isolate.run(() => const AimsScanEngine()._processSync(
           inputPath: inputPath,
           outputPath: outputPath,
           frameCrop: frameCrop,
+          frameOutputPath: frameOutputPath,
         ));
   }
 
@@ -47,6 +50,7 @@ class AimsScanEngine {
     required String inputPath,
     required String outputPath,
     FrameCropSpec? frameCrop,
+    String? frameOutputPath,
   }) {
     final bytes = File(inputPath).readAsBytesSync();
     final decoded = img.decodeImage(bytes);
@@ -54,6 +58,12 @@ class AimsScanEngine {
 
     var source = img.bakeOrientation(decoded);
     if (frameCrop != null) source = _cropToVisibleFrame(source, frameCrop);
+
+    // Keep a frame-safe, non-corrected copy for the second OCR pass. This gives
+    // us the v0.9 dual-OCR safety net without ever reading outside the UI frame.
+    if (frameOutputPath != null) {
+      File(frameOutputPath).writeAsBytesSync(img.encodeJpg(source, quality: 92), flush: true);
+    }
 
     const maxWidth = 2400;
     const maxHeight = 3400;
@@ -67,13 +77,19 @@ class AimsScanEngine {
       );
     }
 
-    final corners = _detectDocument(source);
+    var corners = _detectDocument(source);
+    if (!_cornersArePlausible(corners, source.width, source.height)) {
+      corners = _fallbackCorners(source.width, source.height);
+    }
+
     final fillRatio = _polygonArea(corners) / (source.width * source.height);
-    final warped = _warpToRectangle(source, corners);
-    final enhanced = _enhanceDocument(warped);
+    final normalized = _needsPerspectiveWarp(corners, source.width, source.height)
+        ? _warpToRectangle(source, corners)
+        : _cropToCorners(source, corners);
+    final enhanced = _enhanceDocument(normalized);
     final quality = _measureQuality(enhanced, fillRatio);
 
-    File(outputPath).writeAsBytesSync(img.encodeJpg(enhanced, quality: 90), flush: true);
+    File(outputPath).writeAsBytesSync(img.encodeJpg(enhanced, quality: 92), flush: true);
     return ScanProcessingResult(outputPath: outputPath, corners: corners, quality: quality);
   }
 
@@ -87,7 +103,7 @@ class AimsScanEngine {
     double visibleHeight = source.height.toDouble();
 
     // Camera preview uses BoxFit.cover. Reproduce the same center-crop mapping
-    // from the phone viewport back into the captured, orientation-corrected image.
+    // from the phone viewport back into the orientation-corrected capture.
     if (sourceAspect > viewportAspect) {
       visibleWidth = source.height * viewportAspect;
       visibleX = (source.width - visibleWidth) / 2;
@@ -145,8 +161,8 @@ class AimsScanEngine {
     if (magnitudes.isEmpty) return _fallbackCorners(source.width, source.height);
     magnitudes.sort();
     final threshold = magnitudes[(magnitudes.length * 0.88).floor()];
-    final marginX = w * 0.02;
-    final marginY = h * 0.02;
+    final marginX = w * 0.025;
+    final marginY = h * 0.025;
     final strong = candidates.where((p) {
       return p.magnitude >= threshold && p.x > marginX && p.x < w - marginX && p.y > marginY && p.y < h - marginY;
     }).toList();
@@ -164,7 +180,9 @@ class AimsScanEngine {
       if (bl == null || p.x - p.y < bl.x - bl.y) bl = p;
     }
 
-    if (tl == null || tr == null || br == null || bl == null) return _fallbackCorners(source.width, source.height);
+    if (tl == null || tr == null || br == null || bl == null) {
+      return _fallbackCorners(source.width, source.height);
+    }
 
     final inv = 1 / scale;
     final result = DocumentCorners(
@@ -180,14 +198,93 @@ class AimsScanEngine {
   }
 
   DocumentCorners _fallbackCorners(int width, int height) {
-    final mx = width * 0.018;
-    final my = height * 0.018;
+    final mx = width * 0.035;
+    final my = height * 0.035;
     return DocumentCorners(
       topLeft: DocPoint(mx, my),
       topRight: DocPoint(width - mx, my),
       bottomRight: DocPoint(width - mx, height - my),
       bottomLeft: DocPoint(mx, height - my),
     );
+  }
+
+  bool _cornersArePlausible(DocumentCorners c, int width, int height) {
+    final areaRatio = _polygonArea(c) / (width * height);
+    if (areaRatio < 0.38 || areaRatio > 0.995) return false;
+
+    if (c.topLeft.x > width * .28 || c.bottomLeft.x > width * .28) return false;
+    if (c.topRight.x < width * .72 || c.bottomRight.x < width * .72) return false;
+    if (c.topLeft.y > height * .28 || c.topRight.y > height * .28) return false;
+    if (c.bottomLeft.y < height * .72 || c.bottomRight.y < height * .72) return false;
+
+    final top = _distance(c.topLeft, c.topRight);
+    final bottom = _distance(c.bottomLeft, c.bottomRight);
+    final left = _distance(c.topLeft, c.bottomLeft);
+    final right = _distance(c.topRight, c.bottomRight);
+    if (_ratio(top, bottom) > 1.55 || _ratio(left, right) > 1.55) return false;
+
+    final angles = <double>[
+      _cornerAngle(c.bottomLeft, c.topLeft, c.topRight),
+      _cornerAngle(c.topLeft, c.topRight, c.bottomRight),
+      _cornerAngle(c.topRight, c.bottomRight, c.bottomLeft),
+      _cornerAngle(c.bottomRight, c.bottomLeft, c.topLeft),
+    ];
+    return angles.every((angle) => angle >= 52 && angle <= 128);
+  }
+
+  bool _needsPerspectiveWarp(DocumentCorners c, int width, int height) {
+    if (!_cornersArePlausible(c, width, height)) return false;
+
+    final topSlope = (c.topLeft.y - c.topRight.y).abs() / height;
+    final bottomSlope = (c.bottomLeft.y - c.bottomRight.y).abs() / height;
+    final leftSlope = (c.topLeft.x - c.bottomLeft.x).abs() / width;
+    final rightSlope = (c.topRight.x - c.bottomRight.x).abs() / width;
+    final strongestSkew = max(max(topSlope, bottomSlope), max(leftSlope, rightSlope));
+
+    final top = _distance(c.topLeft, c.topRight);
+    final bottom = _distance(c.bottomLeft, c.bottomRight);
+    final left = _distance(c.topLeft, c.bottomLeft);
+    final right = _distance(c.topRight, c.bottomRight);
+    final edgePerspective = max(_ratio(top, bottom), _ratio(left, right));
+
+    if (strongestSkew < .045 && edgePerspective < 1.10) return false;
+    if (strongestSkew > .22 || edgePerspective > 1.42) return false;
+    return true;
+  }
+
+  img.Image _cropToCorners(img.Image source, DocumentCorners c) {
+    final xs = c.ordered.map((p) => p.x).toList();
+    final ys = c.ordered.map((p) => p.y).toList();
+    final padX = source.width * .008;
+    final padY = source.height * .008;
+    final left = (xs.reduce(min) - padX).floor().clamp(0, source.width - 2);
+    final top = (ys.reduce(min) - padY).floor().clamp(0, source.height - 2);
+    final right = (xs.reduce(max) + padX).ceil().clamp(left + 1, source.width);
+    final bottom = (ys.reduce(max) + padY).ceil().clamp(top + 1, source.height);
+    return img.copyCrop(source, x: left, y: top, width: right - left, height: bottom - top);
+  }
+
+  double _distance(DocPoint a, DocPoint b) {
+    final dx = a.x - b.x;
+    final dy = a.y - b.y;
+    return sqrt(dx * dx + dy * dy);
+  }
+
+  double _ratio(double a, double b) {
+    final small = max(1e-6, min(a, b));
+    return max(a, b) / small;
+  }
+
+  double _cornerAngle(DocPoint a, DocPoint vertex, DocPoint b) {
+    final ax = a.x - vertex.x;
+    final ay = a.y - vertex.y;
+    final bx = b.x - vertex.x;
+    final by = b.y - vertex.y;
+    final dot = ax * bx + ay * by;
+    final lengths = sqrt(ax * ax + ay * ay) * sqrt(bx * bx + by * by);
+    if (lengths <= 1e-9) return 0;
+    final cosine = (dot / lengths).clamp(-1.0, 1.0);
+    return acos(cosine) * 180 / pi;
   }
 
   double _polygonArea(DocumentCorners c) {
@@ -202,14 +299,8 @@ class AimsScanEngine {
   }
 
   img.Image _warpToRectangle(img.Image source, DocumentCorners c) {
-    double distance(DocPoint a, DocPoint b) {
-      final dx = a.x - b.x;
-      final dy = a.y - b.y;
-      return sqrt(dx * dx + dy * dy);
-    }
-
-    final width = max(distance(c.topLeft, c.topRight), distance(c.bottomLeft, c.bottomRight)).round().clamp(320, 1800).toInt();
-    final height = max(distance(c.topLeft, c.bottomLeft), distance(c.topRight, c.bottomRight)).round().clamp(420, 2600).toInt();
+    final width = max(_distance(c.topLeft, c.topRight), _distance(c.bottomLeft, c.bottomRight)).round().clamp(320, 1800).toInt();
+    final height = max(_distance(c.topLeft, c.bottomLeft), _distance(c.topRight, c.bottomRight)).round().clamp(420, 2600).toInt();
 
     final output = img.Image(width: width, height: height, numChannels: 3);
     final q = c.ordered;
@@ -293,7 +384,7 @@ class AimsScanEngine {
     for (final p in result) {
       int adjust(num value) {
         final normalized = ((value - minL) / spread * 255).clamp(0, 255).toDouble();
-        final contrasted = (normalized - 128) * 1.12 + 128;
+        final contrasted = (normalized - 128) * 1.10 + 128;
         return contrasted.round().clamp(0, 255).toInt();
       }
       p
