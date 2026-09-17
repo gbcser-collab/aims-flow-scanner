@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../services/cmr_sync_service.dart';
+import '../services/device_access_lease_service.dart';
 import '../widgets/aims_skin.dart';
 
 class DeviceGate extends StatefulWidget {
@@ -14,6 +15,7 @@ class DeviceGate extends StatefulWidget {
 
 class _DeviceGateState extends State<DeviceGate> with WidgetsBindingObserver {
   static const _sync = CmrSyncService();
+  static const _leaseService = DeviceAccessLeaseService();
   static const bool _e2eBypass = bool.fromEnvironment('AIMS_E2E_BYPASS_AUTH', defaultValue: false);
 
   AimsDeviceState _state = AimsDeviceState.unknown;
@@ -40,16 +42,28 @@ class _DeviceGateState extends State<DeviceGate> with WidgetsBindingObserver {
 
   Future<void> _check() async {
     if (mounted) setState(() => _checking = true);
+    final lease = await _leaseService.load();
+    final validApprovedLease = lease?.state == AimsDeviceState.approved &&
+        !(lease?.isExpired(DateTime.now(), DeviceAccessLeaseService.validity) ?? true);
+
     try {
       final report = await _sync.syncPending();
       if (!mounted) return;
       final next = report.deviceState;
-      setState(() {
-        _deviceId = report.deviceId ?? _deviceId;
-        if (next != AimsDeviceState.unreachable && next != AimsDeviceState.unknown) _state = next;
-      });
+      _deviceId = report.deviceId ?? _deviceId;
+
+      if (next == AimsDeviceState.approved || next == AimsDeviceState.pending || next == AimsDeviceState.revoked) {
+        await _leaseService.save(next);
+        if (!mounted) return;
+        setState(() => _state = next);
+      } else if (validApprovedLease) {
+        setState(() => _state = AimsDeviceState.approved);
+      } else {
+        setState(() => _state = AimsDeviceState.unreachable);
+      }
     } catch (_) {
-      // Existing approved/offline installations keep working when the server is temporarily unreachable.
+      if (!mounted) return;
+      setState(() => _state = validApprovedLease ? AimsDeviceState.approved : AimsDeviceState.unreachable);
     } finally {
       if (mounted) setState(() => _checking = false);
     }
@@ -58,6 +72,18 @@ class _DeviceGateState extends State<DeviceGate> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     if (_e2eBypass) return widget.child;
+
+    if (_checking && _state == AimsDeviceState.unknown) {
+      return _DeviceLockScreen(
+        icon: Icons.security_rounded,
+        title: 'Készülék ellenőrzése',
+        message: 'Az AIMS Flow ellenőrzi, hogy ez a telefon jogosult-e a rendszer használatára.',
+        deviceId: _deviceId,
+        checking: true,
+        onRefresh: _check,
+      );
+    }
+
     if (_state == AimsDeviceState.pending) {
       return _DeviceLockScreen(
         icon: Icons.hourglass_top_rounded,
@@ -77,6 +103,16 @@ class _DeviceGateState extends State<DeviceGate> with WidgetsBindingObserver {
         checking: _checking,
         onRefresh: _check,
         revoked: true,
+      );
+    }
+    if (_state == AimsDeviceState.unreachable || _state == AimsDeviceState.unknown) {
+      return _DeviceLockScreen(
+        icon: Icons.cloud_off_rounded,
+        title: 'Online ellenőrzés szükséges',
+        message: 'Ezt a készüléket még nem sikerült érvényesen jóváhagyottként ellenőrizni, vagy a 24 órás offline jogosultság lejárt. Kapcsolódj internetre és ellenőrizd újra.',
+        deviceId: _deviceId,
+        checking: _checking,
+        onRefresh: _check,
       );
     }
     return widget.child;
