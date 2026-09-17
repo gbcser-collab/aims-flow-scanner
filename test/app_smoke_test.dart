@@ -10,7 +10,7 @@ void main() {
     expect(find.text('Belépés'), findsOneWidget);
     expect(find.text('AIMS Flow Smart Scanner'), findsOneWidget);
     expect(find.text('Felhasználó'), findsOneWidget);
-    expect(find.text('Jelszó'), findsOneWidget);
+    expect(find.text('Jelszó'), findsNWidgets(2));
     expect(find.text('2FA kód'), findsOneWidget);
     expect(find.text('Tovább'), findsOneWidget);
     expect(find.textContaining('Új eszköz'), findsOneWidget);
