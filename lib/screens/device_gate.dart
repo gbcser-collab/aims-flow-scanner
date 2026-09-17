@@ -14,15 +14,16 @@ class DeviceGate extends StatefulWidget {
 
 class _DeviceGateState extends State<DeviceGate> with WidgetsBindingObserver {
   static const _sync = CmrSyncService();
+  static const _e2eTestMode = bool.fromEnvironment('AIMS_E2E_TEST_MODE', defaultValue: false);
   AimsDeviceState _state = AimsDeviceState.unknown;
   String? _deviceId;
-  bool _checking = true;
+  bool _checking = !_e2eTestMode;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _check();
+    if (!_e2eTestMode) _check();
   }
 
   @override
@@ -33,10 +34,11 @@ class _DeviceGateState extends State<DeviceGate> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) _check();
+    if (!_e2eTestMode && state == AppLifecycleState.resumed) _check();
   }
 
   Future<void> _check() async {
+    if (_e2eTestMode) return;
     if (mounted) setState(() => _checking = true);
     try {
       final report = await _sync.syncPending();
@@ -55,6 +57,7 @@ class _DeviceGateState extends State<DeviceGate> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
+    if (_e2eTestMode) return widget.child;
     if (_state == AimsDeviceState.pending) {
       return _DeviceLockScreen(
         icon: Icons.hourglass_top_rounded,
