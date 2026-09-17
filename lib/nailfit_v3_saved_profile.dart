@@ -209,16 +209,20 @@ class NailFitV3SavedProfile {
         onTap: () => c.recommendFromPrompt('${c.preferredStyle} elegáns'),
         borderRadius: BorderRadius.circular(24),
         child: Container(
-          height: 140,
+          height: 160,
           padding: const EdgeInsets.all(17),
           decoration: BoxDecoration(gradient: const LinearGradient(colors: [Color(0xFFFFE7EB), Color(0xFFFFF3EF)]), borderRadius: BorderRadius.circular(24), border: Border.all(color: Colors.white)),
-          child: const Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('✦  BEAUTY STYLIST', style: TextStyle(color: nfRoseDark, fontSize: 8, fontWeight: FontWeight.w800)),
-            SizedBox(height: 8),
-            Text('Személyre szabott ajánlás', style: TextStyle(fontFamily: 'serif', fontSize: 22, color: nfInk)),
-            SizedBox(height: 4),
-            Text('Érintsd meg, és a stílusprofilod alapján nyitunk egy ajánlott lookot.', style: TextStyle(color: nfMuted, fontSize: 9.5)),
-          ]),
+          child: const Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('✦  BEAUTY STYLIST', style: TextStyle(color: nfRoseDark, fontSize: 8, fontWeight: FontWeight.w800)),
+              SizedBox(height: 7),
+              Text('Személyre szabott ajánlás', maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontFamily: 'serif', fontSize: 21, height: 1.05, color: nfInk)),
+              SizedBox(height: 5),
+              Text('Érintsd meg, és a stílusprofilod alapján nyitunk egy ajánlott lookot.', maxLines: 3, overflow: TextOverflow.ellipsis, style: TextStyle(color: nfMuted, fontSize: 9.3, height: 1.25)),
+            ],
+          ),
         ),
       );
 
