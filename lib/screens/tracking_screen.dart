@@ -91,6 +91,7 @@ class _TrackingScreenState extends State<TrackingScreen> {
       builder: (context, _) {
         final point = _runtime.latestPoint;
         final session = _runtime.session;
+        final hasDeferredTrips = _runtime.pendingSessionCount > 0;
         return Scaffold(
           backgroundColor: const Color(0xFF020813),
           appBar: AppBar(
@@ -100,8 +101,10 @@ class _TrackingScreenState extends State<TrackingScreen> {
             actions: [
               IconButton(
                 tooltip: 'Szinkronizálás most',
-                onPressed: _runtime.busy ? null : _runtime.syncNow,
-                icon: const Icon(Icons.sync_rounded),
+                onPressed: _runtime.syncing ? null : _runtime.forceSyncNow,
+                icon: _runtime.syncing
+                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: _blue))
+                    : const Icon(Icons.sync_rounded),
               ),
             ],
           ),
@@ -150,6 +153,29 @@ class _TrackingScreenState extends State<TrackingScreen> {
                       ],
                     ),
                   ),
+                  if (hasDeferredTrips) ...[
+                    const SizedBox(height: 10),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFC857).withValues(alpha: .10),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: const Color(0xFFFFC857).withValues(alpha: .42)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.cloud_upload_outlined, color: Color(0xFFFFC857)),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              '${_runtime.pendingSessionCount} korábbi fuvar biztonságosan offline sorban van. Kapcsolat esetén automatikusan feltöltődik.',
+                              style: const TextStyle(color: Colors.white70, fontWeight: FontWeight.w700, height: 1.35),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 14),
                   if (!_runtime.active) ...[
                     _input('Rendszám', _plate, capitalization: TextCapitalization.characters),
@@ -208,7 +234,9 @@ class _TrackingScreenState extends State<TrackingScreen> {
                     ],
                     const SizedBox(height: 14),
                     FilledButton.icon(
-                      onPressed: _runtime.busy ? null : _stop,
+                      // Stopping GPS is a safety/privacy action. Never disable it
+                      // merely because an upload is currently in flight.
+                      onPressed: _stop,
                       icon: const Icon(Icons.stop_circle_outlined),
                       label: const Text('Fuvar lezárása • GPS leállítása'),
                       style: FilledButton.styleFrom(
