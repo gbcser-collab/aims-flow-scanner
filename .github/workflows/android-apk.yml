@@ -49,7 +49,7 @@ jobs:
       - name: Unit tests
         run: flutter test
 
-      - name: Build debug APK
+      - name: Build production-like debug APK
         run: flutter build apk --debug --dart-define=AIMS_API_BASE_URL=https://logistic-aims.hu/api
 
       - name: APK sanity check
@@ -59,12 +59,19 @@ jobs:
           tail -5 /tmp/apk-test.txt
           ls -lh build/app/outputs/flutter-apk/app-debug.apk
 
-      - name: Upload APK before device test
+      - name: Upload production-like APK before device test
         uses: actions/upload-artifact@v4
         with:
           name: AIMS-Flow-Smart-Scanner-v1.0-ROAD-END-TO-END
           path: build/app/outputs/flutter-apk/app-debug.apk
           if-no-files-found: error
+
+      - name: Build isolated E2E APK
+        run: |
+          # This APK is NOT uploaded. The compile-time flag bypasses device approval
+          # and disables backend synchronization only for the emulator test run.
+          flutter build apk --debug --dart-define=AIMS_E2E_TEST=true
+          test -s build/app/outputs/flutter-apk/app-debug.apk
 
       - name: Deep end-to-end Smart Scanner test
         uses: reactivecircus/android-emulator-runner@v2
