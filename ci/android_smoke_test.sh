@@ -100,37 +100,20 @@ login_if_needed() {
   if ! grep -q 'Belépés' "$EVIDENCE/login.xml"; then
     return 0
   fi
-  echo "Logging into unified AIMS Flow UI"
-  python3 - "$EVIDENCE/login.xml" >/tmp/edit-centers.txt <<'PY'
-import re, sys, xml.etree.ElementTree as ET
-root = ET.parse(sys.argv[1]).getroot()
-out=[]
-for n in root.iter('node'):
-    cls=n.attrib.get('class','')
-    if 'EditText' not in cls:
-        continue
-    m=re.match(r'\[(\d+),(\d+)\]\[(\d+),(\d+)\]', n.attrib.get('bounds',''))
-    if m:
-        x1,y1,x2,y2=map(int,m.groups()); out.append(((x1+x2)//2,(y1+y2)//2))
-for x,y in out:
-    print(x,y)
-PY
-  mapfile -t EDITS < /tmp/edit-centers.txt
-  if [ "${#EDITS[@]}" -lt 3 ]; then
-    echo "Could not locate login fields"
-    fail_with_logs
-  fi
-  read UX UY <<<"${EDITS[0]}"; adb shell input tap "$UX" "$UY"; adb shell input text e2e_user
-  read PX PY <<<"${EDITS[1]}"; adb shell input tap "$PX" "$PY"; adb shell input text e2e_pass
-  adb shell input keyevent KEYCODE_BACK || true
-  sleep 1
-  read CX CY <<<"${EDITS[2]}"; adb shell input tap "$CX" "$CY"
-  for d in 1 2 3 4 5 6; do adb shell input text "$d"; sleep .3; done
-  adb shell input keyevent KEYCODE_BACK || true
-  sleep 1
-  dump_ui /sdcard/login-ready.xml "$EVIDENCE/login-ready.xml"
-  read TX TY < <(find_center "$EVIDENCE/login-ready.xml" "Tovább") || fail_with_logs
+
+  echo "Opening unified AIMS Flow dashboard in isolated E2E mode"
+  rm -f /tmp/login-next.txt
+  for i in $(seq 1 6); do
+    dump_ui /sdcard/login-ready.xml "$EVIDENCE/login-ready.xml"
+    if find_center "$EVIDENCE/login-ready.xml" "Tovább" >/tmp/login-next.txt 2>/dev/null; then
+      break
+    fi
+    scroll_down
+  done
+  test -s /tmp/login-next.txt || fail_with_logs
+  read TX TY < /tmp/login-next.txt
   adb shell input tap "$TX" "$TY"
+
   for i in $(seq 1 20); do
     sleep 2
     dump_ui /sdcard/post-login.xml "$EVIDENCE/post-login.xml"
