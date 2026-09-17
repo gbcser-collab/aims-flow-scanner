@@ -4,6 +4,7 @@ import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 
+import '../models/scan_models.dart';
 import '../services/aims_scan_engine.dart';
 import '../services/cmr_parser.dart';
 import '../services/ocr_service.dart';
@@ -46,8 +47,8 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
     final generation = ++_cameraGeneration;
     await _disposeCamera();
 
-    // Samsung devices were visibly slower when veryHigh was tried first. High
-    // is still plenty for OCR and avoids a costly failed/slow first startup.
+    // High starts much faster on several Samsung models and is still plenty
+    // for CMR OCR. Medium remains a compatibility fallback.
     const presets = <ResolutionPreset>[
       ResolutionPreset.high,
       ResolutionPreset.medium,
@@ -140,8 +141,7 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
       case _ScannerFlashMode.auto:
         return FlashMode.auto;
       case _ScannerFlashMode.on:
-        // FlashMode.always fires for capture only. Do NOT use torch: the user
-        // explicitly does not want the LED burning during OCR/processing.
+        // Capture-only flash. Never keep the LED burning during OCR.
         return FlashMode.always;
     }
   }
@@ -170,7 +170,13 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
 
   Future<void> _setFlashMode(_ScannerFlashMode mode) async {
     final controller = _controller;
-    if (controller == null || !controller.value.isInitialized || _processing || _flashChanging || mode == _flashMode) return;
+    if (controller == null ||
+        !controller.value.isInitialized ||
+        _processing ||
+        _flashChanging ||
+        mode == _flashMode) {
+      return;
+    }
 
     setState(() => _flashChanging = true);
     try {
@@ -178,10 +184,17 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
       if (mounted) setState(() => _flashMode = mode);
     } on CameraException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('A vaku ezen a kamerán nem állítható (${e.code}).')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('A vaku ezen a kamerán nem állítható (${e.code}).')),
+      );
     } finally {
       if (mounted) setState(() => _flashChanging = false);
     }
+  }
+
+  int _ocrScore(CmrData cmr) {
+    final textBonus = (cmr.rawText.trim().length / 120).floor().clamp(0, 8);
+    return cmr.filledFieldCount * 20 + textBonus;
   }
 
   Future<void> _captureAndProcess() async {
@@ -195,34 +208,71 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
 
     final ocr = OcrService();
     XFile? shot;
+    String? frameCopy;
+    String? processedPath;
+    String? preservedPath;
     try {
       shot = await controller.takePicture();
       if (!mounted) return;
-      setState(() => _phase = 'Kereten kívüli rész levágása…');
+      setState(() => _phase = 'Keret pontos levágása és dokumentumkorrekció…');
 
       final temp = await getTemporaryDirectory();
-      final processed = '${temp.path}/aims_smart_${DateTime.now().microsecondsSinceEpoch}.jpg';
+      final stamp = DateTime.now().microsecondsSinceEpoch;
+      frameCopy = '${temp.path}/aims_frame_$stamp.jpg';
+      processedPath = '${temp.path}/aims_smart_$stamp.jpg';
+
       final result = await const AimsScanEngine().process(
         inputPath: shot.path,
-        outputPath: processed,
+        outputPath: processedPath,
         frameCrop: FrameCropSpec(viewportAspect: _viewportAspect),
+        frameOutputPath: frameCopy,
       );
 
       if (!mounted) return;
-      setState(() => _phase = 'Szöveg felismerése…');
-      final text = await ocr.recognize(result.outputPath);
+      setState(() => _phase = 'Dupla OCR: keretkép és javított kép összevetése…');
+
+      final parser = const CmrParser();
+
+      Future<CmrData?> recognizeSafely(String path) async {
+        try {
+          return parser.parse(await ocr.recognize(path));
+        } catch (_) {
+          return null;
+        }
+      }
+
+      final processedCmr = await recognizeSafely(result.outputPath);
+      final frameCmr = await recognizeSafely(frameCopy);
+      if (processedCmr == null && frameCmr == null) {
+        throw const FormatException('Az OCR egyik biztonságos képváltozaton sem tudott lefutni.');
+      }
+
+      final useFrame = frameCmr != null && (processedCmr == null || _ocrScore(frameCmr) > _ocrScore(processedCmr));
+      final cmr = useFrame ? frameCmr! : processedCmr!;
+      final reviewPath = useFrame ? frameCopy : result.outputPath;
+      preservedPath = reviewPath;
+
+      if (useFrame) {
+        try {
+          if (await File(result.outputPath).exists()) await File(result.outputPath).delete();
+        } catch (_) {}
+        processedPath = null;
+      } else {
+        try {
+          if (await File(frameCopy).exists()) await File(frameCopy).delete();
+        } catch (_) {}
+        frameCopy = null;
+      }
 
       if (!mounted) return;
-      setState(() => _phase = 'CMR mezők kitöltése…');
-      final cmr = const CmrParser().parse(text);
+      setState(() => _phase = 'CMR mezők intelligens kitöltése…');
 
-      if (!mounted) return;
       await _disposeCamera();
       if (!mounted) return;
       await Navigator.of(context).pushReplacement(
         MaterialPageRoute(
           builder: (_) => ScanReviewScreen(
-            processedImagePath: result.outputPath,
+            processedImagePath: reviewPath,
             quality: result.quality,
             cmr: cmr,
           ),
@@ -234,19 +284,30 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
         _processing = false;
         _phase = '';
       });
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Kamerahiba (${e.code}): ${e.description ?? 'a kép nem készült el'}')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Kamerahiba (${e.code}): ${e.description ?? 'a kép nem készült el'}')),
+      );
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _processing = false;
         _phase = '';
       });
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('A Smart Scan nem sikerült: $e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('A Smart Scan nem sikerült: $e')),
+      );
     } finally {
       await ocr.dispose();
       if (shot != null) {
         try {
           await File(shot.path).delete();
+        } catch (_) {}
+      }
+      for (final path in [frameCopy, processedPath]) {
+        if (path == null || path == preservedPath) continue;
+        try {
+          final file = File(path);
+          if (await file.exists()) await file.delete();
         } catch (_) {}
       }
     }
@@ -307,14 +368,20 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                       decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(18)),
-                      child: const Text('Csak ami a keretben van, az kerül a scanbe', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+                      child: const Text(
+                        'Csak ami a keretben van, az kerül a scanbe',
+                        style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+                      ),
                     ),
                   ),
                 ),
                 Positioned(
                   top: 8,
                   left: 8,
-                  child: IconButton.filledTonal(onPressed: _processing ? null : () => Navigator.pop(context), icon: const Icon(Icons.close_rounded)),
+                  child: IconButton.filledTonal(
+                    onPressed: _processing ? null : () => Navigator.pop(context),
+                    icon: const Icon(Icons.close_rounded),
+                  ),
                 ),
                 if (controller != null && controller.value.isInitialized)
                   Positioned(
@@ -324,7 +391,11 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
                     child: Center(
                       child: Container(
                         padding: const EdgeInsets.all(4),
-                        decoration: BoxDecoration(color: Colors.black.withValues(alpha: .68), borderRadius: BorderRadius.circular(24), border: Border.all(color: Colors.white24)),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: .68),
+                          borderRadius: BorderRadius.circular(24),
+                          border: Border.all(color: Colors.white24),
+                        ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: _ScannerFlashMode.values.map((mode) {
@@ -340,13 +411,23 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
                                 child: AnimatedContainer(
                                   duration: const Duration(milliseconds: 120),
                                   padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 8),
-                                  decoration: BoxDecoration(color: selected ? const Color(0xFFE6B85C) : Colors.transparent, borderRadius: BorderRadius.circular(20)),
+                                  decoration: BoxDecoration(
+                                    color: selected ? const Color(0xFFE6B85C) : Colors.transparent,
+                                    borderRadius: BorderRadius.circular(20),
+                                  ),
                                   child: Row(
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
                                       Icon(_flashIcon(mode), size: 18, color: selected ? Colors.black : Colors.white),
                                       const SizedBox(width: 5),
-                                      Text(_flashLabel(mode), style: TextStyle(color: selected ? Colors.black : Colors.white, fontWeight: FontWeight.w900, fontSize: 12)),
+                                      Text(
+                                        _flashLabel(mode),
+                                        style: TextStyle(
+                                          color: selected ? Colors.black : Colors.white,
+                                          fontWeight: FontWeight.w900,
+                                          fontSize: 12,
+                                        ),
+                                      ),
                                     ],
                                   ),
                                 ),
@@ -372,9 +453,17 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
                           child: Container(
                             width: 82,
                             height: 82,
-                            decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: Colors.white, width: 5), color: Colors.white.withValues(alpha: .18)),
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              border: Border.all(color: Colors.white, width: 5),
+                              color: Colors.white.withValues(alpha: .18),
+                            ),
                             alignment: Alignment.center,
-                            child: Container(width: 60, height: 60, decoration: const BoxDecoration(shape: BoxShape.circle, color: Colors.white)),
+                            child: Container(
+                              width: 60,
+                              height: 60,
+                              decoration: const BoxDecoration(shape: BoxShape.circle, color: Colors.white),
+                            ),
                           ),
                         ),
                       ),
@@ -392,11 +481,22 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
                             children: [
                               const CircularProgressIndicator(color: Color(0xFFE6B85C)),
                               const SizedBox(height: 18),
-                              const Text('SMART SCAN', style: TextStyle(color: Color(0xFFE6B85C), fontWeight: FontWeight.w900, letterSpacing: 1.4)),
+                              const Text(
+                                'SMART SCAN PRO',
+                                style: TextStyle(color: Color(0xFFE6B85C), fontWeight: FontWeight.w900, letterSpacing: 1.4),
+                              ),
                               const SizedBox(height: 8),
-                              Text(_phase, textAlign: TextAlign.center, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w800)),
+                              Text(
+                                _phase,
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w800),
+                              ),
                               const SizedBox(height: 8),
-                              const Text('A vaku feldolgozás közben nem világít.', style: TextStyle(color: Colors.white54)),
+                              const Text(
+                                'A kereten kívüli rész nem kerül OCR-be. A rendszer két biztonságos képváltozat közül választ.',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(color: Colors.white54),
+                              ),
                             ],
                           ),
                         ),
