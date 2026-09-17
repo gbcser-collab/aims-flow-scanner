@@ -8,6 +8,6 @@ analyzer:
 linter:
   rules:
     avoid_print: true
-    prefer_const_constructors: true
+    prefer_const_constructors: false
     use_super_parameters: true
     always_declare_return_types: true
