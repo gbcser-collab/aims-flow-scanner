@@ -127,6 +127,10 @@ class NailFitV3Controller extends ChangeNotifier {
 
   bool get hasSmartCalibration => _smartPoints?.length == 5 || _skinBounds != null;
   double get photoAspectRatio => photoWidth > 0 && photoHeight > 0 ? photoWidth / photoHeight : 1.0;
+  String get nextCalibrationFinger {
+    const names = <String>['hüvelykujj', 'mutatóujj', 'középső ujj', 'gyűrűsujj', 'kisujj'];
+    return points.length >= names.length ? 'kész' : names[points.length];
+  }
 
   PremiumLook currentSnapshot({String? name}) => PremiumLook(
         name ?? (shape == look.shape && color.toARGB32() == look.color.toARGB32() && finish == look.finish && (length - look.length).abs() <= .01 ? look.name : '${look.name} · egyedi'),
@@ -276,7 +280,12 @@ class NailFitV3Controller extends ChangeNotifier {
       final ext = source.path.contains('.') ? source.path.substring(source.path.lastIndexOf('.')) : '.jpg';
       final target = File('${dir.path}/nailfit_last_hand$ext');
       final sourceFile = File(source.path);
+      final previous = lastPhotoPath;
       if (sourceFile.absolute.path != target.absolute.path) await sourceFile.copy(target.path);
+      if (previous != null && previous != target.path && previous.startsWith('${dir.path}${Platform.pathSeparator}')) {
+        final old = File(previous);
+        if (await old.exists()) await old.delete();
+      }
       lastPhotoPath = target.path;
       _schedulePersist();
       return XFile(target.path);
@@ -427,6 +436,29 @@ class NailFitV3Controller extends ChangeNotifier {
     savedPngPaths.insert(0, path);
     saveCurrent();
     _schedulePersist();
+  }
+
+  Future<void> clearHandData() async {
+    final path = lastPhotoPath;
+    lastPhotoPath = null;
+    photoWidth = 0;
+    photoHeight = 0;
+    points.clear();
+    scan = null;
+    lastScanAt = null;
+    _skinBounds = null;
+    _smartPoints = null;
+    notifyListeners();
+    _schedulePersist(delay: Duration.zero);
+    if (path != null) {
+      try {
+        final dir = await getApplicationDocumentsDirectory();
+        if (path.startsWith('${dir.path}${Platform.pathSeparator}')) {
+          final file = File(path);
+          if (await file.exists()) await file.delete();
+        }
+      } catch (_) {}
+    }
   }
 
   void clearSaved() {
