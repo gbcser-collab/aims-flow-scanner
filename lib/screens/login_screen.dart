@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../services/device_identity_service.dart';
 import '../widgets/aims_flow_skin.dart';
-import 'device_gate.dart';
 import 'home_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -73,21 +71,7 @@ class _LoginScreenState extends State<LoginScreen> with WidgetsBindingObserver {
     FocusScope.of(context).unfocus();
     if (!mounted) return;
     await Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (_) => const DeviceGate(child: HomeScreen())),
-    );
-  }
-
-  Future<void> _showDevice() async {
-    final id = await const DeviceIdentityService().getOrCreateId();
-    if (!mounted) return;
-    showDialog<void>(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF081A2B),
-        title: const Text('Új eszköz hozzáadása', style: TextStyle(color: Colors.white)),
-        content: SelectableText('Készülékazonosító:\n$id\n\nEzt az azonosítót az AIMS admin felületen kell jóváhagyni.', style: const TextStyle(color: Colors.white70)),
-        actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Rendben'))],
-      ),
+      MaterialPageRoute(builder: (_) => const HomeScreen()),
     );
   }
 
@@ -98,7 +82,7 @@ class _LoginScreenState extends State<LoginScreen> with WidgetsBindingObserver {
         backgroundColor: const Color(0xFF081A2B),
         title: const Text('Segítség belépéshez', style: TextStyle(color: Colors.white)),
         content: const Text(
-          'Ellenőrizd a felhasználónevet, jelszót és a 6 jegyű 2FA kódot. Új telefon esetén előbb add hozzá és hagyd jóvá az eszközt az admin felületen.',
+          'Ellenőrizd a felhasználónevet, jelszót és a 6 jegyű 2FA kódot.',
           style: TextStyle(color: Colors.white70, height: 1.4),
         ),
         actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Bezárás'))],
@@ -190,9 +174,7 @@ class _LoginScreenState extends State<LoginScreen> with WidgetsBindingObserver {
                     const SizedBox(height: 20),
                     Row(
                       children: [
-                        Expanded(child: _bottomAction(Icons.phonelink_setup_rounded, 'Új eszköz\nhozzáadása', _showDevice)),
-                        Container(width: 1, height: 68, color: AimsFlowSkin.paleBlue.withValues(alpha: .35)),
-                        Expanded(child: _bottomAction(Icons.help_outline_rounded, 'Segítség\nbelépéshez', _showHelp)),
+                        Expanded(child: _bottomAction(Icons.help_outline_rounded, 'Segítség a belépéshez', _showHelp)),
                       ],
                     ),
                     const SizedBox(height: 28),
