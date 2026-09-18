@@ -13,9 +13,35 @@ void main() {
     expect(find.text('Belépés'), findsOneWidget);
     expect(find.byKey(const Key('flow-login-user')), findsOneWidget);
     expect(find.byKey(const Key('flow-login-password')), findsOneWidget);
-    expect(find.byKey(const Key('flow-login-2fa')), findsOneWidget);
+    expect(find.byKey(const Key('flow-admin-toggle')), findsOneWidget);
+    expect(find.byKey(const Key('flow-login-2fa')), findsNothing);
     expect(find.byKey(const Key('flow-login-submit')), findsOneWidget);
+    expect(find.byKey(const Key('flow-register-open')), findsOneWidget);
     expect(find.textContaining('Nincs készülék-jóváhagyás'), findsOneWidget);
+  });
+
+  testWidgets('admin mode reveals 2FA only when requested', (tester) async {
+    await tester.pumpWidget(const AimsFlowApp());
+    await tester.pump();
+
+    await tester.ensureVisible(find.byKey(const Key('flow-admin-toggle')));
+    await tester.tap(find.byKey(const Key('flow-admin-toggle')));
+    await tester.pump();
+
+    expect(find.byKey(const Key('flow-login-2fa')), findsOneWidget);
+  });
+
+  testWidgets('native registration opens from login', (tester) async {
+    await tester.pumpWidget(const AimsFlowApp());
+    await tester.pump();
+
+    await tester.ensureVisible(find.byKey(const Key('flow-register-open')));
+    await tester.tap(find.byKey(const Key('flow-register-open')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('REGISZTRÁCIÓ'), findsOneWidget);
+    expect(find.byKey(const Key('flow-register-company')), findsOneWidget);
+    expect(find.byKey(const Key('flow-register-email')), findsOneWidget);
   });
 
   testWidgets('driver shell keeps developed core actions', (tester) async {
