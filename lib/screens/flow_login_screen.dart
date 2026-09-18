@@ -109,7 +109,9 @@ class _FlowLoginScreenState extends State<FlowLoginScreen> {
       if (!_e2e) {
         authResult = await _auth.login(
           login: _adminMode ? 'ADMIN' : _login.text,
-          password: _password.text.trim().toUpperCase(),
+          password: _adminMode
+              ? _password.text
+              : _password.text.trim().toUpperCase(),
           code: _adminMode ? _code.text : '',
         );
       }
@@ -302,7 +304,8 @@ class _FlowLoginScreenState extends State<FlowLoginScreen> {
                                 ? null
                                 : () => setState(() {
                                       _adminMode = !_adminMode;
-                                      if (!_adminMode) _code.clear();
+                                      _password.clear();
+                                      _code.clear();
                                     }),
                             child: Padding(
                               padding: const EdgeInsets.symmetric(vertical: 4),
@@ -335,7 +338,8 @@ class _FlowLoginScreenState extends State<FlowLoginScreen> {
                                         ? null
                                         : (value) => setState(() {
                                               _adminMode = value;
-                                              if (!value) _code.clear();
+                                              _password.clear();
+                                              _code.clear();
                                             }),
                                   ),
                                 ],
