@@ -1,6 +1,19 @@
 <?php
 declare(strict_types=1);
 
+// cPanel shared-hosting secrets: outside public_html.
+$aimsSharedConfig=dirname(__DIR__,3).'/aims-flow-config.php';
+if(is_file($aimsSharedConfig)){
+  $cfg=require $aimsSharedConfig;
+  if(is_array($cfg)){
+    foreach($cfg as $k=>$v){
+      if(!is_string($k)||!is_scalar($v))continue;
+      $cur=getenv($k);
+      if($cur===false||$cur==='')putenv($k.'='.(string)$v);
+    }
+  }
+}
+
 require_once __DIR__ . '/smart_rules.php';
 require_once __DIR__ . '/push_service.php';
 
@@ -36,7 +49,8 @@ function aims_db(): PDO {
     static $pdo = null;
     if ($pdo instanceof PDO) return $pdo;
 
-    $dataDir = __DIR__ . '/data';
+    $dataDir = trim((string)(getenv('AIMS_TRACKING_DATA_DIR') ?: ''));
+    if ($dataDir === '') $dataDir = __DIR__ . '/data';
     if (!is_dir($dataDir)) mkdir($dataDir, 0700, true);
     $pdo = new PDO('sqlite:' . $dataDir . '/tracking.sqlite');
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
