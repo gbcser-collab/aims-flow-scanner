@@ -1,0 +1,21 @@
+name: Test AIMS Flow Smart Operations
+
+on:
+  push:
+    branches:
+      - v1.3-smart-operations
+    paths:
+      - 'server/aims-tracking/**'
+      - '.github/workflows/smart-operations-test.yml'
+  workflow_dispatch:
+
+jobs:
+  php-rules:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: PHP syntax
+        run: |
+          find server/aims-tracking -name '*.php' -print0 | xargs -0 -n1 php -l
+      - name: Smart movement/geofence rules
+        run: php server/aims-tracking/tests/tracking_rules_test.php
