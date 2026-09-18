@@ -267,10 +267,25 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
     setState(() => _actionBusy = true);
     try {
       await _api.acknowledge(plate: _plate, jobId: jobId, action: action);
+      if (action == 'accepted') {
+        await _push.cancelJobNotification(jobId);
+      }
       if (closeDialog && mounted && Navigator.of(context).canPop()) {
         Navigator.of(context).pop();
       }
       await _refreshJobs();
+      if (mounted && action == 'accepted') {
+        setState(() => _index = 0);
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (_homeScrollController.hasClients) {
+            _homeScrollController.animateTo(
+              0,
+              duration: const Duration(milliseconds: 260),
+              curve: Curves.easeOutCubic,
+            );
+          }
+        });
+      }
       if (mounted) {
         _snack(action == 'accepted'
             ? _l('Fuvar elfogadva.', 'Job accepted.', 'Auftrag angenommen.')
