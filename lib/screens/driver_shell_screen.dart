@@ -726,8 +726,12 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
               ],
             ),
           ),
+          const AimsLanguageSelector(compact: true),
+          const SizedBox(width: 8),
           _status(
-            _trackingStatus?.running == true ? 'GPS AKTÍV' : 'GPS',
+            _trackingStatus?.running == true
+                ? _l('GPS AKTÍV', 'GPS ACTIVE', 'GPS AKTIV')
+                : 'GPS',
             _trackingStatus?.running == true ? _green : Colors.white38,
           ),
         ],
@@ -738,7 +742,8 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
     final stop = _stop;
     final currentCompany = stop?.company.trim().isNotEmpty == true
         ? stop!.company
-        : (job?.reference ?? 'Nincs aktív fuvar');
+        : (job?.reference ??
+            _l('Nincs aktív fuvar', 'No active job', 'Kein aktiver Auftrag'));
 
     return _page([
       _header(),
@@ -757,8 +762,16 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
               const SizedBox(height: 4),
               Text(
                 job == null
-                    ? 'Új munka érkezésekor a Flow itt azonnal szól.'
-                    : 'AKTÍV FUVAR · ${job.reference} · ${job.stops.length} stop',
+                    ? _l(
+                        'Új munka érkezésekor a Flow itt azonnal szól.',
+                        'Flow notifies you here immediately when a new job arrives.',
+                        'Flow meldet hier sofort einen neuen Auftrag.',
+                      )
+                    : _l(
+                        'AKTÍV FUVAR · ${job.reference} · ${job.stops.length} stop',
+                        'ACTIVE JOB · ${job.reference} · ${job.stops.length} stops',
+                        'AKTIVER AUFTRAG · ${job.reference} · ${job.stops.length} Stopps',
+                      ),
                 style: const TextStyle(
                   color: _blue,
                   fontSize: 10,
@@ -768,19 +781,26 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
               ),
               const SizedBox(height: 18),
               if (job == null) ...[
-                const Text(
-                  'Nincs teendőd.',
-                  style: TextStyle(fontSize: 26, fontWeight: FontWeight.w900),
+                Text(
+                  _l('Nincs teendőd.', 'Nothing to do.', 'Keine Aufgabe.'),
+                  style: const TextStyle(
+                    fontSize: 26,
+                    fontWeight: FontWeight.w900,
+                  ),
                 ),
                 const SizedBox(height: 7),
-                const Text(
-                  'A nyomkövetés és az értesítések a háttérben működnek.',
-                  style: TextStyle(color: Colors.white54, height: 1.35),
+                Text(
+                  _l(
+                    'A nyomkövetés és az értesítések a háttérben működnek.',
+                    'Tracking and notifications continue in the background.',
+                    'Tracking und Benachrichtigungen laufen im Hintergrund.',
+                  ),
+                  style: const TextStyle(color: Colors.white54, height: 1.35),
                 ),
               ] else ...[
-                const Text(
-                  'KÖVETKEZŐ LÉPÉS',
-                  style: TextStyle(
+                Text(
+                  _l('KÖVETKEZŐ LÉPÉS', 'NEXT STEP', 'NÄCHSTER SCHRITT'),
+                  style: const TextStyle(
                     color: Colors.white38,
                     fontSize: 9,
                     fontWeight: FontWeight.w900,
@@ -790,8 +810,16 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
                 const SizedBox(height: 5),
                 Text(
                   stop?.type == 'delivery'
-                      ? 'Indulás a lerakóra'
-                      : 'Indulás a felrakóra',
+                      ? _l(
+                          'Indulás a lerakóra',
+                          'Go to delivery',
+                          'Zur Entladestelle fahren',
+                        )
+                      : _l(
+                          'Indulás a felrakóra',
+                          'Go to pickup',
+                          'Zur Ladestelle fahren',
+                        ),
                   style: const TextStyle(fontSize: 27, fontWeight: FontWeight.w900),
                 ),
                 const SizedBox(height: 7),
@@ -803,18 +831,31 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
                 FilledButton.icon(
                   onPressed: _openMaps,
                   icon: const Icon(Icons.navigation_rounded),
-                  label: const Text('NAVIGÁCIÓ INDÍTÁSA'),
+                  label: Text(
+                    _l(
+                      'NAVIGÁCIÓ INDÍTÁSA',
+                      'START NAVIGATION',
+                      'NAVIGATION STARTEN',
+                    ),
+                  ),
                 ),
               ],
               const SizedBox(height: 14),
               Row(
                 children: [
-                  Expanded(child: _metric('JÁRMŰ', _plate.isEmpty ? '—' : _plate)),
+                  Expanded(
+                    child: _metric(
+                      _l('JÁRMŰ', 'VEHICLE', 'FAHRZEUG'),
+                      _plate.isEmpty ? '—' : _plate,
+                    ),
+                  ),
                   const SizedBox(width: 8),
                   Expanded(
                     child: _metric(
-                      'KÖVETÉS',
-                      _trackingStatus?.running == true ? 'AKTÍV' : 'INDÍTÁS',
+                      _l('KÖVETÉS', 'TRACKING', 'TRACKING'),
+                      _trackingStatus?.running == true
+                          ? _l('AKTÍV', 'ACTIVE', 'AKTIV')
+                          : _l('INDÍTÁS', 'START', 'STARTEN'),
                     ),
                   ),
                 ],
@@ -828,14 +869,18 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
       ],
       const SizedBox(height: 12),
       _panel(
-        const Row(
+        Row(
           children: [
-            Icon(Icons.notifications_active_outlined, color: _blue),
-            SizedBox(width: 12),
+            const Icon(Icons.notifications_active_outlined, color: _blue),
+            const SizedBox(width: 12),
             Expanded(
               child: Text(
-                'Új fuvarnál hangos push érkezik. Lezárt képernyőn is jelzi, amíg vissza nem igazolod.',
-                style: TextStyle(color: Colors.white70, height: 1.35),
+                _l(
+                  'Új fuvarnál hangos push érkezik. Lezárt képernyőn is jelzi, amíg vissza nem igazolod.',
+                  'A new job triggers an audible push. It also appears on the lock screen until you acknowledge it.',
+                  'Bei einem neuen Auftrag kommt eine hörbare Push-Meldung. Sie bleibt auch auf dem Sperrbildschirm sichtbar, bis du sie bestätigst.',
+                ),
+                style: const TextStyle(color: Colors.white70, height: 1.35),
               ),
             ),
           ],
