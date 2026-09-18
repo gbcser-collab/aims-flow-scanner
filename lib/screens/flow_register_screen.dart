@@ -61,9 +61,33 @@ class _FlowRegisterScreenState extends State<FlowRegisterScreen> {
   }
 
   bool _validPhone(String value) {
-    var phone = value.trim().replaceAll(RegExp(r'[\s().-]'), '');
-    if (phone.startsWith('00')) phone = '+' + phone.substring(2);
-    return RegExp(r'^\+[1-9][0-9]{7,14}
+    var phone = value.trim();
+    if (phone.startsWith('00')) {
+      phone = '+' + phone.substring(2);
+    }
+    if (!phone.startsWith('+')) return false;
+
+    final digits = phone
+        .substring(1)
+        .split('')
+        .where((ch) => ch.codeUnitAt(0) >= 48 && ch.codeUnitAt(0) <= 57)
+        .join();
+
+    final stripped = phone
+        .substring(1)
+        .replaceAll(' ', '')
+        .replaceAll('-', '')
+        .replaceAll('(', '')
+        .replaceAll(')', '')
+        .replaceAll('.', '');
+
+    if (stripped != digits) return false;
+    if (digits.length < 8 || digits.length > 15) return false;
+    if (digits.startsWith('0')) return false;
+    return true;
+  }
+
+  Future<void> _submit() async {
     if (_busy) return;
     if (_company.text.trim().isEmpty ||
         _country.text.trim().isEmpty ||
@@ -253,232 +277,6 @@ class _FlowRegisterScreenState extends State<FlowRegisterScreen> {
                           child: Text('Tudomásul vettem az adatkezelési tájékoztatót.'),
                         ),
                       ],
-                    ),
-                    TextButton(
-                      onPressed: () => _open('legal/privacy.html'),
-                      child: const Text('ADATKEZELÉS MEGNYITÁSA ↗'),
-                    ),
-                    if (_error != null) ...[
-                      const SizedBox(height: 8),
-                      Text(
-                        _error!,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          color: Colors.redAccent,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ],
-                    const SizedBox(height: 16),
-                    FilledButton.icon(
-                      key: const Key('flow-register-submit'),
-                      onPressed: _busy ? null : _submit,
-                      icon: _busy
-                          ? const SizedBox.square(
-                              dimension: 20,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Color(0xFF00131F),
-                              ),
-                            )
-                          : const Icon(Icons.person_add_alt_1_rounded),
-                      label: Text(_busy ? 'KÜLDÉS…' : 'REGISZTRÁCIÓ ELKÜLDÉSE'),
-                      style: FilledButton.styleFrom(
-                        minimumSize: const Size.fromHeight(58),
-                        backgroundColor: _blue,
-                        foregroundColor: const Color(0xFF00131F),
-                        textStyle: const TextStyle(fontWeight: FontWeight.w900),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    const Text(
-                      'A regisztráció jóváhagyás után válik aktívvá. '
-                      'Ha korábban törölted ugyanezt a fiókot, az e-mail címmel újraregisztrálható.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: Colors.white38, height: 1.4, fontSize: 11),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-).hasMatch(phone);
-  }
-
-  Future<void> _submit() async {
-    if (_busy) return;
-    if (_company.text.trim().isEmpty ||
-        _country.text.trim().isEmpty ||
-        _contact.text.trim().isEmpty ||
-        _phone.text.trim().isEmpty ||
-        _email.text.trim().isEmpty) {
-      setState(() => _error = 'Töltsd ki a kötelező mezőket.');
-      return;
-    }
-    if (!_terms || !_privacy) {
-      setState(() => _error = 'A feltételek és az adatkezelés elfogadása szükséges.');
-      return;
-    }
-
-    setState(() {
-      _busy = true;
-      _error = null;
-    });
-
-    try {
-      final result = await _auth.register(
-        companyName: _company.text,
-        country: _country.text,
-        contactName: _contact.text,
-        phone: _phone.text,
-        email: _email.text,
-        address: _address.text,
-        taxNumber: _tax.text,
-        terms: _terms,
-        privacy: _privacy,
-      );
-      if (!mounted) return;
-
-      await showDialog<void>(
-        context: context,
-        barrierDismissible: false,
-        builder: (context) => AlertDialog(
-          backgroundColor: const Color(0xFF071522),
-          title: Text(
-            result.reactivated ? 'Fiók újraregisztrálva' : 'Regisztráció elküldve',
-            style: const TextStyle(color: _blue, fontWeight: FontWeight.w900),
-          ),
-          content: Text(
-            '${result.message}'
-            '${result.username.isNotEmpty ? '\n\nA.I.M.S. azonosító: ${result.username}' : ''}',
-            style: const TextStyle(color: Colors.white70, height: 1.45),
-          ),
-          actions: [
-            FilledButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('RENDBEN'),
-            ),
-          ],
-        ),
-      );
-      if (mounted) Navigator.pop(context);
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _error = e.toString().replaceFirst('Bad state: ', '');
-      });
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFF020813),
-      appBar: AppBar(
-        title: const Text(
-          'REGISZTRÁCIÓ',
-          style: TextStyle(fontWeight: FontWeight.w900, letterSpacing: 1.2),
-        ),
-      ),
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [Color(0xFF071E3D), Color(0xFF030A13), Color(0xFF02070E)],
-          ),
-        ),
-        child: SafeArea(
-          top: false,
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(20, 18, 20, 34),
-            child: Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 560),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    const Text(
-                      'AIMS Flow fiók',
-                      style: TextStyle(fontSize: 30, fontWeight: FontWeight.w900),
-                    ),
-                    const SizedBox(height: 7),
-                    const Text(
-                      'Ugyanez a fiók működik a Logistic-AIMS webes partnerfelületén is. '
-                      'Partner/sofőr fióknál nincs kétfaktoros belépés.',
-                      style: TextStyle(color: Colors.white54, height: 1.45),
-                    ),
-                    const SizedBox(height: 20),
-                    TextField(
-                      key: const Key('flow-register-company'),
-                      controller: _company,
-                      textInputAction: TextInputAction.next,
-                      decoration: _decoration('Cégnév *', Icons.business_outlined),
-                    ),
-                    const SizedBox(height: 11),
-                    TextField(
-                      controller: _country,
-                      textInputAction: TextInputAction.next,
-                      decoration: _decoration('Ország *', Icons.public_rounded),
-                    ),
-                    const SizedBox(height: 11),
-                    TextField(
-                      controller: _contact,
-                      textInputAction: TextInputAction.next,
-                      decoration: _decoration('Kapcsolattartó neve *', Icons.person_outline),
-                    ),
-                    const SizedBox(height: 11),
-                    TextField(
-                      controller: _phone,
-                      keyboardType: TextInputType.phone,
-                      textInputAction: TextInputAction.next,
-                      decoration: _decoration('Telefon *', Icons.phone_outlined),
-                    ),
-                    const SizedBox(height: 11),
-                    TextField(
-                      key: const Key('flow-register-email'),
-                      controller: _email,
-                      keyboardType: TextInputType.emailAddress,
-                      textInputAction: TextInputAction.next,
-                      decoration: _decoration('E-mail *', Icons.alternate_email_rounded),
-                    ),
-                    const SizedBox(height: 11),
-                    TextField(
-                      controller: _address,
-                      textInputAction: TextInputAction.next,
-                      decoration: _decoration('Székhely / cím', Icons.location_on_outlined),
-                    ),
-                    const SizedBox(height: 11),
-                    TextField(
-                      controller: _tax,
-                      textInputAction: TextInputAction.done,
-                      decoration: _decoration('Adószám', Icons.receipt_long_outlined),
-                    ),
-                    const SizedBox(height: 16),
-                    CheckboxListTile(
-                      value: _terms,
-                      onChanged: (v) => setState(() => _terms = v == true),
-                      contentPadding: EdgeInsets.zero,
-                      controlAffinity: ListTileControlAffinity.leading,
-                      title: const Text('Elfogadom a partnerfelület használati feltételeit.'),
-                    ),
-                    TextButton(
-                      onPressed: () => _open('legal/partner-terms.html'),
-                      child: const Text('FELTÉTELEK MEGNYITÁSA ↗'),
-                    ),
-                    CheckboxListTile(
-                      value: _privacy,
-                      onChanged: (v) => setState(() => _privacy = v == true),
-                      contentPadding: EdgeInsets.zero,
-                      controlAffinity: ListTileControlAffinity.leading,
-                      title: const Text('Tudomásul vettem az adatkezelési tájékoztatót.'),
                     ),
                     TextButton(
                       onPressed: () => _open('legal/privacy.html'),
