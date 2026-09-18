@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 
-import 'screens/v100_shell_screen.dart';
+import 'screens/driver_shell_screen.dart';
+import 'services/driver_push_service.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await DriverPushService.instance.initialize();
   runApp(const AimsFlowApp());
 }
 
@@ -15,7 +17,7 @@ class AimsFlowApp extends StatelessWidget {
     const aimsBlue = Color(0xFF1CB8FF);
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'AIMS Flow V100',
+      title: 'AIMS Flow',
       theme: ThemeData(
         useMaterial3: true,
         brightness: Brightness.dark,
@@ -35,13 +37,16 @@ class AimsFlowApp extends StatelessWidget {
           style: FilledButton.styleFrom(
             minimumSize: const Size(0, 54),
             backgroundColor: aimsBlue,
-            foregroundColor: Colors.white,
-            textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            foregroundColor: const Color(0xFF00131F),
+            textStyle:
+                const TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
           ),
         ),
       ),
-      home: const V100ShellScreen(),
+      home: const DriverShellScreen(),
     );
   }
 }
