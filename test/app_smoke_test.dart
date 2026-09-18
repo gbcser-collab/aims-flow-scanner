@@ -14,6 +14,7 @@ void main() {
     expect(find.text('Tankolási bizonylat küldése'), findsOneWidget);
     expect(find.byKey(const ValueKey('open-fuel-receipt')), findsOneWidget);
     expect(find.byType(FloatingActionButton), findsOneWidget);
+    expect(find.byKey(const ValueKey('open-admin-center')), findsOneWidget);
 
     await tester.scrollUntilVisible(
       find.text('CMR-ek az appban'),
