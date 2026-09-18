@@ -284,7 +284,7 @@ function aims_process_push_queue(PDO $pdo, int $limit = 10): array {
                            FROM push_queue q
                            JOIN push_devices d ON d.id = q.push_device_id
                            JOIN notifications n ON n.id = q.notification_id
-                           WHERE q.status IN ("pending", "retry")
+                           WHERE q.status IN ("pending", "retry", "sending")
                              AND q.next_attempt_at <= :now
                              AND d.enabled = 1
                            ORDER BY q.id ASC
@@ -295,6 +295,21 @@ function aims_process_push_queue(PDO $pdo, int $limit = 10): array {
     $sent = 0;
     $failed = 0;
     foreach ($rows as $row) {
+        $leaseUntil = (new DateTimeImmutable('now', new DateTimeZone('UTC')))
+            ->modify('+90 seconds')
+            ->format(DateTimeInterface::ATOM);
+        $claim = $pdo->prepare('UPDATE push_queue
+            SET status = "sending", next_attempt_at = :lease
+            WHERE id = :id
+              AND status IN ("pending", "retry", "sending")
+              AND next_attempt_at <= :now');
+        $claim->execute([
+            ':lease' => $leaseUntil,
+            ':id' => $row['id'],
+            ':now' => gmdate(DateTimeInterface::ATOM),
+        ]);
+        if ($claim->rowCount() !== 1) continue;
+
         $notification = [
             'id' => (int)$row['notification_id'],
             'admin_user_id' => (int)$row['admin_user_id'],
