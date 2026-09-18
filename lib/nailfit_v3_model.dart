@@ -116,6 +116,7 @@ class NailFitV3Controller extends ChangeNotifier {
   List<Offset>? _smartPoints;
   Timer? _persistTimer;
   Future<void> _persistChain = Future<void>.value();
+  int _analysisEpoch = 0;
 
   static const List<Offset> defaultPoints = <Offset>[
     Offset(.79, .57),
@@ -543,6 +544,7 @@ class NailFitV3Controller extends ChangeNotifier {
   }
 
   void resetScan() {
+    _analysisEpoch++;
     points.clear();
     scan = null;
     analyzing = false;
@@ -615,6 +617,7 @@ class NailFitV3Controller extends ChangeNotifier {
   }
 
   Future<ScanResult?> analyzePhoto(XFile file) async {
+    final epoch = ++_analysisEpoch;
     analyzing = true;
     notifyListeners();
     ui.Codec? originalCodec;
@@ -832,6 +835,7 @@ class NailFitV3Controller extends ChangeNotifier {
                   ? 'Elfogadható'
                   : 'Fotózd újra';
 
+      if (epoch != _analysisEpoch) return null;
       scan = ScanResult(
         tone: tone,
         undertone: undertone,
@@ -860,6 +864,7 @@ class NailFitV3Controller extends ChangeNotifier {
       _schedulePersist();
       return scan;
     } catch (_) {
+      if (epoch != _analysisEpoch) return null;
       scan = const ScanResult(
         tone: 'Nem meghatározható',
         undertone: 'nem meghatározható',
@@ -882,8 +887,10 @@ class NailFitV3Controller extends ChangeNotifier {
       originalCodec?.dispose();
       analysisImage?.dispose();
       analysisCodec?.dispose();
-      analyzing = false;
-      notifyListeners();
+      if (epoch == _analysisEpoch) {
+        analyzing = false;
+        notifyListeners();
+      }
     }
   }
 
