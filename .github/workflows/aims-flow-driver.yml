@@ -7,6 +7,7 @@ on:
       - 'lib/**'
       - 'test/**'
       - 'pubspec.yaml'
+      - 'native/**'
       - '.github/workflows/aims-flow-driver.yml'
   workflow_dispatch:
 
@@ -60,13 +61,49 @@ jobs:
             'android.permission.ACCESS_BACKGROUND_LOCATION',
             'android.permission.FOREGROUND_SERVICE',
             'android.permission.FOREGROUND_SERVICE_LOCATION',
+            'android.permission.FOREGROUND_SERVICE_MICROPHONE',
+            'android.permission.RECORD_AUDIO',
+            'android.permission.WAKE_LOCK',
             'android.permission.POST_NOTIFICATIONS',
             'android.permission.VIBRATE',
           ]
           block='\n'.join(f'    <uses-permission android:name="{x}" />' for x in permissions)
-          s=s.replace('<application', block+'\n    <application',1)
+          queries='''    <queries>
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
+    </queries>'''
+          s=s.replace('<application', block+'\n'+queries+'\n    <application',1)
           s=s.replace('android:label="aims_flow_scanner"','android:label="AIMS Flow"')
+
+          assist='''            <intent-filter>
+                <action android:name="android.intent.action.ASSIST" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+'''
+          activity_end=s.find('</activity>')
+          if activity_end < 0:
+              raise SystemExit('MainActivity closing tag not found')
+          s=s[:activity_end]+assist+s[activity_end:]
+
+          service='''        <service
+            android:name=".AimsHandsFreeService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
+'''
+          s=s.replace('</application>',service+'    </application>',1)
           p.write_text(s)
+
+          import shutil
+          native=Path('native/android')
+          target=Path('android/app/src/main/kotlin/hu/logisticaims/aims_flow_scanner')
+          target.mkdir(parents=True,exist_ok=True)
+          shutil.copy2(native/'MainActivity.kt',target/'MainActivity.kt')
+          shutil.copy2(native/'AimsHandsFreeService.kt',target/'AimsHandsFreeService.kt')
 
           g=Path('android/app/build.gradle.kts')
           text=g.read_text()
