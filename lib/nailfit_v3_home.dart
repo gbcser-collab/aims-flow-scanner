@@ -68,7 +68,7 @@ class NailFitV3Home extends StatelessWidget {
   Widget _match() => Container(height: 285, padding: const EdgeInsets.all(16), decoration: BoxDecoration(gradient: const LinearGradient(colors: [Color(0xFFFFE7EB), Color(0xFFF4D3D9)]), borderRadius: BorderRadius.circular(24), border: Border.all(color: Colors.white)), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
     const Row(children: [Icon(Icons.auto_awesome_rounded, size: 15, color: nfRose), SizedBox(width: 5), Expanded(child: Text('SZEMÉLYES AJÁNLÁS', maxLines: 2, style: TextStyle(color: nfRoseDark, fontSize: 8, letterSpacing: .8, fontWeight: FontWeight.w800)))]),
     const SizedBox(height: 11),
-    Text('${c.look.match}% egyezés', style: const TextStyle(fontFamily: 'serif', color: nfInk, fontSize: 30, height: 1)),
+    Text('${c.currentMatchScore}% egyezés', style: const TextStyle(fontFamily: 'serif', color: nfInk, fontSize: 30, height: 1)),
     const SizedBox(height: 7),
     Text(c.scan == null ? 'A profilod és az aktuális stílusod alapján.' : '${c.scan!.recommendedShape} forma és ${c.scan!.tone.toLowerCase()} tónusbecslés alapján.', style: const TextStyle(color: nfMuted, fontSize: 10, height: 1.35)),
     const Spacer(),
