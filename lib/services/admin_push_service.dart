@@ -31,12 +31,14 @@ class AdminPushStatus {
     required this.firebaseConfigured,
     required this.adminConfigured,
     required this.permissionGranted,
+    required this.serverConfigured,
     this.lastError,
   });
 
   final bool firebaseConfigured;
   final bool adminConfigured;
   final bool permissionGranted;
+  final bool serverConfigured;
   final String? lastError;
 }
 
@@ -72,6 +74,7 @@ class AdminPushService {
   bool _initialized = false;
   bool _firebaseConfigured = false;
   bool _permissionGranted = false;
+  bool _serverConfigured = false;
   String? _lastError;
   AdminPushEvent? _pendingInitial;
 
@@ -142,6 +145,7 @@ class AdminPushService {
       firebaseConfigured: _firebaseConfigured,
       adminConfigured: adminToken != null && adminToken.trim().isNotEmpty,
       permissionGranted: _permissionGranted,
+      serverConfigured: _serverConfigured,
       lastError: _lastError,
     );
   }
@@ -182,7 +186,9 @@ class AdminPushService {
 
     await _registerToken(token, fcmToken);
     await _storage.write(key: _adminTokenKey, value: token);
-    _lastError = null;
+    _lastError = _serverConfigured
+        ? null
+        : 'A telefon regisztrálva van, de a szerveren még nincs FCM service-account konfigurálva.';
     _emitStatus();
   }
 
@@ -209,6 +215,7 @@ class AdminPushService {
       } catch (_) {}
     }
     await _storage.delete(key: _adminTokenKey);
+    _serverConfigured = false;
     _emitStatus();
   }
 
@@ -276,7 +283,7 @@ class AdminPushService {
     final credentials =
         await const DeviceIdentityService().getOrCreateCredentials();
     final package = await PackageInfo.fromPlatform();
-    await _requestJson(
+    final response = await _requestJson(
       method: 'POST',
       path: '/push_device.php',
       adminToken: adminToken,
@@ -287,6 +294,7 @@ class AdminPushService {
         'appVersion': '${package.version}+${package.buildNumber}',
       },
     );
+    _serverConfigured = response['serverPushConfigured'] == true;
   }
 
   Future<String> _requireAdminToken() async {
