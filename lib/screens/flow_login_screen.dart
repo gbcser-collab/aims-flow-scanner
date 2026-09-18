@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../services/native_auth_service.dart';
 import 'driver_shell_screen.dart';
@@ -37,25 +39,93 @@ class _FlowLoginScreenState extends State<FlowLoginScreen> {
     super.dispose();
   }
 
+  Future<String?> _askDriverName() async {
+    final prefs = await SharedPreferences.getInstance();
+    final controller = TextEditingController(
+      text: prefs.getString('aims_driver_name') ?? '',
+    );
+    final result = await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF071522),
+        title: const Text('Hogy hívnak?'),
+        content: TextField(
+          key: const Key('flow-driver-name'),
+          controller: controller,
+          autofocus: true,
+          textCapitalization: TextCapitalization.words,
+          maxLength: 40,
+          decoration: const InputDecoration(
+            labelText: 'Sofőr neve',
+            hintText: 'pl. Péter',
+            counterText: '',
+          ),
+          onSubmitted: (value) {
+            final name = value.trim();
+            if (name.isNotEmpty) Navigator.pop(context, name);
+          },
+        ),
+        actions: [
+          FilledButton(
+            onPressed: () {
+              final name = controller.text.trim();
+              if (name.isNotEmpty) Navigator.pop(context, name);
+            },
+            child: const Text('MEHET'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    return result?.trim();
+  }
+
   Future<void> _submit() async {
     if (_busy) return;
-    if (!_e2e && (_login.text.trim().isEmpty || _password.text.isEmpty)) {
-      setState(() => _error = 'Add meg a webes felhasználónevet/e-mailt és jelszót.');
-      return;
+    if (!_e2e) {
+      if (_adminMode) {
+        if (_password.text.isEmpty) {
+          setState(() => _error = 'Add meg az admin jelszót.');
+          return;
+        }
+      } else {
+        final plate = _login.text.trim();
+        final accessCode = _password.text.trim().toUpperCase();
+        if (plate.length < 4 || accessCode.length != 6) {
+          setState(
+            () => _error = 'Add meg a rendszámot és a 6 karakteres sofőrkódot (pl. ABC123).',
+          );
+          return;
+        }
+      }
     }
     setState(() {
       _busy = true;
       _error = null;
     });
     try {
+      NativeAuthResult? authResult;
       if (!_e2e) {
-        await _auth.login(
-          login: _login.text,
-          password: _password.text,
+        authResult = await _auth.login(
+          login: _adminMode ? 'ADMIN' : _login.text,
+          password: _password.text.trim().toUpperCase(),
           code: _adminMode ? _code.text : '',
         );
       }
       if (!mounted) return;
+
+      if (!_e2e && authResult?.role == 'driver') {
+        final name = await _askDriverName();
+        if (!mounted || name == null || name.isEmpty) return;
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(
+          'aims_driver_plate',
+          authResult!.plate.trim().toUpperCase(),
+        );
+        await prefs.setString('aims_driver_name', name);
+      }
+
       await Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (_) => const DriverShellScreen()),
       );
@@ -150,42 +220,80 @@ class _FlowLoginScreenState extends State<FlowLoginScreen> {
                             ),
                           ),
                           const SizedBox(height: 6),
-                          const Text(
-                            'Ugyanazzal a Logistic-AIMS webes fiókkal. Nincs készülék-jóváhagyás.',
-                            style: TextStyle(color: Colors.white54, height: 1.4),
+                          Text(
+                            _adminMode
+                                ? 'Admin belépés jelszóval és Authenticator-kóddal.'
+                                : 'Sofőr belépés rendszámmal és 6 karakteres kóddal.',
+                            style: const TextStyle(color: Colors.white54, height: 1.4),
                           ),
                           const SizedBox(height: 18),
-                          TextField(
-                            key: const Key('flow-login-user'),
-                            controller: _login,
-                            keyboardType: TextInputType.emailAddress,
-                            textInputAction: TextInputAction.next,
-                            decoration: _decoration(
-                              'Felhasználónév vagy e-mail',
-                              Icons.person_outline_rounded,
+                          if (!_adminMode) ...[
+                            TextField(
+                              key: const Key('flow-login-user'),
+                              controller: _login,
+                              textCapitalization: TextCapitalization.characters,
+                              textInputAction: TextInputAction.next,
+                              inputFormatters: [
+                                LengthLimitingTextInputFormatter(12),
+                              ],
+                              decoration: _decoration(
+                                'Rendszám',
+                                Icons.local_shipping_outlined,
+                              ).copyWith(hintText: 'pl. SIP-115'),
                             ),
-                          ),
-                          const SizedBox(height: 12),
-                          TextField(
-                            key: const Key('flow-login-password'),
-                            controller: _password,
-                            obscureText: _obscure,
-                            textInputAction: TextInputAction.next,
-                            decoration: _decoration(
-                              'Jelszó',
-                              Icons.lock_outline_rounded,
-                            ).copyWith(
-                              suffixIcon: IconButton(
-                                onPressed: () =>
-                                    setState(() => _obscure = !_obscure),
-                                icon: Icon(
-                                  _obscure
-                                      ? Icons.visibility_off_outlined
-                                      : Icons.visibility_outlined,
+                            const SizedBox(height: 12),
+                            TextField(
+                              key: const Key('flow-login-password'),
+                              controller: _password,
+                              obscureText: _obscure,
+                              textCapitalization: TextCapitalization.characters,
+                              textInputAction: TextInputAction.done,
+                              maxLength: 6,
+                              inputFormatters: [
+                                FilteringTextInputFormatter.allow(
+                                  RegExp(r'[A-Za-z0-9]'),
+                                ),
+                              ],
+                              onSubmitted: (_) => _submit(),
+                              decoration: _decoration(
+                                'Sofőr belépőkód',
+                                Icons.key_rounded,
+                              ).copyWith(
+                                counterText: '',
+                                hintText: 'ABC123',
+                                suffixIcon: IconButton(
+                                  onPressed: () =>
+                                      setState(() => _obscure = !_obscure),
+                                  icon: Icon(
+                                    _obscure
+                                        ? Icons.visibility_off_outlined
+                                        : Icons.visibility_outlined,
+                                  ),
                                 ),
                               ),
                             ),
-                          ),
+                          ] else ...[
+                            TextField(
+                              key: const Key('flow-login-password'),
+                              controller: _password,
+                              obscureText: _obscure,
+                              textInputAction: TextInputAction.next,
+                              decoration: _decoration(
+                                'Admin jelszó',
+                                Icons.lock_outline_rounded,
+                              ).copyWith(
+                                suffixIcon: IconButton(
+                                  onPressed: () =>
+                                      setState(() => _obscure = !_obscure),
+                                  icon: Icon(
+                                    _obscure
+                                        ? Icons.visibility_off_outlined
+                                        : Icons.visibility_outlined,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
                           const SizedBox(height: 10),
                           InkWell(
                             key: const Key('flow-admin-toggle'),
@@ -317,8 +425,8 @@ class _FlowLoginScreenState extends State<FlowLoginScreen> {
                     ),
                     const SizedBox(height: 18),
                     const Text(
-                      'Partner / sofőr: e-mail vagy felhasználónév + jelszó. '
-                      'Kétfaktoros kód csak admin belépésnél szükséges.',
+                      'Sofőr: rendszám + 3 betű / 3 szám belépőkód. '
+                      'Adminnál külön jelszó + Authenticator marad.',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         color: Colors.white38,
