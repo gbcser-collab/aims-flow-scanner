@@ -233,10 +233,12 @@ class FreightOrderParser:
 
     def _heading_type(self, line: str) -> str | None:
         normalized = self._key(line)
-        if any(self._label_in_key(label, normalized) for label in self.LOAD_LABELS):
-            return "load"
+        # Check UNLOAD first: words such as "unload" and "unloading" contain
+        # "load"/"loading" and would otherwise be misclassified as pickup.
         if any(self._label_in_key(label, normalized) for label in self.UNLOAD_LABELS):
             return "unload"
+        if any(self._label_in_key(label, normalized) for label in self.LOAD_LABELS):
+            return "load"
         return None
 
     def _parse_stop(self, segment: list[str]) -> Stop:
