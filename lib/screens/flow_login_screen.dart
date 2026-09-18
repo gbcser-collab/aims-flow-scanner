@@ -5,8 +5,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../services/aims_locale.dart';
+import '../services/device_unlock_service.dart';
 import '../services/native_auth_service.dart';
 import 'driver_shell_screen.dart';
+import 'flow_change_code_screen.dart';
+import 'flow_forgot_code_screen.dart';
 import 'flow_register_screen.dart';
 
 class FlowLoginScreen extends StatefulWidget {
@@ -29,7 +33,35 @@ class _FlowLoginScreenState extends State<FlowLoginScreen> {
   bool _busy = false;
   bool _obscure = true;
   bool _adminMode = false;
+  bool _autoUnlockTried = false;
   String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _tryDeviceUnlock();
+    });
+  }
+
+  Future<void> _tryDeviceUnlock() async {
+    if (_e2e || _autoUnlockTried || !mounted) return;
+    _autoUnlockTried = true;
+    final prefs = await SharedPreferences.getInstance();
+    final plate = (prefs.getString('aims_driver_plate') ?? '').trim();
+    final enabled = prefs.getBool('aims_driver_local_unlock') ?? false;
+    if (plate.isEmpty || !enabled || !mounted) return;
+
+    final available = await DeviceUnlockService.instance.isAvailable();
+    if (!available || !mounted) return;
+
+    final ok = await DeviceUnlockService.instance.authenticate();
+    if (!ok || !mounted) return;
+
+    await Navigator.of(context).pushReplacement(
+      MaterialPageRoute(builder: (_) => const DriverShellScreen()),
+    );
+  }
 
   @override
   void dispose() {
@@ -40,6 +72,7 @@ class _FlowLoginScreenState extends State<FlowLoginScreen> {
   }
 
   Future<String?> _askDriverName() async {
+    final t = AimsLocaleController.instance.t;
     final prefs = await SharedPreferences.getInstance();
     final controller = TextEditingController(
       text: prefs.getString('aims_driver_name') ?? '',
@@ -49,16 +82,16 @@ class _FlowLoginScreenState extends State<FlowLoginScreen> {
       barrierDismissible: false,
       builder: (context) => AlertDialog(
         backgroundColor: const Color(0xFF071522),
-        title: const Text('Hogy hívnak?'),
+        title: Text(t('driver_name_question')),
         content: TextField(
           key: const Key('flow-driver-name'),
           controller: controller,
           autofocus: true,
           textCapitalization: TextCapitalization.words,
           maxLength: 40,
-          decoration: const InputDecoration(
-            labelText: 'Sofőr neve',
-            hintText: 'pl. Péter',
+          decoration: InputDecoration(
+            labelText: t('driver_name'),
+            hintText: t('driver_name_hint'),
             counterText: '',
           ),
           onSubmitted: (value) {
@@ -72,7 +105,7 @@ class _FlowLoginScreenState extends State<FlowLoginScreen> {
               final name = controller.text.trim();
               if (name.isNotEmpty) Navigator.pop(context, name);
             },
-            child: const Text('MEHET'),
+            child: Text(t('continue')),
           ),
         ],
       ),
@@ -83,10 +116,11 @@ class _FlowLoginScreenState extends State<FlowLoginScreen> {
 
   Future<void> _submit() async {
     if (_busy) return;
+    final t = AimsLocaleController.instance.t;
     if (!_e2e) {
       if (_adminMode) {
         if (_password.text.isEmpty) {
-          setState(() => _error = 'Add meg az admin jelszót.');
+          setState(() => _error = t('admin_password_required'));
           return;
         }
       } else {
@@ -94,7 +128,7 @@ class _FlowLoginScreenState extends State<FlowLoginScreen> {
         final accessCode = _password.text.trim().toUpperCase();
         if (plate.length < 4 || accessCode.length != 6) {
           setState(
-            () => _error = 'Add meg a rendszámot és a 6 karakteres sofőrkódot (pl. ABC123).',
+            () => _error = t('invalid_driver_fields'),
           );
           return;
         }
@@ -118,14 +152,28 @@ class _FlowLoginScreenState extends State<FlowLoginScreen> {
       if (!mounted) return;
 
       if (!_e2e && authResult?.role == 'driver') {
+        final driver = authResult!;
+        if (driver.forceCodeChange) {
+          final changed = await Navigator.of(context).push<bool>(
+            MaterialPageRoute(
+              builder: (_) => FlowChangeCodeScreen(
+                plate: driver.plate,
+                currentCode: _password.text.trim().toUpperCase(),
+              ),
+            ),
+          );
+          if (!mounted || changed != true) return;
+        }
+
         final name = await _askDriverName();
         if (!mounted || name == null || name.isEmpty) return;
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString(
           'aims_driver_plate',
-          authResult!.plate.trim().toUpperCase(),
+          driver.plate.trim().toUpperCase(),
         );
         await prefs.setString('aims_driver_name', name);
+        await prefs.setBool('aims_driver_local_unlock', true);
       }
 
       await Navigator.of(context).pushReplacement(
