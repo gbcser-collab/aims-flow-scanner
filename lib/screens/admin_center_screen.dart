@@ -221,6 +221,8 @@ class _AdminCenterScreenState extends State<AdminCenterScreen> {
     final configured = status?.firebaseConfigured == true;
     final permission = status?.permissionGranted == true;
     final admin = status?.adminConfigured == true;
+    final server = status?.serverConfigured == true;
+    final active = configured && permission && admin && server;
 
     return Container(
       padding: const EdgeInsets.all(18),
@@ -228,7 +230,7 @@ class _AdminCenterScreenState extends State<AdminCenterScreen> {
         color: const Color(0xFF171A1F),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
-          color: (configured && permission && admin
+          color: (active
                   ? const Color(0xFF48D597)
                   : const Color(0xFFE6B85C))
               .withValues(alpha: .35),
@@ -238,10 +240,10 @@ class _AdminCenterScreenState extends State<AdminCenterScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Icon(
-            configured && permission && admin
+            active
                 ? Icons.notifications_active_rounded
                 : Icons.notifications_none_rounded,
-            color: configured && permission && admin
+            color: active
                 ? const Color(0xFF48D597)
                 : const Color(0xFFE6B85C),
             size: 30,
@@ -252,7 +254,7 @@ class _AdminCenterScreenState extends State<AdminCenterScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  configured && permission && admin
+                  active
                       ? 'Natív push aktív'
                       : 'Főnökségi push beállítása',
                   style: const TextStyle(
@@ -267,9 +269,11 @@ class _AdminCenterScreenState extends State<AdminCenterScreen> {
                       ? 'Ehhez az APK-hoz még nincs Firebase-konfiguráció.'
                       : !admin
                           ? 'Add meg az admin tokent, majd engedélyezd az értesítéseket.'
-                          : permission
-                              ? 'A rendszámaid eseményei erre a telefonra is megérkeznek.'
-                              : 'Az admin be van állítva, de a rendszerértesítés nincs engedélyezve.',
+                          : !permission
+                              ? 'Az admin be van állítva, de a rendszerértesítés nincs engedélyezve.'
+                              : !server
+                                  ? 'A telefon kész, de a VPS Firebase-küldése még nincs konfigurálva.'
+                                  : 'A rendszámaid eseményei erre a telefonra is megérkeznek.',
                   style: const TextStyle(color: Colors.white60, height: 1.35),
                 ),
               ],
