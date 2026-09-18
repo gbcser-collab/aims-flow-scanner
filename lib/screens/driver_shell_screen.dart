@@ -32,6 +32,7 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
   final _api = const DriverApiService();
   final _tracking = VehicleTrackingService.instance;
   final _push = DriverPushService.instance;
+  final ScrollController _homeScrollController = ScrollController();
   late final AimsVoiceService _voice;
 
   StreamSubscription<DriverPushEvent>? _pushSub;
@@ -632,6 +633,7 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
     _pushSub?.cancel();
     _trackingSub?.cancel();
     _voiceSub?.cancel();
+    _homeScrollController.dispose();
     unawaited(_voice.dispose());
     super.dispose();
   }
@@ -640,13 +642,30 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFF020813),
-      body: IndexedStack(
-        index: _index,
+      body: Column(
         children: [
-          _home(),
-          _trip(),
-          _quickSignal(),
-          _documents(),
+          Container(
+            width: double.infinity,
+            color: const Color(0xFF06162A),
+            child: SafeArea(
+              bottom: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+                child: _header(),
+              ),
+            ),
+          ),
+          Expanded(
+            child: IndexedStack(
+              index: _index,
+              children: [
+                _home(),
+                _trip(),
+                _quickSignal(),
+                _documents(),
+              ],
+            ),
+          ),
         ],
       ),
       bottomNavigationBar: NavigationBar(
@@ -680,7 +699,11 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
     );
   }
 
-  Widget _page(List<Widget> children) => Container(
+  Widget _page(
+    List<Widget> children, {
+    ScrollController? controller,
+  }) =>
+      Container(
         decoration: const BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topLeft,
@@ -689,9 +712,11 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
           ),
         ),
         child: SafeArea(
+          top: false,
           child: RefreshIndicator(
             onRefresh: _refreshJobs,
             child: ListView(
+              controller: controller,
               physics: const AlwaysScrollableScrollPhysics(),
               padding: const EdgeInsets.fromLTRB(16, 14, 16, 28),
               children: children,
@@ -702,6 +727,17 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
 
   Widget _header() => Row(
         children: [
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: _blue.withValues(alpha: .12),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: _blue.withValues(alpha: .45)),
+            ),
+            child: const Icon(Icons.alt_route_rounded, color: _blue, size: 24),
+          ),
+          const SizedBox(width: 10),
           const Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -709,9 +745,10 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
                 Text(
                   'AIMS FLOW',
                   style: TextStyle(
-                    letterSpacing: 3.4,
-                    color: Colors.white70,
+                    letterSpacing: 2.8,
+                    color: Colors.white,
                     fontWeight: FontWeight.w900,
+                    fontSize: 16,
                   ),
                 ),
                 SizedBox(height: 2),
@@ -719,7 +756,7 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
                   'DRIVER MODE',
                   style: TextStyle(
                     color: _blue,
-                    fontSize: 10,
+                    fontSize: 9,
                     fontWeight: FontWeight.w900,
                   ),
                 ),
@@ -746,8 +783,6 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
             _l('Nincs aktív fuvar', 'No active job', 'Kein aktiver Auftrag'));
 
     return _page([
-      _header(),
-      const SizedBox(height: 16),
       if (_loading)
         const LinearProgressIndicator(minHeight: 2)
       else
@@ -888,7 +923,7 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
       ),
       const SizedBox(height: 12),
       _voicePanel(),
-    ]);
+    ], controller: _homeScrollController);
   }
 
   Widget _voicePanel() => _panel(
@@ -1002,8 +1037,6 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
   Widget _trip() {
     final job = _job;
     return _page([
-      _header(),
-      const SizedBox(height: 16),
       Text(
         _l('Fuvarom', 'My job', 'Mein Auftrag'),
         style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w900),
