@@ -386,10 +386,17 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
   }) async {
     if (stop.type != expectedType) {
       return expectedType == 'pickup'
-          ? 'A következő megálló nem felrakó.'
-          : 'A következő megálló nem lerakó.';
+          ? _l(
+              'A következő megálló nem felrakó.',
+              'The next stop is not a pickup.',
+              'Der nächste Stopp ist keine Abholung.',
+            )
+          : _l(
+              'A következő megálló nem lerakó.',
+              'The next stop is not a delivery.',
+              'Der nächste Stopp ist keine Zustellung.',
+            );
     }
-
     try {
       await _api.updateStop(
         plate: _plate,
@@ -400,118 +407,197 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
       await _refreshJobs();
       if (action == 'arrived') {
         return expectedType == 'pickup'
-            ? 'Megérkezés a felrakóra rögzítve.'
-            : 'Megérkezés a lerakóra rögzítve.';
+            ? _l(
+                'Megérkezés a felrakóra rögzítve.',
+                'Arrival at pickup recorded.',
+                'Ankunft an der Ladestelle gespeichert.',
+              )
+            : _l(
+                'Megérkezés a lerakóra rögzítve.',
+                'Arrival at delivery recorded.',
+                'Ankunft an der Entladestelle gespeichert.',
+              );
       }
       return expectedType == 'pickup'
-          ? 'Felrakás kész. Jöhet a következő megálló.'
-          : 'Lerakás kész. Rögzítettem.';
-    } catch (e) {
-      return 'A stop állapotát nem sikerült rögzíteni.';
+          ? _l(
+              'Felrakás kész. Jöhet a következő megálló.',
+              'Pickup complete. Ready for the next stop.',
+              'Beladung fertig. Weiter zum nächsten Stopp.',
+            )
+          : _l(
+              'Lerakás kész. Rögzítettem.',
+              'Delivery complete. Recorded.',
+              'Entladung fertig. Gespeichert.',
+            );
+    } catch (_) {
+      return _l(
+        'A stop állapotát nem sikerült rögzíteni.',
+        'The stop status could not be saved.',
+        'Der Stoppstatus konnte nicht gespeichert werden.',
+      );
     }
   }
 
   Future<String> _callCurrentContact() async {
     final stop = _stop;
-    if (stop == null) return 'Nincs aktív megálló.';
+    if (stop == null) {
+      return _l(
+        'Nincs aktív megálló.',
+        'There is no active stop.',
+        'Es gibt keinen aktiven Stopp.',
+      );
+    }
     final phone = stop.phone.trim();
-    if (phone.isEmpty) return 'Ehhez a megállóhoz nincs telefonszám megadva.';
+    if (phone.isEmpty) {
+      return _l(
+        'Ehhez a megállóhoz nincs telefonszám megadva.',
+        'No phone number is available for this stop.',
+        'Für diesen Stopp ist keine Telefonnummer hinterlegt.',
+      );
+    }
     final uri = Uri(scheme: 'tel', path: phone);
     if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
-      return 'A telefonhívást nem sikerült elindítani.';
+      return _l(
+        'A telefonhívást nem sikerült elindítani.',
+        'The phone call could not be started.',
+        'Der Anruf konnte nicht gestartet werden.',
+      );
     }
-    return 'Hívom a kapcsolattartót.';
+    return _l(
+      'Hívom a kapcsolattartót.',
+      'Calling the contact person.',
+      'Ich rufe den Ansprechpartner an.',
+    );
   }
 
   String _jobVoiceSummary() {
     final job = _job;
-    if (job == null) return 'Nincs aktív fuvar.';
+    if (job == null) {
+      return _l(
+        'Nincs aktív fuvar.',
+        'There is no active job.',
+        'Es gibt keinen aktiven Auftrag.',
+      );
+    }
     final stop = job.currentStop;
-    if (stop == null) return 'A fuvar minden megállója kész.';
+    if (stop == null) {
+      return _l(
+        'A fuvar minden megállója kész.',
+        'All stops on the job are complete.',
+        'Alle Stopps des Auftrags sind abgeschlossen.',
+      );
+    }
+    final company = stop.company.trim();
+    final companyPart = company.isEmpty ? '' : ' $company.';
+    if (AimsLocaleController.instance.languageCode == 'en') {
+      final kind = stop.type == 'pickup' ? 'pickup' : 'delivery';
+      return 'Active job: ${job.reference}. Next $kind.$companyPart Address: ${stop.address}.';
+    }
+    if (AimsLocaleController.instance.languageCode == 'de') {
+      final kind = stop.type == 'pickup' ? 'Abholung' : 'Zustellung';
+      return 'Aktiver Auftrag: ${job.reference}. Nächster Stopp: $kind.$companyPart Adresse: ${stop.address}.';
+    }
     final kind = stop.type == 'pickup' ? 'felrakó' : 'lerakó';
-    final company = stop.company.trim().isEmpty ? '' : ' ${stop.company}.';
-    return 'Aktív fuvar: ${job.reference}. Következő ${kind}.${company} Cím: ${stop.address}.';
+    return 'Aktív fuvar: ${job.reference}. Következő $kind.$companyPart Cím: ${stop.address}.';
   }
 
   Future<String> _handleVoiceCommand(AimsVoiceCommand command) async {
     final current = _stop;
+    final noStop = _l(
+      'Nincs aktív megálló.',
+      'There is no active stop.',
+      'Es gibt keinen aktiven Stopp.',
+    );
 
     switch (command.intent) {
       case AimsVoiceIntent.showJob:
         if (mounted) setState(() => _index = 1);
         return _jobVoiceSummary();
-
       case AimsVoiceIntent.navigatePickup:
         final stop = _nextStopOfType('pickup');
-        if (stop == null) return 'Nincs következő felrakó.';
+        if (stop == null) {
+          return _l('Nincs következő felrakó.', 'There is no next pickup.',
+              'Es gibt keine nächste Abholung.');
+        }
         await _openMapsForStop(stop);
-        return 'Navigáció indítása a felrakóra.';
-
+        return _l('Navigáció indítása a felrakóra.',
+            'Starting navigation to the pickup.',
+            'Navigation zur Ladestelle wird gestartet.');
       case AimsVoiceIntent.navigateDelivery:
         final stop = _nextStopOfType('delivery');
-        if (stop == null) return 'Nincs következő lerakó.';
+        if (stop == null) {
+          return _l('Nincs következő lerakó.', 'There is no next delivery.',
+              'Es gibt keine nächste Zustellung.');
+        }
         await _openMapsForStop(stop);
-        return 'Navigáció indítása a lerakóra.';
-
+        return _l('Navigáció indítása a lerakóra.',
+            'Starting navigation to the delivery.',
+            'Navigation zur Entladestelle wird gestartet.');
       case AimsVoiceIntent.arrivePickup:
-        if (current == null) return 'Nincs aktív megálló.';
+        if (current == null) return noStop;
         return _markStop(current, 'arrived', expectedType: 'pickup');
-
       case AimsVoiceIntent.arriveDelivery:
-        if (current == null) return 'Nincs aktív megálló.';
+        if (current == null) return noStop;
         return _markStop(current, 'arrived', expectedType: 'delivery');
-
       case AimsVoiceIntent.pickupComplete:
-        if (current == null) return 'Nincs aktív megálló.';
+        if (current == null) return noStop;
         return _markStop(current, 'completed', expectedType: 'pickup');
-
       case AimsVoiceIntent.deliveryComplete:
-        if (current == null) return 'Nincs aktív megálló.';
+        if (current == null) return noStop;
         return _markStop(current, 'completed', expectedType: 'delivery');
-
       case AimsVoiceIntent.nextAddress:
-        if (current == null) return 'Nincs következő cím.';
+        if (current == null) {
+          return _l('Nincs következő cím.', 'There is no next address.',
+              'Es gibt keine nächste Adresse.');
+        }
         final company = current.company.trim();
+        if (AimsLocaleController.instance.languageCode == 'en') {
+          return company.isEmpty
+              ? 'The next address is ${current.address}.'
+              : 'The next stop is $company. Address: ${current.address}.';
+        }
+        if (AimsLocaleController.instance.languageCode == 'de') {
+          return company.isEmpty
+              ? 'Die nächste Adresse ist ${current.address}.'
+              : 'Der nächste Stopp ist $company. Adresse: ${current.address}.';
+        }
         return company.isEmpty
             ? 'A következő cím: ${current.address}.'
-            : 'A következő megálló ${company}. Cím: ${current.address}.';
-
+            : 'A következő megálló $company. Cím: ${current.address}.';
       case AimsVoiceIntent.callContact:
         return _callCurrentContact();
-
       case AimsVoiceIntent.delaySignal:
-        await _sendSignal('Késés', message: 'Hangparancs');
-        return 'A késés jelzést elküldtem a főnökségnek.';
-
+        await _sendSignal('Késés', message: 'Voice command');
+        return _l('A késés jelzést elküldtem a főnökségnek.',
+            'The delay notice was sent to the office.',
+            'Die Verspätungsmeldung wurde an die Disposition gesendet.');
       case AimsVoiceIntent.fuelReceipt:
         unawaited(_openFuelReceipt());
-        return 'Megnyitottam a tankolási bizonylatot.';
-
+        return _l('Megnyitottam a tankolási bizonylatot.',
+            'I opened the fuel receipt scanner.',
+            'Der Tankbeleg-Scanner ist geöffnet.');
       case AimsVoiceIntent.cmrDocument:
         unawaited(_openCmrScanner());
-        return 'Megnyitottam a CMR scannert.';
-
+        return _l('Megnyitottam a CMR scannert.',
+            'I opened the CMR scanner.', 'Der CMR-Scanner ist geöffnet.');
       case AimsVoiceIntent.technicalIssue:
-        await _sendSignal('Műszaki hiba', message: 'Hangparancs');
-        return 'A műszaki hibát jeleztem a főnökségnek.';
-
+        await _sendSignal('Műszaki hiba', message: 'Voice command');
+        return _l('A műszaki hibát jeleztem a főnökségnek.',
+            'The technical issue was reported to the office.',
+            'Das technische Problem wurde an die Disposition gemeldet.');
       case AimsVoiceIntent.readJobDetails:
         return _jobVoiceSummary();
-
       case AimsVoiceIntent.waitingSignal:
-        await _sendSignal('Várakozás', message: 'Hangparancs');
-        return 'A várakozást jeleztem.';
-
+        await _sendSignal('Várakozás', message: 'Voice command');
+        return _l('A várakozást jeleztem.', 'The waiting status was reported.',
+            'Die Wartezeit wurde gemeldet.');
       case AimsVoiceIntent.urgentSignal:
-        await _sendSignal(
-          'Baleset / sürgős',
-          urgent: true,
-          message: 'Hangparancs',
-        );
-        return 'Sürgős jelzést küldtem.';
-
+        await _sendSignal('Baleset / sürgős',
+            urgent: true, message: 'Voice command');
+        return _l('Sürgős jelzést küldtem.', 'I sent an urgent alert.',
+            'Ich habe eine dringende Meldung gesendet.');
       case AimsVoiceIntent.unknown:
-        return 'Ezt nem értettem.';
+        return AimsLocaleController.instance.t('not_understood');
     }
   }
 
