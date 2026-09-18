@@ -187,28 +187,40 @@ class _FlowLoginScreenState extends State<FlowLoginScreen> {
                             ),
                           ),
                           const SizedBox(height: 10),
-                          SwitchListTile(
+                          Row(
                             key: const Key('flow-admin-toggle'),
-                            value: _adminMode,
-                            onChanged: _busy
-                                ? null
-                                : (value) => setState(() {
-                                      _adminMode = value;
-                                      if (!value) _code.clear();
-                                    }),
-                            contentPadding: EdgeInsets.zero,
-                            title: const Text(
-                              'Admin belépés',
-                              style: TextStyle(fontWeight: FontWeight.w800),
-                            ),
-                            subtitle: const Text(
-                              'Csak adminnál kell Authenticator-kód.',
-                              style: TextStyle(color: Colors.white38),
-                            ),
-                            secondary: const Icon(
-                              Icons.admin_panel_settings_outlined,
-                              color: Color(0xFF9EDBFF),
-                            ),
+                            children: [
+                              const Icon(
+                                Icons.admin_panel_settings_outlined,
+                                color: Color(0xFF9EDBFF),
+                              ),
+                              const SizedBox(width: 12),
+                              const Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Admin belépés',
+                                      style: TextStyle(fontWeight: FontWeight.w800),
+                                    ),
+                                    SizedBox(height: 2),
+                                    Text(
+                                      'Csak adminnál kell Authenticator-kód.',
+                                      style: TextStyle(color: Colors.white38),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Switch(
+                                value: _adminMode,
+                                onChanged: _busy
+                                    ? null
+                                    : (value) => setState(() {
+                                          _adminMode = value;
+                                          if (!value) _code.clear();
+                                        }),
+                              ),
+                            ],
                           ),
                           if (_adminMode) ...[
                             const SizedBox(height: 8),
