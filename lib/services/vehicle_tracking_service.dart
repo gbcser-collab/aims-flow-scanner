@@ -144,7 +144,7 @@ class VehicleTrackingService {
       return;
     }
 
-    const settings = AndroidSettings(
+    final settings = AndroidSettings(
       accuracy: LocationAccuracy.high,
       distanceFilter: 5,
       intervalDuration: Duration(seconds: 15),
