@@ -51,7 +51,7 @@ class NailFitV3Scan extends StatelessWidget {
             const SizedBox(height: 12),
             _feature('Bőrtónus', result == null ? 'Fotóelemzés után' : '${result.tone}, ${result.undertone}', Icons.circle),
             _feature('Kézforma', result?.handShape ?? '5 pont után pontosabb becslés', Icons.back_hand_outlined),
-            _feature('Körömágy', result?.nailBed ?? 'Manuális kalibráció után', Icons.water_drop_outlined),
+            _feature('Try-On skála', result?.nailBed ?? '5 pontos kalibráció után', Icons.water_drop_outlined),
             _feature('Ajánlott forma', result?.recommendedShape ?? c.preferredShape, Icons.auto_awesome_rounded),
             const SizedBox(height: 12),
             _analysis(result),
