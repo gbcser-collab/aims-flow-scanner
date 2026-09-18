@@ -150,7 +150,7 @@ class FreightOrderParser:
         re.compile(r"\b20\d{2}[./-](?:0?[1-9]|1[0-2])[./-](?:0?[1-9]|[12]\d|3[01])\b"),
     )
     TIME_PATTERN = re.compile(
-        r"\b(?:[01]?\d|2[0-3])[:.]\d{2}(?:\s*(?:-|–|—|to|bis|ig)\s*(?:[01]?\d|2[0-3])[:.]\d{2})?\b",
+        r"(?<!\d)(?:[01]?\d|2[0-3])[:.]\d{2}(?![./-]\d)(?:\s*(?:-|–|—|to|bis|ig)\s*(?:[01]?\d|2[0-3])[:.]\d{2}(?![./-]\d))?\b",
         re.IGNORECASE,
     )
     PHONE_PATTERN = re.compile(r"(?<!\d)(?:\+\d{1,3}[\s./-]?)?(?:\d[\s./-]?){7,14}(?!\d)")
@@ -364,7 +364,11 @@ class FreightOrderParser:
 
     def _contact(self, text: str) -> str | None:
         email = self.EMAIL_PATTERN.search(text)
-        phone = self.PHONE_PATTERN.search(text)
+        phone_text = text
+        for pattern in self.DATE_PATTERNS:
+            phone_text = pattern.sub(" ", phone_text)
+        phone_text = self.TIME_PATTERN.sub(" ", phone_text)
+        phone = self.PHONE_PATTERN.search(phone_text)
         values = []
         if phone:
             values.append(phone.group(0).strip())
@@ -442,4 +446,4 @@ class FreightOrderParser:
         return "\n".join(line.strip() for line in value.splitlines()).strip()
 
     def _clean_inline(self, value: str) -> str:
-        return re.sub(r"\s+", " ", value).strip(" :;,.|-")
+        return re.sub(r"\s+", " ", value).strip(" :;,|-")
