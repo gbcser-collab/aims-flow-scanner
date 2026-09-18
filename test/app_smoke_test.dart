@@ -11,6 +11,9 @@ void main() {
     expect(find.text('AIMS FLOW • SMART • PRIVATE CMR'), findsOneWidget);
     expect(find.text('CMR Scanner'), findsOneWidget);
     expect(find.text('Smart Scan PRO indítása'), findsOneWidget);
+    expect(find.text('Tankolási bizonylat küldése'), findsOneWidget);
+    expect(find.byKey(const ValueKey('open-fuel-receipt')), findsOneWidget);
+    expect(find.byType(FloatingActionButton), findsOneWidget);
 
     await tester.scrollUntilVisible(
       find.text('CMR-ek az appban'),
