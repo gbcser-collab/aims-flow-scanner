@@ -20,6 +20,9 @@ function aims_push_config(): ?array {
     $raw = trim((string)(getenv('AIMS_FIREBASE_SERVICE_ACCOUNT_JSON') ?: ''));
     $b64 = trim((string)(getenv('AIMS_FIREBASE_SERVICE_ACCOUNT_B64') ?: ''));
     $file = trim((string)(getenv('AIMS_FIREBASE_SERVICE_ACCOUNT_FILE') ?: ''));
+    if ($file === '' && is_file('/etc/aims-flow/firebase-service-account.json')) {
+        $file = '/etc/aims-flow/firebase-service-account.json';
+    }
 
     if ($raw === '' && $b64 !== '') {
         $decoded = base64_decode($b64, true);
