@@ -63,10 +63,7 @@ class _FlowRegisterScreenState extends State<FlowRegisterScreen> {
   bool _validPhone(String value) {
     var phone = value.trim().replaceAll(RegExp(r'[\s().-]'), '');
     if (phone.startsWith('00')) phone = '+' + phone.substring(2);
-    return RegExp(r'^\+[1-9][0-9]{7,14}$').hasMatch(phone);
-  }
-
-  Future<void> _submit() async {
+    return RegExp(r'^\+[1-9][0-9]{7,14}
     if (_busy) return;
     if (_company.text.trim().isEmpty ||
         _country.text.trim().isEmpty ||
@@ -229,23 +226,33 @@ class _FlowRegisterScreenState extends State<FlowRegisterScreen> {
                       decoration: _decoration('Adószám', Icons.receipt_long_outlined),
                     ),
                     const SizedBox(height: 16),
-                    CheckboxListTile(
-                      value: _terms,
-                      onChanged: (v) => setState(() => _terms = v == true),
-                      contentPadding: EdgeInsets.zero,
-                      controlAffinity: ListTileControlAffinity.leading,
-                      title: const Text('Elfogadom a partnerfelület használati feltételeit.'),
+                    Row(
+                      children: [
+                        Checkbox(
+                          value: _terms,
+                          onChanged: (v) => setState(() => _terms = v == true),
+                        ),
+                        const SizedBox(width: 8),
+                        const Expanded(
+                          child: Text('Elfogadom a partnerfelület használati feltételeit.'),
+                        ),
+                      ],
                     ),
                     TextButton(
                       onPressed: () => _open('legal/partner-terms.html'),
                       child: const Text('FELTÉTELEK MEGNYITÁSA ↗'),
                     ),
-                    CheckboxListTile(
-                      value: _privacy,
-                      onChanged: (v) => setState(() => _privacy = v == true),
-                      contentPadding: EdgeInsets.zero,
-                      controlAffinity: ListTileControlAffinity.leading,
-                      title: const Text('Tudomásul vettem az adatkezelési tájékoztatót.'),
+                    Row(
+                      children: [
+                        Checkbox(
+                          value: _privacy,
+                          onChanged: (v) => setState(() => _privacy = v == true),
+                        ),
+                        const SizedBox(width: 8),
+                        const Expanded(
+                          child: Text('Tudomásul vettem az adatkezelési tájékoztatót.'),
+                        ),
+                      ],
                     ),
                     TextButton(
                       onPressed: () => _open('legal/privacy.html'),
