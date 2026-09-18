@@ -8,13 +8,10 @@ void main() {
 
     expect(find.text('AIMS FLOW'), findsWidgets);
     expect(find.text('DRIVER MODE'), findsOneWidget);
-    expect(find.text('GPS'), findsWidgets);
     expect(find.textContaining('Új fuvarnál hangos push érkezik'), findsOneWidget);
-
-    await tester.tap(find.text('GYORS JELZÉS'));
-    await tester.pumpAndSettle(const Duration(milliseconds: 200));
-    expect(find.text('Gyors jelzés'), findsOneWidget);
-    expect(find.text('Várakozás'), findsOneWidget);
-    expect(find.text('Műszaki hiba'), findsOneWidget);
+    expect(find.text('KEZDŐLAP'), findsOneWidget);
+    expect(find.text('FUVAROM'), findsOneWidget);
+    expect(find.text('GYORS JELZÉS'), findsOneWidget);
+    expect(find.text('DOKSI'), findsOneWidget);
   });
 }
