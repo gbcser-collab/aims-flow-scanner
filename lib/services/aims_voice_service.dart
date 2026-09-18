@@ -33,9 +33,13 @@ class AimsVoiceState {
 typedef AimsVoiceCommandHandler = Future<String> Function(AimsVoiceCommand command);
 
 class AimsVoiceService {
-  AimsVoiceService({required this.onCommand});
+  AimsVoiceService({
+    required this.onCommand,
+    required this.driverNameProvider,
+  });
 
   final AimsVoiceCommandHandler onCommand;
+  final String Function() driverNameProvider;
   final SpeechToText _speech = SpeechToText();
   final FlutterTts _tts = FlutterTts();
   final AimsVoiceCommandParser _parser = const AimsVoiceCommandParser();
@@ -159,7 +163,7 @@ class AimsVoiceService {
     _commandMode = true;
     await _startListening(
       mode: AimsVoiceMode.command,
-      message: 'Hallgatlak.',
+      message: _assistantGreeting(),
     );
   }
 
@@ -213,7 +217,7 @@ class AimsVoiceService {
         AimsVoiceState(
           enabled: _enabled,
           mode: AimsVoiceMode.command,
-          message: 'Hallgatlak.',
+          message: _assistantGreeting(),
           lastHeard: heard,
         ),
       );
@@ -246,12 +250,18 @@ class AimsVoiceService {
     return null;
   }
 
+  String _assistantGreeting() {
+    final name = driverNameProvider().trim();
+    if (name.isEmpty) return 'Tessék. Miben segíthetek?';
+    return 'Tessék, $name. Miben segíthetek?';
+  }
+
   Future<void> _enterCommandMode() async {
     if (_handlingResult) return;
     _handlingResult = true;
     try {
       await _speech.stop();
-      await _speak('Hallgatlak.');
+      await _speak(_assistantGreeting());
       _commandMode = true;
     } finally {
       _handlingResult = false;
