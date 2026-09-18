@@ -205,12 +205,12 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              '\${first?.address ?? '—'}\n→\n\${last?.address ?? '—'}',
+              '${first?.address ?? '—'}\n→\n${last?.address ?? '—'}',
               style: const TextStyle(color: Colors.white70, height: 1.45),
             ),
             const SizedBox(height: 8),
             Text(
-              '\${job.stops.length} megálló · \${job.reference}',
+              '${job.stops.length} megálló · ${job.reference}',
               style: const TextStyle(color: Colors.white38),
             ),
           ],
@@ -265,7 +265,7 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
       return;
     }
     final uri = Uri.parse(
-      'https://www.google.com/maps/dir/?api=1&destination=\${Uri.encodeQueryComponent(stop.address)}&travelmode=driving',
+      'https://www.google.com/maps/dir/?api=1&destination=${Uri.encodeQueryComponent(stop.address)}&travelmode=driving',
     );
     if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
       _snack('A Google Maps nem nyitható meg.');
@@ -472,7 +472,7 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
               Text(
                 job == null
                     ? 'Új munka érkezésekor a Flow itt azonnal szól.'
-                    : 'AKTÍV FUVAR · \${job.reference} · \${job.stops.length} stop',
+                    : 'AKTÍV FUVAR · ${job.reference} · ${job.stops.length} stop',
                 style: const TextStyle(
                   color: _blue,
                   fontSize: 10,
@@ -731,7 +731,7 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
                   ? _green.withValues(alpha: .13)
                   : _blue.withValues(alpha: .13),
               child: Text(
-                '\${stop.order}',
+                '${stop.order}',
                 style: TextStyle(
                   color: stop.arrived ? _green : _blue,
                   fontWeight: FontWeight.w900,
