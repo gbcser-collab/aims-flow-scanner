@@ -66,7 +66,7 @@ class NailOverlayPainter extends CustomPainter {
   double _adaptiveNailWidth(int index, List<Offset> mapped, Size size) {
     if (mapped.length < 2) {
       const fallback = [0.082, 0.062, 0.065, 0.060, 0.052];
-      return size.width * fallback[index.clamp(0, fallback.length - 1)];
+      return size.width * fallback[index.clamp(0, fallback.length - 1).toInt()];
     }
     var nearest = double.infinity;
     for (var i = 0; i < mapped.length; i++) {
