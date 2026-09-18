@@ -18,7 +18,22 @@ curl -fsS -H "Authorization: Bearer $AIMS_ADMIN_TRACKING_TOKEN" -H "Content-Type
 
 point () {
   local ts="$1" lat="$2" lng="$3" speed="$4"
-  curl -fsS -H "Authorization: Bearer $AIMS_TRACKING_TOKEN" -H "Content-Type: application/json" -X POST     --data "{"deviceId":"test-device-1","vehicleLabel":"SIP-115","timestamp":"$ts","latitude":$lat,"longitude":$lng,"accuracy":5,"speedMps":$speed,"source":"heartbeat"}"     http://127.0.0.1:8092/ingest.php >/dev/null
+  local payload
+  payload="$(python3 - "$ts" "$lat" "$lng" "$speed" <<'PY'
+import json, sys
+print(json.dumps({
+    "deviceId": "test-device-1",
+    "vehicleLabel": "SIP-115",
+    "timestamp": sys.argv[1],
+    "latitude": float(sys.argv[2]),
+    "longitude": float(sys.argv[3]),
+    "accuracy": 5,
+    "speedMps": float(sys.argv[4]),
+    "source": "heartbeat",
+}))
+PY
+)"
+  curl -fsS -H "Authorization: Bearer $AIMS_TRACKING_TOKEN" -H "Content-Type: application/json" -X POST     --data "$payload" http://127.0.0.1:8092/ingest.php >/dev/null
 }
 
 point '2026-09-18T08:00:00Z' 46.0000 17.0000 0
@@ -49,7 +64,21 @@ print('tracking endpoint integration: PASS')
 PY
 
 PNG='iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Z6mQAAAAASUVORK5CYII='
-curl -fsS -H "Authorization: Bearer $AIMS_TRACKING_TOKEN" -H "Content-Type: application/json" -X POST   --data "{"deviceId":"test-device-1","plate":"SIP-115","capturedAt":"2026-09-18T09:30:00Z","station":"Test Fuel","totalAmount":25000,"currency":"HUF","liters":40.5,"image":{"mimeType":"image/png","base64":"$PNG"}}"   http://127.0.0.1:8092/fuel_receipt.php >/tmp/fuel-upload.json
+FUEL_PAYLOAD="$(python3 - "$PNG" <<'PY'
+import json, sys
+print(json.dumps({
+    "deviceId": "test-device-1",
+    "plate": "SIP-115",
+    "capturedAt": "2026-09-18T09:30:00Z",
+    "station": "Test Fuel",
+    "totalAmount": 25000,
+    "currency": "HUF",
+    "liters": 40.5,
+    "image": {"mimeType": "image/png", "base64": sys.argv[1]},
+}))
+PY
+)"
+curl -fsS -H "Authorization: Bearer $AIMS_TRACKING_TOKEN" -H "Content-Type: application/json" -X POST   --data "$FUEL_PAYLOAD" http://127.0.0.1:8092/fuel_receipt.php >/tmp/fuel-upload.json
 
 curl -fsS -H "Authorization: Bearer $AIMS_ADMIN_TRACKING_TOKEN"   http://127.0.0.1:8092/fuel_receipt.php >/tmp/fuel-list.json
 
