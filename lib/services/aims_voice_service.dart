@@ -208,6 +208,12 @@ class AimsVoiceService {
           ],
         _ => const [
             'AIMS',
+            'AIMS Flow',
+            'éjms',
+            'éjmsz',
+            'aimsz',
+            'eims',
+            'ems',
             'felrakó',
             'lerakó',
             'fuvar',
@@ -241,7 +247,15 @@ class AimsVoiceService {
           pauseFor: const Duration(seconds: 2),
           listenFor: const Duration(seconds: 8),
           localeId: _localeId,
-          contextualPhrases: const ['AIMS'],
+          contextualPhrases: const [
+            'AIMS',
+            'AIMS Flow',
+            'éjms',
+            'éjmsz',
+            'aimsz',
+            'eims',
+            'ems',
+          ],
         ),
       );
     }
@@ -280,7 +294,20 @@ class AimsVoiceService {
   }
 
   (String, int)? _wakeMatch(String normalized) {
-    const aliases = ['aims flow', 'aims', 'ejms', 'eims', 'ems'];
+    const aliases = [
+      'aims flow',
+      'aims',
+      'aimsz',
+      'aimsz flow',
+      'ejms',
+      'ejmsz',
+      'ejms flow',
+      'eims',
+      'eimsz',
+      'ems',
+      'emsz',
+      'ems flow',
+    ];
     for (final alias in aliases) {
       final index = normalized.indexOf(alias);
       if (index >= 0) {
