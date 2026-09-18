@@ -3,7 +3,17 @@ name: Build and deep-test Android APK
 on:
   push:
     branches: [ main, v0.8-dev, v0.9-pro, v1.0-road, v1.3-smart-operations ]
+    paths:
+      - 'lib/**'
+      - 'test/**'
+      - 'pubspec.yaml'
+      - 'ci/**'
+      - '.github/workflows/android-apk.yml'
   workflow_dispatch:
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build-android:
