@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'nailfit_v3_model.dart';
+import 'nailfit_painters.dart';
 
 Widget nfBackground(Widget child) => DecoratedBox(
   decoration: const BoxDecoration(gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xFFFFFCFA), Color(0xFFFFEEEB), Color(0xFFFFF9F6)])),
@@ -110,10 +111,24 @@ Widget nfSectionTitle(String title, String? trailing, {VoidCallback? onTrailing}
 
 Widget nfPhoto(String url, {BoxFit fit = BoxFit.cover, Color? tint}) => ColorFiltered(
   colorFilter: tint == null ? const ColorFilter.mode(Colors.transparent, BlendMode.dst) : ColorFilter.mode(tint.withValues(alpha: .10), BlendMode.softLight),
-  child: Image.network(url, fit: fit, loadingBuilder: (_, child, p) => p == null ? child : nfPhotoFallback(), errorBuilder: (_, __, ___) => nfPhotoFallback()),
+  child: Image.network(
+    url,
+    fit: fit,
+    loadingBuilder: (_, child, p) => p == null ? child : nfPhotoFallback(tint),
+    errorBuilder: (_, __, ___) => nfPhotoFallback(tint),
+  ),
 );
 
-Widget nfPhotoFallback() => Container(decoration: const BoxDecoration(gradient: LinearGradient(colors: [Color(0xFFF6D4D2), Color(0xFFD99D8A)])), child: const Center(child: Icon(Icons.back_hand_outlined, color: Colors.white70, size: 52)));
+Widget nfPhotoFallback([Color? color]) => CustomPaint(
+  painter: DemoHandPainter(
+    color: color ?? const Color(0xFFD99CA6),
+    shape: 'Mandula',
+    length: .96,
+    finish: NailFinish.glossy,
+    softBackground: true,
+  ),
+  child: const SizedBox.expand(),
+);
 
 Widget nfLookCard(PremiumLook look, NailFitV3Controller c) {
   final active = c.look.name == look.name;
