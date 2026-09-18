@@ -13,7 +13,7 @@ void main() {
     expect(find.text('Jelszó'), findsNWidgets(2));
     expect(find.text('2FA kód'), findsOneWidget);
     expect(find.text('Tovább'), findsOneWidget);
-    expect(find.textContaining('Új eszköz'), findsOneWidget);
+    expect(find.textContaining('Segítség a belépéshez'), findsOneWidget);
     expect(find.textContaining('Segítség'), findsOneWidget);
     expect(find.byType(TextField), findsNWidgets(8));
   });
