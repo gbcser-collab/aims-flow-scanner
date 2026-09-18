@@ -325,7 +325,7 @@ class NailFitV3Controller extends ChangeNotifier {
     });
   }
 
-  Future<void> _persist() async {
+  Future<void> _persist({bool preserveBackup = true}) async {
     File? temp;
     try {
       final file = await _stateFile;
@@ -356,16 +356,21 @@ class NailFitV3Controller extends ChangeNotifier {
       await temp.writeAsString(payload, flush: true);
       jsonDecode(await temp.readAsString());
 
-      if (await file.exists()) {
-        await file.copy(backup.path);
-        await file.delete();
+      if (preserveBackup) {
+        if (await file.exists()) {
+          await file.copy(backup.path);
+          await file.delete();
+        }
+      } else {
+        if (await backup.exists()) await backup.delete();
+        if (await file.exists()) await file.delete();
       }
       await temp.rename(file.path);
     } catch (_) {
       try {
         final file = await _stateFile;
         final backup = File('${file.path}.bak');
-        if (!await file.exists() && await backup.exists()) await backup.copy(file.path);
+        if (preserveBackup && !await file.exists() && await backup.exists()) await backup.copy(file.path);
       } catch (_) {}
     } finally {
       try {
@@ -481,6 +486,8 @@ class NailFitV3Controller extends ChangeNotifier {
   }
 
   Future<void> clearHandData() async {
+    _analysisEpoch++;
+    _persistTimer?.cancel();
     final path = lastPhotoPath;
     lastPhotoPath = null;
     photoWidth = 0;
@@ -491,7 +498,8 @@ class NailFitV3Controller extends ChangeNotifier {
     _skinBounds = null;
     _smartPoints = null;
     notifyListeners();
-    _schedulePersist(delay: Duration.zero);
+    await _persistChain;
+    await _persist(preserveBackup: false);
     if (path != null) {
       try {
         final dir = await getApplicationDocumentsDirectory();
@@ -513,15 +521,21 @@ class NailFitV3Controller extends ChangeNotifier {
     } catch (_) {}
   }
 
-  void clearSaved() {
-    for (final path in List<String>.from(savedPngPaths)) {
-      unawaited(File(path).delete().catchError((_) => File(path)));
-    }
+  Future<void> clearSaved() async {
+    _persistTimer?.cancel();
+    final files = List<String>.from(savedPngPaths);
     favorites.clear();
     saved.clear();
     savedPngPaths.clear();
     notifyListeners();
-    _schedulePersist();
+    for (final path in files) {
+      try {
+        final file = File(path);
+        if (await file.exists()) await file.delete();
+      } catch (_) {}
+    }
+    await _persistChain;
+    await _persist(preserveBackup: false);
   }
 
   void toggleNotifications() {
@@ -616,7 +630,7 @@ class NailFitV3Controller extends ChangeNotifier {
     _schedulePersist();
   }
 
-  Future<ScanResult?> analyzePhoto(XFile file) async {
+  Future<ScanResult?> analyzePhoto(XFile file, {bool applyRecommendation = true}) async {
     final epoch = ++_analysisEpoch;
     analyzing = true;
     notifyListeners();
@@ -854,12 +868,14 @@ class NailFitV3Controller extends ChangeNotifier {
       );
       lastScanAt = DateTime.now();
 
-      final candidate = premiumLooks.where((p) => p.shape == recommended).firstOrNull ?? premiumLooks.first;
-      look = candidate;
-      shape = recommended;
-      color = candidate.color;
-      finish = candidate.finish;
-      length = candidate.length;
+      if (applyRecommendation) {
+        final candidate = premiumLooks.where((p) => p.shape == recommended).firstOrNull ?? premiumLooks.first;
+        look = candidate;
+        shape = recommended;
+        color = candidate.color;
+        finish = candidate.finish;
+        length = candidate.length;
+      }
       notifyListeners();
       _schedulePersist();
       return scan;
@@ -933,7 +949,9 @@ class NailFitV3Controller extends ChangeNotifier {
       thumb = Offset(x.clamp(.02, .98).toDouble(), y.clamp(.02, .98).toDouble());
     }
 
-    final fractions = thumbRight ? const <double>[.20, .41, .62, .78] : const <double>[.80, .59, .38, .22];
+    // Order must match the painter/calibration contract:
+    // thumb, index, middle, ring, pinky. The index finger is closest to the thumb.
+    final fractions = thumbRight ? const <double>[.78, .62, .41, .20] : const <double>[.22, .38, .59, .80];
     return <Offset>[thumb, ...fractions.map(fingerTip)];
   }
 
