@@ -323,12 +323,18 @@ class FreightOrderParser:
         return None
 
     def _value_after_any_label(self, line: str, labels: tuple[str, ...]) -> str | None:
-        lower = line.lower()
         for label in sorted(labels, key=len, reverse=True):
-            idx = lower.find(label.lower())
-            if idx < 0:
+            candidate = label.strip()
+            if not candidate:
                 continue
-            tail = line[idx + len(label):]
+            match = re.search(
+                rf"(?<!\w){re.escape(candidate)}(?!\w)",
+                line,
+                re.IGNORECASE,
+            )
+            if match is None:
+                continue
+            tail = line[match.end():]
             tail = re.sub(r"^[\s:;,.#\-–—/]+", "", tail).strip()
             if len(tail) >= 2:
                 return tail
