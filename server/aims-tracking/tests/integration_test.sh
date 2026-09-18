@@ -14,6 +14,10 @@ sleep 1
 
 curl -fsS -H "Authorization: Bearer $AIMS_ADMIN_TRACKING_TOKEN" -H "Content-Type: application/json" -X POST   --data '{"plate":"SIP-115","label":"SIP-115"}'   http://127.0.0.1:8092/vehicle_registry.php >/tmp/vehicle.json
 
+SECOND_ADMIN_TOKEN='second-admin-token-test-1234567890'
+curl -fsS -H "Authorization: Bearer $AIMS_ADMIN_TRACKING_TOKEN" -H "Content-Type: application/json" -X POST   --data "{"name":"Second Admin","token":"$SECOND_ADMIN_TOKEN"}"   http://127.0.0.1:8092/admin_users.php >/tmp/second-admin.json
+curl -fsS -H "Authorization: Bearer $SECOND_ADMIN_TOKEN" -H "Content-Type: application/json" -X POST   --data '{"plate":"OTHER-222","label":"OTHER-222"}'   http://127.0.0.1:8092/vehicle_registry.php >/tmp/second-vehicle.json
+
 curl -fsS -H "Authorization: Bearer $AIMS_ADMIN_TRACKING_TOKEN" -H "Content-Type: application/json" -X POST   --data '{"plate":"SIP-115","driverJob":{"reference":"TEST-001","pickups":[{"company":"Test Pickup","address":"Test address","latitude":47.1000,"longitude":18.1000}],"deliveries":[{"company":"Test Delivery","address":"Test delivery","latitude":48.1000,"longitude":19.1000}]}}'   http://127.0.0.1:8092/job_assign.php >/tmp/job.json
 
 point () {
@@ -60,7 +64,17 @@ titles=' | '.join(x['title'] for x in stationary)
 assert '15 perce' in titles and '30 perce' in titles and '60 perce' in titles, titles
 assert len(arrival)==1, arrival
 assert 'felrakóra' in arrival[0]['title'], arrival[0]
+assert all(x.get('plate') == 'SIP-115' for x in stationary + arrival), items
 print('tracking endpoint integration: PASS')
+PY
+
+curl -fsS -H "Authorization: Bearer $SECOND_ADMIN_TOKEN"   http://127.0.0.1:8092/notifications.php >/tmp/second-notifications.json
+python3 - <<'PY'
+import json
+d=json.load(open('/tmp/second-notifications.json'))
+items=d['notifications']
+assert not any(x.get('plate') == 'SIP-115' for x in items), items
+print('admin notification isolation: PASS')
 PY
 
 PNG='iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Z6mQAAAAASUVORK5CYII='
