@@ -15,7 +15,7 @@ Widget nfHeader({VoidCallback? onAi, VoidCallback? onNotifications, bool notific
   InkWell(
     onTap: onAi,
     borderRadius: BorderRadius.circular(99),
-    child: Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8), decoration: BoxDecoration(color: const Color(0xFFFBE4E8), borderRadius: BorderRadius.circular(99), border: Border.all(color: Colors.white)), child: const Row(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.auto_awesome_rounded, size: 13, color: nfRose), SizedBox(width: 4), Text('BEAUTY AI', style: TextStyle(fontSize: 8.2, letterSpacing: .8, color: nfRoseDark, fontWeight: FontWeight.w800))])),
+    child: Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8), decoration: BoxDecoration(color: const Color(0xFFFBE4E8), borderRadius: BorderRadius.circular(99), border: Border.all(color: Colors.white)), child: const Row(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.auto_awesome_rounded, size: 13, color: nfRose), SizedBox(width: 4), Text('STYLIST', style: TextStyle(fontSize: 8.2, letterSpacing: .8, color: nfRoseDark, fontWeight: FontWeight.w800))])),
   ),
   const SizedBox(width: 6),
   InkWell(
@@ -51,7 +51,10 @@ Future<void> nfShowStylist(BuildContext context, NailFitV3Controller c, {String 
   );
   controller.dispose();
   if (result == null || result.isEmpty) return;
-  c.recommendFromPrompt(result);
+  final selected = c.recommendFromPrompt(result);
+  if (context.mounted) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Stylist ajánlat: ${selected.name} · ${selected.shape}')));
+  }
 }
 
 void nfShowNotifications(BuildContext context, NailFitV3Controller c) {
