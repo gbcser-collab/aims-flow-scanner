@@ -56,20 +56,68 @@ PY
   done
 }
 
-echo "[1/6] APK integrity"
+dump_ui() {
+  adb shell uiautomator dump /sdcard/nailfit-current.xml >/dev/null 2>&1 || fail
+  adb pull /sdcard/nailfit-current.xml /tmp/nailfit-current.xml >/dev/null 2>&1 || fail
+}
+
+tap_text() {
+  local label="$1"
+  dump_ui
+  local coords
+  coords=$(python3 - "$label" <<'PY'
+import re, sys, xml.etree.ElementTree as ET
+label = sys.argv[1]
+root = ET.parse('/tmp/nailfit-current.xml').getroot()
+for node in root.iter('node'):
+    text = node.attrib.get('text', '')
+    desc = node.attrib.get('content-desc', '')
+    if text == label or desc == label:
+        m = re.match(r'\[(\d+),(\d+)\]\[(\d+),(\d+)\]', node.attrib.get('bounds',''))
+        if m:
+            x1,y1,x2,y2 = map(int,m.groups())
+            print((x1+x2)//2, (y1+y2)//2)
+            break
+PY
+)
+  [ -n "${coords:-}" ] || fail
+  adb shell input tap $coords
+  sleep 2
+  dismiss_system_anr
+  check_foreground
+  check_crash
+}
+
+assert_text() {
+  local label="$1"
+  dump_ui
+  python3 - "$label" <<'PY' || fail
+import sys, xml.etree.ElementTree as ET
+label = sys.argv[1]
+root = ET.parse('/tmp/nailfit-current.xml').getroot()
+for node in root.iter('node'):
+    text = node.attrib.get('text', '')
+    desc = node.attrib.get('content-desc', '')
+    if label == text or label in text or label == desc or label in desc:
+        raise SystemExit(0)
+raise SystemExit(1)
+PY
+}
+
+echo "[1/7] APK integrity"
 test -s "$APK"
 unzip -t "$APK" > "$EVIDENCE/apk-integrity.txt"
 
-echo "[2/6] Verify standalone package id"
+echo "[2/7] Verify standalone package id"
 if adb shell pm list packages | grep -q 'hu.logisticaims.aims_flow_scanner'; then
   echo "Scanner package exists independently; NAILFIT must not replace it."
 fi
 
-echo "[3/6] Install NAILFIT"
+echo "[3/7] Install NAILFIT"
 adb install -r "$APK"
 adb shell pm list packages | grep "$PKG"
 
-echo "[4/6] Cold launch"
+echo "[4/7] Cold launch"
 adb logcat -c
 adb shell am force-stop "$PKG"
 adb shell am start -W -n "$ACTIVITY" >/dev/null
@@ -79,12 +127,29 @@ check_foreground
 check_crash
 adb exec-out screencap -p > "$EVIDENCE/01-home.png" || true
 
-echo "[5/6] Verify visible NAILFIT UI"
+echo "[5/7] Verify visible NAILFIT UI"
 adb shell uiautomator dump /sdcard/nailfit.xml >/dev/null
 adb pull /sdcard/nailfit.xml "$EVIDENCE/nailfit.xml" >/dev/null
 grep -E "NAIL|FIT|Próbáld" "$EVIDENCE/nailfit.xml" >/dev/null || fail
 
-echo "[6/6] Background/resume + repeated launch"
+echo "[6/7] Navigate all main tabs on device"
+tap_text "Scan"
+assert_text "Kéz szkennelése"
+adb exec-out screencap -p > "$EVIDENCE/02-scan.png" || true
+
+tap_text "Try-On"
+assert_text "Próbáld fel"
+adb exec-out screencap -p > "$EVIDENCE/03-try.png" || true
+
+tap_text "Mentett"
+assert_text "Mentett"
+adb exec-out screencap -p > "$EVIDENCE/04-saved.png" || true
+
+tap_text "Profil"
+assert_text "Saját profil"
+adb exec-out screencap -p > "$EVIDENCE/05-profile.png" || true
+
+echo "[7/7] Background/resume + repeated launch"
 adb shell input keyevent KEYCODE_HOME
 sleep 2
 adb shell am start -W -n "$ACTIVITY" >/dev/null
@@ -100,5 +165,5 @@ for i in 1 2 3; do
   check_foreground
   check_crash
 done
-adb exec-out screencap -p > "$EVIDENCE/02-final.png" || true
+adb exec-out screencap -p > "$EVIDENCE/06-final.png" || true
 echo "NAILFIT standalone Android smoke-test PASSED"
