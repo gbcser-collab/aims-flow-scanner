@@ -14,7 +14,7 @@ function aims_distance_m(float $lat1, float $lng1, float $lat2, float $lng2): fl
 function aims_motion_threshold_m(?float $accuracy): float {
     $accuracy = $accuracy === null ? 12.0 : max(3.0, min(60.0, $accuracy));
     // Conservative against GPS jitter, but a credible small movement still resets the timer.
-    return max(8.0, min(25.0, $accuracy * 0.75));
+    return max(5.0, min(15.0, $accuracy * 0.50));
 }
 
 function aims_motion_detected(
