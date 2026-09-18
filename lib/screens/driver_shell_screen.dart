@@ -119,6 +119,17 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
 
   Future<void> _activateDriverServices() async {
     if (_plate.isEmpty) return;
+
+    String? pushError;
+    String? trackingError;
+
+    // Push registration must not depend on location/background permissions.
+    try {
+      await _push.registerForPlate(_plate);
+    } catch (e) {
+      pushError = e.toString().replaceFirst('Bad state: ', '');
+    }
+
     try {
       await _tracking.setVehicleLabel(_plate);
       final status = await _tracking.currentStatus();
@@ -127,11 +138,20 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
       } else {
         await _tracking.startIfEnabled();
       }
-      await _push.registerForPlate(_plate);
     } catch (e) {
-      if (mounted) setState(() => _message = 'Háttérszolgáltatás: $e');
+      trackingError = e.toString().replaceFirst('Bad state: ', '');
     }
+
     await _refreshJobs();
+
+    if (!mounted) return;
+    final issues = <String>[
+      if (pushError != null) 'Push: $pushError',
+      if (trackingError != null) 'GPS: $trackingError',
+    ];
+    if (issues.isNotEmpty) {
+      setState(() => _message = issues.join(' • '));
+    }
   }
 
   Future<void> _refreshJobs() async {
