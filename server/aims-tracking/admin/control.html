@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="hu">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>AIMS Flow • Főnökségi központ</title>
+  <style>
+    :root{--bg:#0c0f13;--panel:#15191f;--line:#2a323c;--gold:#e6b85c;--green:#48d597;--text:#fff;--muted:#9099a5;--warn:#ffb454}
+    *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+    header{position:sticky;top:0;z-index:5;background:rgba(12,15,19,.94);backdrop-filter:blur(10px);border-bottom:1px solid var(--line);padding:15px 18px;display:flex;gap:12px;align-items:center}
+    header b{font-size:20px}header a{color:var(--gold);text-decoration:none;font-weight:800;margin-left:auto}
+    main{max-width:1180px;margin:auto;padding:18px;display:grid;grid-template-columns:1.2fr .8fr;gap:16px}
+    .card{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:16px}.full{grid-column:1/-1}
+    h2{margin:0 0 12px}button,input{background:#1c2229;color:#fff;border:1px solid #35404c;border-radius:10px;padding:10px}button{cursor:pointer;font-weight:800}button.primary{background:var(--gold);color:#111;border:0}
+    .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.row input{flex:1;min-width:160px}
+    .item{padding:12px 0;border-bottom:1px solid #252d35}.item:last-child{border-bottom:0}.title{font-weight:900}.meta{color:var(--muted);font-size:12px;margin-top:4px}.badge{display:inline-block;padding:3px 8px;border-radius:999px;background:#252d35;color:#c8d0d8;font-size:11px;font-weight:900}
+    .badge.success{color:var(--green)}.badge.warning{color:var(--warn)}.unread{border-left:3px solid var(--gold);padding-left:10px}.login{position:fixed;inset:0;background:#090c10;display:grid;place-items:center;z-index:99}.login.hidden{display:none}.login-box{width:min(420px,calc(100vw - 32px));background:var(--panel);border:1px solid var(--line);border-radius:22px;padding:24px}.login input{width:100%;margin:10px 0}.login button{width:100%}
+    @media(max-width:820px){main{grid-template-columns:1fr}.full{grid-column:auto}}
+  </style>
+</head>
+<body>
+<div id="login" class="login">
+  <div class="login-box">
+    <div style="color:var(--gold);font-weight:900;letter-spacing:.12em">AIMS FLOW • ADMIN</div>
+    <h1>Főnökségi központ</h1>
+    <p style="color:var(--muted)">A token csak ebben a böngészőfülben marad.</p>
+    <input id="token" type="password" placeholder="Admin token">
+    <button class="primary" id="loginBtn">Belépés</button>
+    <div id="loginErr" style="color:#ff8f8f;margin-top:10px"></div>
+  </div>
+</div>
+
+<header>
+  <b>AIMS Flow • Főnökségi központ</b>
+  <button id="notifyBtn">Böngésző értesítés</button>
+  <a href="tracking.html">Élő térkép →</a>
+</header>
+
+<main>
+  <section class="card">
+    <div class="row" style="justify-content:space-between">
+      <h2>Értesítések</h2>
+      <button id="readAllBtn">Mind olvasott</button>
+    </div>
+    <div id="notifications"></div>
+  </section>
+
+  <section class="card">
+    <h2>Rendszám regisztráció</h2>
+    <div class="row">
+      <input id="plate" placeholder="Rendszám, pl. SIP-115">
+      <input id="label" placeholder="Megjelenő név (opcionális)">
+      <button class="primary" id="registerBtn">Regisztrálás</button>
+    </div>
+    <div id="vehicles" style="margin-top:12px"></div>
+  </section>
+
+  <section class="card full">
+    <h2>Tankolási bizonylatok</h2>
+    <div id="fuel"></div>
+  </section>
+</main>
+
+<script>
+let token=sessionStorage.getItem('aimsTrackingAdminToken')||'';
+let newestId=Number(sessionStorage.getItem('aimsNewestNotificationId')||0);
+
+async function request(path,opts={}){
+  const headers={...(opts.headers||{}),Authorization:'Bearer '+token};
+  const r=await fetch('../'+path,{...opts,headers,cache:'no-store'});
+  if(r.status===401)throw new Error('unauthorized');
+  if(!r.ok){let e={};try{e=await r.json()}catch(_){}throw new Error(e.error||('HTTP '+r.status));}
+  const type=r.headers.get('content-type')||'';
+  return type.includes('application/json')?r.json():r.blob();
+}
+function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));}
+function fmt(v){try{return new Date(v).toLocaleString('hu-HU')}catch(_){return v}}
+async function login(){
+  token=document.getElementById('token').value.trim();
+  try{
+    await request('notifications.php?unread=1');
+    sessionStorage.setItem('aimsTrackingAdminToken',token);
+    document.getElementById('login').classList.add('hidden');
+    await refreshAll();
+  }catch(e){document.getElementById('loginErr').textContent=e.message==='unauthorized'?'Hibás admin token.':e.message}
+}
+document.getElementById('loginBtn').onclick=login;
+document.getElementById('token').addEventListener('keydown',e=>{if(e.key==='Enter')login()});
+
+async function loadNotifications(){
+  const data=await request('notifications.php');
+  const list=data.notifications||[];
+  const root=document.getElementById('notifications');
+  root.innerHTML=list.length?'':'<div class="meta">Nincs értesítés.</div>';
+  for(const n of list){
+    const item=document.createElement('div');
+    item.className='item'+(n.readAt?'':' unread');
+    item.innerHTML='<div><span class="badge '+esc(n.severity)+'">'+esc(n.type)+'</span></div>'+
+      '<div class="title">'+esc(n.title)+'</div><div>'+esc(n.body)+'</div>'+
+      '<div class="meta">'+esc(fmt(n.createdAt))+'</div>';
+    root.appendChild(item);
+
+    if(n.id>newestId && !n.readAt && document.hidden===false && 'Notification' in window && Notification.permission==='granted'){
+      new Notification(n.title,{body:n.body,tag:'aims-'+n.id});
+    }
+    newestId=Math.max(newestId,n.id);
+  }
+  sessionStorage.setItem('aimsNewestNotificationId',String(newestId));
+}
+document.getElementById('readAllBtn').onclick=async()=>{await request('notifications.php',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({readAll:true})});loadNotifications()};
+
+async function loadVehicles(){
+  const data=await request('vehicle_registry.php');
+  const root=document.getElementById('vehicles');
+  root.innerHTML=(data.vehicles||[]).map(v=>'<div class="item"><b>'+esc(v.label||v.plate)+'</b><div class="meta">Tracker: '+esc(v.device_id||'még nincs hozzárendelve')+'</div></div>').join('')||'<div class="meta">Még nincs regisztrált rendszám.</div>';
+}
+document.getElementById('registerBtn').onclick=async()=>{
+  const plate=document.getElementById('plate').value.trim(),label=document.getElementById('label').value.trim();
+  if(!plate)return;
+  await request('vehicle_registry.php',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({plate,label})});
+  document.getElementById('plate').value='';document.getElementById('label').value='';loadVehicles();
+};
+
+async function loadFuel(){
+  const data=await request('fuel_receipt.php');
+  const root=document.getElementById('fuel');
+  root.innerHTML='';
+  for(const f of data.receipts||[]){
+    const item=document.createElement('div');item.className='item';
+    const parts=[f.liters==null?'':f.liters+' l',f.totalAmount==null?'':f.totalAmount+' '+(f.currency||''),f.station||''].filter(Boolean).join(' • ');
+    item.innerHTML='<div class="row"><div style="flex:1"><div class="title">'+esc(f.plate)+'</div><div>'+esc(parts||'Tankolási bizonylat')+'</div><div class="meta">'+esc(fmt(f.capturedAt))+(f.receiptNumber?' • '+esc(f.receiptNumber):'')+'</div></div><button data-id="'+f.id+'">Bizonylat</button></div>';
+    item.querySelector('button').onclick=()=>openFuel(f.id);
+    root.appendChild(item);
+  }
+  if(!(data.receipts||[]).length)root.innerHTML='<div class="meta">Még nincs tankolási bizonylat.</div>';
+}
+async function openFuel(id){
+  const blob=await request('fuel_receipt.php?id='+encodeURIComponent(id)+'&image=1');
+  const url=URL.createObjectURL(blob);window.open(url,'_blank','noopener');setTimeout(()=>URL.revokeObjectURL(url),60000);
+}
+document.getElementById('notifyBtn').onclick=async()=>{
+  if(!('Notification' in window))return;
+  await Notification.requestPermission();
+  document.getElementById('notifyBtn').textContent=Notification.permission==='granted'?'Értesítés aktív':'Értesítés tiltva';
+};
+
+async function refreshAll(){try{await Promise.all([loadNotifications(),loadVehicles(),loadFuel()])}catch(e){if(e.message==='unauthorized'){sessionStorage.removeItem('aimsTrackingAdminToken');location.reload()}}}
+if(token){document.getElementById('login').classList.add('hidden');refreshAll();}
+setInterval(()=>{if(token)loadNotifications().catch(()=>{})},10000);
+</script>
+</body>
+</html>
