@@ -72,6 +72,12 @@ jobs:
           s = s.replace('<application', permissions + '\n    <application', 1)
           s = s.replace('android:label="aims_flow_scanner"', 'android:label="AIMS Flow"')
           p.write_text(s)
+
+          gradle = Path('android/app/build.gradle.kts')
+          if gradle.exists():
+              g = gradle.read_text()
+              g = g.replace('minSdk = flutter.minSdkVersion', 'minSdk = 23')
+              gradle.write_text(g)
           PY
 
       - name: Dependencies
