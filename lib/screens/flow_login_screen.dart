@@ -187,40 +187,52 @@ class _FlowLoginScreenState extends State<FlowLoginScreen> {
                             ),
                           ),
                           const SizedBox(height: 10),
-                          Row(
+                          InkWell(
                             key: const Key('flow-admin-toggle'),
-                            children: [
-                              const Icon(
-                                Icons.admin_panel_settings_outlined,
-                                color: Color(0xFF9EDBFF),
-                              ),
-                              const SizedBox(width: 12),
-                              const Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      'Admin belépés',
-                                      style: TextStyle(fontWeight: FontWeight.w800),
+                            borderRadius: BorderRadius.circular(12),
+                            onTap: _busy
+                                ? null
+                                : () => setState(() {
+                                      _adminMode = !_adminMode;
+                                      if (!_adminMode) _code.clear();
+                                    }),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 4),
+                              child: Row(
+                                children: [
+                                  const Icon(
+                                    Icons.admin_panel_settings_outlined,
+                                    color: Color(0xFF9EDBFF),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  const Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          'Admin belépés',
+                                          style: TextStyle(fontWeight: FontWeight.w800),
+                                        ),
+                                        SizedBox(height: 2),
+                                        Text(
+                                          'Csak adminnál kell Authenticator-kód.',
+                                          style: TextStyle(color: Colors.white38),
+                                        ),
+                                      ],
                                     ),
-                                    SizedBox(height: 2),
-                                    Text(
-                                      'Csak adminnál kell Authenticator-kód.',
-                                      style: TextStyle(color: Colors.white38),
-                                    ),
-                                  ],
-                                ),
+                                  ),
+                                  Switch(
+                                    value: _adminMode,
+                                    onChanged: _busy
+                                        ? null
+                                        : (value) => setState(() {
+                                              _adminMode = value;
+                                              if (!value) _code.clear();
+                                            }),
+                                  ),
+                                ],
                               ),
-                              Switch(
-                                value: _adminMode,
-                                onChanged: _busy
-                                    ? null
-                                    : (value) => setState(() {
-                                          _adminMode = value;
-                                          if (!value) _code.clear();
-                                        }),
-                              ),
-                            ],
+                            ),
                           ),
                           if (_adminMode) ...[
                             const SizedBox(height: 8),
