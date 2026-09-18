@@ -678,9 +678,41 @@ class NailFitV3Controller extends ChangeNotifier {
       final centerDistance = center == null ? 1.0 : math.sqrt(math.pow(center.dx - .5, 2) + math.pow(center.dy - .5, 2));
       final centerScore = (100 - centerDistance * 155).clamp(0, 100).round();
 
-      final avgR = skinCount == 0 ? 178.0 : sr / skinCount;
-      final avgG = skinCount == 0 ? 142.0 : sg / skinCount;
-      final avgB = skinCount == 0 ? 128.0 : sb / skinCount;
+      var toneCount = skinCount;
+      var toneR = sr;
+      var toneG = sg;
+      var toneB = sb;
+      final robustBounds = _skinBounds;
+      if (robustBounds != null) {
+        toneCount = 0;
+        toneR = 0;
+        toneG = 0;
+        toneB = 0;
+        for (var y = 0; y < height; y += step) {
+          final ny = y / height;
+          if (ny < robustBounds.top || ny > robustBounds.bottom) continue;
+          for (var x = 0; x < width; x += step) {
+            final nx = x / width;
+            if (nx < robustBounds.left || nx > robustBounds.right) continue;
+            final i = (y * width + x) * 4;
+            final r = data.getUint8(i).toDouble();
+            final g = data.getUint8(i + 1).toDouble();
+            final b = data.getUint8(i + 2).toDouble();
+            final maxC = math.max(r, math.max(g, b));
+            final minC = math.min(r, math.min(g, b));
+            final skinLike = r > 65 && g > 35 && b > 20 && r >= g * .92 && r > b && (maxC - minC) > 10 && (r - b) > 6;
+            if (!skinLike) continue;
+            toneCount++;
+            toneR += r;
+            toneG += g;
+            toneB += b;
+          }
+        }
+      }
+
+      final avgR = toneCount == 0 ? 178.0 : toneR / toneCount;
+      final avgG = toneCount == 0 ? 142.0 : toneG / toneCount;
+      final avgB = toneCount == 0 ? 128.0 : toneB / toneCount;
       final skinLum = .2126 * avgR + .7152 * avgG + .0722 * avgB;
 
       final tone = skinLum > 190
