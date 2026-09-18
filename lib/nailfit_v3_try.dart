@@ -22,7 +22,7 @@ class NailFitV3Try extends StatefulWidget {
 }
 
 class _NailFitV3TryState extends State<NailFitV3Try> {
-  final GlobalKey _previewKey = GlobalKey();
+  final GlobalKey _exportKey = GlobalKey();
   bool _saving = false;
 
   NailFitV3Controller get c => widget.c;
@@ -65,7 +65,7 @@ class _NailFitV3TryState extends State<NailFitV3Try> {
                 ],
               ),
               const SizedBox(height: 16),
-              RepaintBoundary(key: _previewKey, child: _preview()),
+              _preview(),
               if (photo != null && c.points.length < 5) ...[
                 const SizedBox(height: 10),
                 Container(
@@ -119,24 +119,34 @@ class _NailFitV3TryState extends State<NailFitV3Try> {
       child: Stack(
         fit: StackFit.expand,
         children: [
-          if (photo != null)
-            Image.file(File(photo!.path), fit: BoxFit.cover)
-          else
-            nfPhoto(c.look.image, tint: c.look.color),
-          if (photo != null && c.showOverlay && c.points.isNotEmpty)
-            IgnorePointer(
-              child: CustomPaint(
-                painter: NailOverlayPainter(
-                  points: List<Offset>.from(c.points),
-                  sourceSize: c.photoWidth > 0 && c.photoHeight > 0 ? Size(c.photoWidth.toDouble(), c.photoHeight.toDouble()) : null,
-                  color: c.color,
-                  shape: c.shape,
-                  length: c.length,
-                  finish: c.finish,
-                  calibration: false,
-                ),
+          Positioned.fill(
+            child: RepaintBoundary(
+              key: _exportKey,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  if (photo != null)
+                    Image.file(File(photo!.path), fit: BoxFit.cover)
+                  else
+                    nfPhoto(c.look.image, tint: c.look.color),
+                  if (photo != null && c.showOverlay && c.points.isNotEmpty)
+                    IgnorePointer(
+                      child: CustomPaint(
+                        painter: NailOverlayPainter(
+                          points: List<Offset>.from(c.points),
+                          sourceSize: c.photoWidth > 0 && c.photoHeight > 0 ? Size(c.photoWidth.toDouble(), c.photoHeight.toDouble()) : null,
+                          color: c.color,
+                          shape: c.shape,
+                          length: c.length,
+                          finish: c.finish,
+                          calibration: false,
+                        ),
+                      ),
+                    ),
+                ],
               ),
             ),
+          ),
           Positioned(
             left: 14,
             top: 14,
@@ -327,7 +337,7 @@ class _NailFitV3TryState extends State<NailFitV3Try> {
     setState(() => _saving = true);
     try {
       await WidgetsBinding.instance.endOfFrame;
-      final boundary = _previewKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
+      final boundary = _exportKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
       if (boundary == null) throw StateError('Preview not ready');
       final image = await boundary.toImage(pixelRatio: 2.2);
       final data = await image.toByteData(format: ui.ImageByteFormat.png);
