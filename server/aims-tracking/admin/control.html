@@ -100,7 +100,7 @@ async function loadNotifications(){
       '<div class="meta">'+esc(fmt(n.createdAt))+'</div>';
     root.appendChild(item);
 
-    if(n.id>newestId && !n.readAt && document.hidden===false && 'Notification' in window && Notification.permission==='granted'){
+    if(n.id>newestId && !n.readAt && 'Notification' in window && Notification.permission==='granted'){
       new Notification(n.title,{body:n.body,tag:'aims-'+n.id});
     }
     newestId=Math.max(newestId,n.id);
