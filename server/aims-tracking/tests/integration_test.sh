@@ -15,7 +15,12 @@ sleep 1
 curl -fsS -H "Authorization: Bearer $AIMS_ADMIN_TRACKING_TOKEN" -H "Content-Type: application/json" -X POST   --data '{"plate":"SIP-115","label":"SIP-115"}'   http://127.0.0.1:8092/vehicle_registry.php >/tmp/vehicle.json
 
 SECOND_ADMIN_TOKEN='second-admin-token-test-1234567890'
-curl -fsS -H "Authorization: Bearer $AIMS_ADMIN_TRACKING_TOKEN" -H "Content-Type: application/json" -X POST   --data "{"name":"Second Admin","token":"$SECOND_ADMIN_TOKEN"}"   http://127.0.0.1:8092/admin_users.php >/tmp/second-admin.json
+SECOND_ADMIN_PAYLOAD="$(python3 - "$SECOND_ADMIN_TOKEN" <<'PY'
+import json, sys
+print(json.dumps({"name": "Second Admin", "token": sys.argv[1]}))
+PY
+)"
+curl -fsS -H "Authorization: Bearer $AIMS_ADMIN_TRACKING_TOKEN" -H "Content-Type: application/json" -X POST   --data "$SECOND_ADMIN_PAYLOAD"   http://127.0.0.1:8092/admin_users.php >/tmp/second-admin.json
 curl -fsS -H "Authorization: Bearer $SECOND_ADMIN_TOKEN" -H "Content-Type: application/json" -X POST   --data '{"plate":"OTHER-222","label":"OTHER-222"}'   http://127.0.0.1:8092/vehicle_registry.php >/tmp/second-vehicle.json
 
 curl -fsS -H "Authorization: Bearer $AIMS_ADMIN_TRACKING_TOKEN" -H "Content-Type: application/json" -X POST   --data '{"plate":"SIP-115","driverJob":{"reference":"TEST-001","pickups":[{"company":"Test Pickup","address":"Test address","latitude":47.1000,"longitude":18.1000}],"deliveries":[{"company":"Test Delivery","address":"Test delivery","latitude":48.1000,"longitude":19.1000}]}}'   http://127.0.0.1:8092/job_assign.php >/tmp/job.json
