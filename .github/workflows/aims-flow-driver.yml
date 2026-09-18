@@ -1,0 +1,137 @@
+name: Build AIMS Flow Driver Android
+
+on:
+  push:
+    branches: [aims-flow-driver-v1]
+    paths:
+      - 'lib/**'
+      - 'test/**'
+      - 'pubspec.yaml'
+      - '.github/workflows/aims-flow-driver.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: aims-flow-driver-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  AIMS_FIREBASE_API_KEY_FALLBACK: AIzaSyAAi61i7YCVXJ7Lh5QY0cYnZ42LISC-vNQ
+  AIMS_FIREBASE_PROJECT_ID_FALLBACK: aims-flow
+  AIMS_FIREBASE_MESSAGING_SENDER_ID_FALLBACK: '271406385287'
+  AIMS_FIREBASE_ANDROID_APP_ID_FALLBACK: '1:271406385287:android:83e6c1cdc361ebfe289022'
+  AIMS_FIREBASE_STORAGE_BUCKET_FALLBACK: aims-flow.firebasestorage.app
+
+jobs:
+  build-driver-apk:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Generate Android platform
+        run: |
+          rm -rf /tmp/aims_template
+          flutter create --platforms=android --org hu.logisticaims --project-name aims_flow_scanner /tmp/aims_template
+          cp -R /tmp/aims_template/android ./android
+
+      - name: Configure Android for driver mode
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('android/app/src/main/AndroidManifest.xml')
+          s=p.read_text()
+          permissions=[
+            'android.permission.CAMERA',
+            'android.permission.INTERNET',
+            'android.permission.ACCESS_COARSE_LOCATION',
+            'android.permission.ACCESS_FINE_LOCATION',
+            'android.permission.ACCESS_BACKGROUND_LOCATION',
+            'android.permission.FOREGROUND_SERVICE',
+            'android.permission.FOREGROUND_SERVICE_LOCATION',
+            'android.permission.POST_NOTIFICATIONS',
+            'android.permission.VIBRATE',
+          ]
+          block='\n'.join(f'    <uses-permission android:name="{x}" />' for x in permissions)
+          s=s.replace('<application', block+'\n    <application',1)
+          s=s.replace('android:label="aims_flow_scanner"','android:label="AIMS Flow"')
+          p.write_text(s)
+
+          g=Path('android/app/build.gradle.kts')
+          text=g.read_text()
+          text=text.replace('minSdk = flutter.minSdkVersion','minSdk = 23')
+          if 'isCoreLibraryDesugaringEnabled = true' not in text:
+              text=text.replace('compileOptions {','compileOptions {\n        isCoreLibraryDesugaringEnabled = true',1)
+          if 'coreLibraryDesugaring(' not in text:
+              text=text.replace('dependencies {','dependencies {\n    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")',1)
+          g.write_text(text)
+          PY
+
+      - name: Install AIMS Flow natural job voice
+        run: |
+          mkdir -p android/app/src/main/res/raw
+          curl --fail --location --retry 3 'https://dnznrvs05pmza.cloudfront.net/text_to_speech/50e34d50-220d-470f-ad3b-0ad558db1449/AIMS_Flow__j_fuvar_r_vid__rtes_t_hang.mp3?_jwt=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJrZXlIYXNoIjoiNDE1ODBmZmQ5YjkzNzhlZiIsImJ1Y2tldCI6InJ1bndheS10YXNrLWFydGlmYWN0cyIsInN0YWdlIjoicHJvZCIsImV4cCI6MTc4OTkwOTUwMX0.z66ZgEjDgmob1sajZzC5MPZEy6h9nwcPyelhne7XoAY' -o android/app/src/main/res/raw/aims_new_job.mp3
+          test -s android/app/src/main/res/raw/aims_new_job.mp3
+          test "$(stat -c%s android/app/src/main/res/raw/aims_new_job.mp3)" -gt 10000
+
+      - name: Dependencies
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Unit tests
+        run: flutter test
+
+      - name: Build production-like debug APK
+        env:
+          AIMS_TRACKING_TOKEN: ${{ secrets.AIMS_TRACKING_TOKEN }}
+          AIMS_FIREBASE_API_KEY: ${{ secrets.AIMS_FIREBASE_API_KEY }}
+          AIMS_FIREBASE_PROJECT_ID: ${{ secrets.AIMS_FIREBASE_PROJECT_ID }}
+          AIMS_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.AIMS_FIREBASE_MESSAGING_SENDER_ID }}
+          AIMS_FIREBASE_ANDROID_APP_ID: ${{ secrets.AIMS_FIREBASE_ANDROID_APP_ID }}
+          AIMS_FIREBASE_STORAGE_BUCKET: ${{ secrets.AIMS_FIREBASE_STORAGE_BUCKET }}
+        run: |
+          test -n "$AIMS_TRACKING_TOKEN"
+          AIMS_FIREBASE_API_KEY="${AIMS_FIREBASE_API_KEY:-$AIMS_FIREBASE_API_KEY_FALLBACK}"
+          AIMS_FIREBASE_PROJECT_ID="${AIMS_FIREBASE_PROJECT_ID:-$AIMS_FIREBASE_PROJECT_ID_FALLBACK}"
+          AIMS_FIREBASE_MESSAGING_SENDER_ID="${AIMS_FIREBASE_MESSAGING_SENDER_ID:-$AIMS_FIREBASE_MESSAGING_SENDER_ID_FALLBACK}"
+          AIMS_FIREBASE_ANDROID_APP_ID="${AIMS_FIREBASE_ANDROID_APP_ID:-$AIMS_FIREBASE_ANDROID_APP_ID_FALLBACK}"
+          AIMS_FIREBASE_STORAGE_BUCKET="${AIMS_FIREBASE_STORAGE_BUCKET:-$AIMS_FIREBASE_STORAGE_BUCKET_FALLBACK}"
+          flutter build apk --debug \
+            --dart-define=AIMS_TRACKING_BASE_URL=https://logistic-aims.hu/api/aims-tracking \
+            --dart-define=AIMS_TRACKING_TOKEN="$AIMS_TRACKING_TOKEN" \
+            --dart-define=AIMS_FIREBASE_API_KEY="$AIMS_FIREBASE_API_KEY" \
+            --dart-define=AIMS_FIREBASE_PROJECT_ID="$AIMS_FIREBASE_PROJECT_ID" \
+            --dart-define=AIMS_FIREBASE_MESSAGING_SENDER_ID="$AIMS_FIREBASE_MESSAGING_SENDER_ID" \
+            --dart-define=AIMS_FIREBASE_ANDROID_APP_ID="$AIMS_FIREBASE_ANDROID_APP_ID" \
+            --dart-define=AIMS_FIREBASE_STORAGE_BUCKET="$AIMS_FIREBASE_STORAGE_BUCKET"
+
+      - name: APK sanity check
+        run: |
+          test -s build/app/outputs/flutter-apk/app-debug.apk
+          unzip -t build/app/outputs/flutter-apk/app-debug.apk > /tmp/apk-test.txt
+          tail -5 /tmp/apk-test.txt
+          cp build/app/outputs/flutter-apk/app-debug.apk AIMS-Flow-Driver-v1.apk
+          sha256sum AIMS-Flow-Driver-v1.apk | tee AIMS-Flow-Driver-v1.sha256
+          ls -lh AIMS-Flow-Driver-v1.apk
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: AIMS-Flow-Driver-v1-ANDROID
+          path: |
+            AIMS-Flow-Driver-v1.apk
+            AIMS-Flow-Driver-v1.sha256
+          if-no-files-found: error
