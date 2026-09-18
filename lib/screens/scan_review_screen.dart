@@ -7,6 +7,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../models/scan_models.dart';
 import '../models/tracking_models.dart';
+import '../services/aims_locale.dart';
 import '../services/location_capture_service.dart';
 import '../services/scan_repository.dart';
 import '../services/sync_coordinator.dart';
@@ -48,6 +49,14 @@ class _ScanReviewScreenState extends State<ScanReviewScreen> {
   ScannedDocument? _savedDocument;
   bool _saving = false;
   bool _sharing = false;
+
+  String _l(String hu, String en, String de) => switch (
+        AimsLocaleController.instance.languageCode
+      ) {
+        'en' => en,
+        'de' => de,
+        _ => hu,
+      };
 
   @override
   void initState() {
@@ -166,13 +175,13 @@ class _ScanReviewScreenState extends State<ScanReviewScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(saved.location == null
-              ? 'CMR mentve offline. Helyadat nem állt rendelkezésre; a szinkron automatikusan indul.'
-              : 'CMR mentve GPS-bélyeggel. A szinkron automatikusan indul.'),
+              ? _l('CMR mentve offline. Helyadat nem állt rendelkezésre; a szinkron automatikusan indul.', 'CMR saved offline. No location was available; sync will start automatically.', 'CMR offline gespeichert. Keine Standortdaten verfügbar; die Synchronisierung startet automatisch.')
+              : _l('CMR mentve GPS-bélyeggel. A szinkron automatikusan indul.', 'CMR saved with GPS stamp. Sync will start automatically.', 'CMR mit GPS-Stempel gespeichert. Die Synchronisierung startet automatisch.')),
         ),
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('A mentés nem sikerült: $e')));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(_l('A mentés nem sikerült: $e', 'Save failed: $e', 'Speichern fehlgeschlagen: $e'))));
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -192,7 +201,7 @@ class _ScanReviewScreenState extends State<ScanReviewScreen> {
       final text = StringBuffer()
         ..writeln('AIMS Flow Smart Scanner • CMR')
         ..writeln('CMR: ${document.cmr.cmrNumber ?? '—'}')
-        ..writeln('Rendszám: ${document.cmr.plate ?? '—'}')
+        ..writeln(_l('Rendszám: ${document.cmr.plate ?? '—'}', 'Plate: ${document.cmr.plate ?? '—'}', 'Kennzeichen: ${document.cmr.plate ?? '—'}'))
         ..writeln('Mentve: ${_formatDate(document.createdAt)}');
       if (loc != null) {
         text.writeln('GPS: ${loc.latitude.toStringAsFixed(6)}, ${loc.longitude.toStringAsFixed(6)} (±${loc.accuracy.toStringAsFixed(0)} m)');
@@ -216,11 +225,11 @@ class _ScanReviewScreenState extends State<ScanReviewScreen> {
   }
 
   String _syncText(CmrSyncState state) => switch (state) {
-        CmrSyncState.pending => 'Szinkronra vár',
-        CmrSyncState.uploaded => 'Feltöltve',
-        CmrSyncState.emailed => 'E-mail elküldve',
-        CmrSyncState.approved => 'Admin jóváhagyta',
-        CmrSyncState.failed => 'Offline / újrapróbálásra vár',
+        CmrSyncState.pending => _l('Szinkronra vár', 'Waiting for sync', 'Wartet auf Synchronisierung'),
+        CmrSyncState.uploaded => _l('Feltöltve', 'Uploaded', 'Hochgeladen'),
+        CmrSyncState.emailed => _l('E-mail elküldve', 'Email sent', 'E-Mail gesendet'),
+        CmrSyncState.approved => _l('Admin jóváhagyta', 'Approved by admin', 'Vom Admin genehmigt'),
+        CmrSyncState.failed => _l('Offline / újrapróbálásra vár', 'Offline / waiting to retry', 'Offline / wartet auf neuen Versuch'),
       };
 
   @override
@@ -235,7 +244,13 @@ class _ScanReviewScreenState extends State<ScanReviewScreen> {
       appBar: AppBar(
         backgroundColor: const Color(0xFF0C0F13),
         foregroundColor: Colors.white,
-        title: const Text('CMR • Smart Scan eredmény'),
+        title: Text(_l('CMR • Smart Scan eredmény', 'CMR • Smart Scan result', 'CMR • Smart-Scan-Ergebnis')),
+        actions: const [
+          Padding(
+            padding: EdgeInsets.only(right: 8),
+            child: AimsLanguageSelector(compact: true),
+          ),
+        ],
       ),
       body: SafeArea(
         child: ListView(
@@ -248,7 +263,7 @@ class _ScanReviewScreenState extends State<ScanReviewScreen> {
               child: Image.file(
                 File(imagePath),
                 fit: BoxFit.contain,
-                errorBuilder: (_, __, ___) => const SizedBox(height: 220, child: Center(child: Text('Az előnézet nem tölthető be.', style: TextStyle(color: Colors.white70)))),
+                errorBuilder: (_, __, ___) => SizedBox(height: 220, child: Center(child: Text(_l('Az előnézet nem tölthető be.', 'Preview cannot be loaded.', 'Vorschau kann nicht geladen werden.'), style: const TextStyle(color: Colors.white70)))),
               ),
             ),
             const SizedBox(height: 14),
@@ -267,8 +282,8 @@ class _ScanReviewScreenState extends State<ScanReviewScreen> {
                   Expanded(
                     child: Text(
                       hasText
-                          ? 'A dokumentum feldolgozása és az OCR lefutott. Ellenőrizd a mezőket; mentéskor valós idő- és engedélyezett GPS-adat kerül hozzá.'
-                          : 'Az OCR nem talált biztos szöveget. A mezőket kézzel is kitöltheted; mentéskor idő- és GPS-bélyeg kérhető.',
+                          ? _l('A dokumentum feldolgozása és az OCR lefutott. Ellenőrizd a mezőket; mentéskor valós idő- és engedélyezett GPS-adat kerül hozzá.', 'Document processing and OCR completed. Review the fields; time and permitted GPS data are attached when saving.', 'Dokumentverarbeitung und OCR sind abgeschlossen. Prüfe die Felder; beim Speichern werden Zeit- und erlaubte GPS-Daten hinzugefügt.')
+                          : _l('Az OCR nem talált biztos szöveget. A mezőket kézzel is kitöltheted; mentéskor idő- és GPS-bélyeg kérhető.', 'OCR did not find reliable text. You can fill the fields manually; time and GPS stamps can be added on save.', 'OCR hat keinen sicheren Text erkannt. Die Felder können manuell ausgefüllt werden; beim Speichern können Zeit- und GPS-Stempel hinzugefügt werden.'),
                       style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
                     ),
                   ),
@@ -288,7 +303,7 @@ class _ScanReviewScreenState extends State<ScanReviewScreen> {
                 children: [
                   Row(
                     children: [
-                      const Expanded(child: Text('Adatkitöltés', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800))),
+                      Expanded(child: Text(_l('Adatkitöltés', 'Data completion', 'Datenerfassung'), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800))),
                       Text('$filled / 10', style: const TextStyle(color: Color(0xFFE6B85C), fontWeight: FontWeight.w900)),
                     ],
                   ),
@@ -298,29 +313,29 @@ class _ScanReviewScreenState extends State<ScanReviewScreen> {
               ),
             ),
             const SizedBox(height: 18),
-            const Text('Felismert CMR adatok', key: ValueKey('cmr-results-title'), style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w900)),
+            Text(_l('Felismert CMR adatok', 'Recognized CMR data', 'Erkannte CMR-Daten'), key: const ValueKey('cmr-results-title'), style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w900)),
             const SizedBox(height: 5),
-            const Text('Ellenőrizd és javítsd az adatokat. Az OCR-t mindig vesd össze az eredeti dokumentummal.', style: TextStyle(color: Colors.white54)),
+            Text(_l('Ellenőrizd és javítsd az adatokat. Az OCR-t mindig vesd össze az eredeti dokumentummal.', 'Review and correct the data. Always compare OCR results with the original document.', 'Daten prüfen und korrigieren. OCR-Ergebnisse immer mit dem Originaldokument vergleichen.'), style: const TextStyle(color: Colors.white54)),
             const SizedBox(height: 12),
-            _field('CMR szám', _cmrNumber),
-            _field('Feladó', _shipper, maxLines: 2),
-            _field('Címzett', _consignee, maxLines: 2),
-            _field('Felrakóhely', _loadingPlace, maxLines: 2),
-            _field('Lerakóhely', _deliveryPlace, maxLines: 2),
-            _field('Dátum', _date),
-            _field('Rendszám', _plate, textCapitalization: TextCapitalization.characters),
-            _field('Darabszám', _packageCount, keyboardType: TextInputType.number),
-            _field('Bruttó tömeg (kg)', _grossWeight, keyboardType: const TextInputType.numberWithOptions(decimal: true)),
-            _field('Áru', _goods, maxLines: 3),
+            _field(_l('CMR szám', 'CMR number', 'CMR-Nummer'), _cmrNumber),
+            _field(_l('Feladó', 'Consignor', 'Absender'), _shipper, maxLines: 2),
+            _field(_l('Címzett', 'Consignee', 'Empfänger'), _consignee, maxLines: 2),
+            _field(_l('Felrakóhely', 'Loading place', 'Ladeort'), _loadingPlace, maxLines: 2),
+            _field(_l('Lerakóhely', 'Delivery place', 'Entladeort'), _deliveryPlace, maxLines: 2),
+            _field(_l('Dátum', 'Date', 'Datum'), _date),
+            _field(_l('Rendszám', 'Plate', 'Kennzeichen'), _plate, textCapitalization: TextCapitalization.characters),
+            _field(_l('Darabszám', 'Package count', 'Packstückzahl'), _packageCount, keyboardType: TextInputType.number),
+            _field(_l('Bruttó tömeg (kg)', 'Gross weight (kg)', 'Bruttogewicht (kg)'), _grossWeight, keyboardType: const TextInputType.numberWithOptions(decimal: true)),
+            _field(_l('Áru', 'Goods', 'Ware'), _goods, maxLines: 3),
             const SizedBox(height: 8),
             ExpansionTile(
               collapsedIconColor: Colors.white60,
               iconColor: const Color(0xFFE6B85C),
-              title: const Text('OCR nyers szöveg', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+              title: Text(_l('OCR nyers szöveg', 'Raw OCR text', 'OCR-Rohtext'), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
               children: [
                 Padding(
                   padding: const EdgeInsets.fromLTRB(12, 0, 12, 14),
-                  child: SelectableText(widget.cmr.rawText.trim().isEmpty ? 'Nem sikerült szöveget felismerni.' : widget.cmr.rawText, style: const TextStyle(color: Colors.white70, height: 1.35)),
+                  child: SelectableText(widget.cmr.rawText.trim().isEmpty ? _l('Nem sikerült szöveget felismerni.', 'No text could be recognized.', 'Es konnte kein Text erkannt werden.') : widget.cmr.rawText, style: const TextStyle(color: Colors.white70, height: 1.35)),
                 ),
               ],
             ),
@@ -333,7 +348,7 @@ class _ScanReviewScreenState extends State<ScanReviewScreen> {
               icon: _saving
                   ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
                   : Icon(_savedDocument == null ? Icons.save_rounded : Icons.check_circle_rounded),
-              label: Text(_saving ? 'Mentés…' : (_savedDocument == null ? 'Mentés + GPS + automatikus szinkron' : 'Módosítások mentése')),
+              label: Text(_saving ? _l('Mentés…', 'Saving…', 'Speichern…') : (_savedDocument == null ? _l('Mentés + GPS + automatikus szinkron', 'Save + GPS + automatic sync', 'Speichern + GPS + automatische Synchronisierung') : _l('Módosítások mentése', 'Save changes', 'Änderungen speichern'))),
               style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(56), backgroundColor: const Color(0xFFE6B85C), foregroundColor: Colors.black, textStyle: const TextStyle(fontWeight: FontWeight.w900)),
             ),
             const SizedBox(height: 10),
@@ -341,14 +356,14 @@ class _ScanReviewScreenState extends State<ScanReviewScreen> {
               key: const ValueKey('share-cmr'),
               onPressed: (_sharing || _saving) ? null : _share,
               icon: _sharing ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.share_rounded),
-              label: const Text('E-mail • Viber • Megosztás'),
+              label: Text(_l('E-mail • Viber • Megosztás', 'Email • Viber • Share', 'E-Mail • Viber • Teilen')),
               style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(54), foregroundColor: Colors.white, side: const BorderSide(color: Color(0xFFE6B85C))),
             ),
             const SizedBox(height: 10),
             OutlinedButton.icon(
               onPressed: () => Navigator.of(context).popUntil((route) => route.isFirst),
               icon: const Icon(Icons.document_scanner_rounded),
-              label: const Text('Új CMR fotózása'),
+              label: Text(_l('Új CMR fotózása', 'Photograph new CMR', 'Neuen CMR fotografieren')),
               style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(52), foregroundColor: Colors.white, side: const BorderSide(color: Colors.white24)),
             ),
           ],
@@ -365,16 +380,16 @@ class _ScanReviewScreenState extends State<ScanReviewScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Mentési és szinkronadat', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900)),
+          Text(_l('Mentési és szinkronadat', 'Save and sync data', 'Speicher- und Synchronisierungsdaten'), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900)),
           const SizedBox(height: 7),
-          Text('Idő: ${_formatDate(document.createdAt)}', style: const TextStyle(color: Colors.white70)),
+          Text(_l('Idő: ${_formatDate(document.createdAt)}', 'Time: ${_formatDate(document.createdAt)}', 'Zeit: ${_formatDate(document.createdAt)}'), style: const TextStyle(color: Colors.white70)),
           const SizedBox(height: 4),
           Text(
             loc == null ? 'GPS: nincs helyadat' : 'GPS: ${loc.latitude.toStringAsFixed(6)}, ${loc.longitude.toStringAsFixed(6)} • ±${loc.accuracy.toStringAsFixed(0)} m',
             style: const TextStyle(color: Colors.white70),
           ),
           const SizedBox(height: 4),
-          Text('Státusz: ${_syncText(document.syncState)}', style: const TextStyle(color: Color(0xFFE6B85C), fontWeight: FontWeight.w800)),
+          Text(_l('Státusz: ${_syncText(document.syncState)}', 'Status: ${_syncText(document.syncState)}', 'Status: ${_syncText(document.syncState)}'), style: const TextStyle(color: Color(0xFFE6B85C), fontWeight: FontWeight.w800)),
         ],
       ),
     );
@@ -390,12 +405,12 @@ class _ScanReviewScreenState extends State<ScanReviewScreen> {
         children: [
           Row(
             children: [
-              const Expanded(child: Text('Képminőség', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800))),
+              Expanded(child: Text(_l('Képminőség', 'Image quality', 'Bildqualität'), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800))),
               Text('${widget.quality.score}/100', style: const TextStyle(color: Color(0xFFE6B85C), fontWeight: FontWeight.w900)),
             ],
           ),
           const SizedBox(height: 7),
-          Text(warnings.isEmpty ? 'A képminőség rendben.' : warnings.join('\n'), style: TextStyle(color: warnings.isEmpty ? const Color(0xFF48D597) : Colors.orangeAccent, height: 1.35)),
+          Text(warnings.isEmpty ? _l('A képminőség rendben.', 'Image quality is good.', 'Die Bildqualität ist in Ordnung.') : warnings.join('\n'), style: TextStyle(color: warnings.isEmpty ? const Color(0xFF48D597) : Colors.orangeAccent, height: 1.35)),
         ],
       ),
     );
