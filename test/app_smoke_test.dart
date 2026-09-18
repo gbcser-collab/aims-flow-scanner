@@ -52,6 +52,32 @@ void main() {
     expect(find.byKey(const Key('flow-register-email')), findsOneWidget);
   });
 
+  testWidgets('country search starts empty and shows at most five matches',
+      (tester) async {
+    await tester.pumpWidget(const AimsFlowApp());
+    await tester.pump();
+
+    await tester.ensureVisible(find.byKey(const Key('flow-register-open')));
+    await tester.tap(find.byKey(const Key('flow-register-open')));
+    await tester.pumpAndSettle();
+
+    final countryFinder = find.byKey(const Key('flow-register-country'));
+    final countryField = tester.widget<TextField>(countryFinder);
+    expect(countryField.controller?.text ?? '', isEmpty);
+
+    await tester.enterText(countryFinder, 'ma');
+    await tester.pump();
+
+    final suggestions = find.byKey(const Key('flow-country-suggestions'));
+    expect(suggestions, findsOneWidget);
+    expect(
+      find.descendant(of: suggestions, matching: find.byType(ListTile)).evaluate().length,
+      lessThanOrEqualTo(5),
+    );
+    expect(find.text('Magyarország'), findsOneWidget);
+    expect(find.textContaining('Adószám'), findsNothing);
+  });
+
   testWidgets('driver shell keeps developed core actions', (tester) async {
     await tester.pumpWidget(
       const MaterialApp(home: DriverShellScreen()),
