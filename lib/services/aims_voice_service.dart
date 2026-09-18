@@ -58,8 +58,10 @@ class AimsVoiceService {
   bool _commandMode = false;
   bool _speaking = false;
   bool _handlingResult = false;
+  bool _maleVoiceMatched = false;
   String _localeId = 'hu_HU';
   String _lastHeard = '';
+  String _selectedVoiceName = '';
 
   Stream<AimsVoiceState> get states => _states.stream;
   bool get enabled => _enabled;
@@ -142,6 +144,7 @@ class AimsVoiceService {
     await _startListening(
       mode: AimsVoiceMode.wakeWord,
       message: _locale.t('wake_listening'),
+      wakeOnly: true,
     );
   }
 
@@ -151,12 +154,14 @@ class AimsVoiceService {
     await _startListening(
       mode: AimsVoiceMode.command,
       message: _assistantGreeting(),
+      wakeOnly: false,
     );
   }
 
   Future<void> _startListening({
     required AimsVoiceMode mode,
     required String message,
+    required bool wakeOnly,
   }) async {
     if (_speech.isListening) return;
 
@@ -165,53 +170,82 @@ class AimsVoiceService {
         enabled: _enabled,
         mode: mode,
         message: message,
-        lastHeard: _lastHeard,
+        lastHeard: wakeOnly ? '' : _lastHeard,
       ),
     );
 
-    await _speech.listen(
-      onResult: _onResult,
-      listenOptions: SpeechListenOptions(
-        listenMode: ListenMode.dictation,
-        onDevice: false,
-        cancelOnError: false,
-        partialResults: true,
-        autoPunctuation: false,
-        enableHapticFeedback: false,
-        pauseFor: const Duration(seconds: 8),
-        listenFor: const Duration(minutes: 2),
-        localeId: _localeId,
-        contextualPhrases: switch (_locale.languageCode) {
-          'en' => const [
-              'AIMS',
-              'pickup',
-              'delivery',
-              'job',
-              'navigation',
-              'contact',
-              'CMR',
-            ],
-          'de' => const [
-              'AIMS',
-              'Abholung',
-              'Zustellung',
-              'Auftrag',
-              'Navigation',
-              'Ansprechpartner',
-              'CMR',
-            ],
-          _ => const [
-              'AIMS',
-              'felrakó',
-              'lerakó',
-              'fuvar',
-              'navigáció',
-              'kapcsolattartó',
-              'CMR',
-            ],
-        },
-      ),
+    final options = SpeechListenOptions(
+      listenMode: wakeOnly ? ListenMode.search : ListenMode.dictation,
+      onDevice: wakeOnly,
+      cancelOnError: false,
+      partialResults: true,
+      autoPunctuation: false,
+      enableHapticFeedback: false,
+      pauseFor: wakeOnly
+          ? const Duration(seconds: 2)
+          : const Duration(seconds: 4),
+      listenFor: wakeOnly
+          ? const Duration(seconds: 10)
+          : const Duration(seconds: 12),
+      localeId: _localeId,
+      contextualPhrases: switch (_locale.languageCode) {
+        'en' => const [
+            'AIMS',
+            'pickup',
+            'delivery',
+            'job',
+            'navigation',
+            'contact',
+            'CMR',
+          ],
+        'de' => const [
+            'AIMS',
+            'Abholung',
+            'Zustellung',
+            'Auftrag',
+            'Navigation',
+            'Ansprechpartner',
+            'CMR',
+          ],
+        _ => const [
+            'AIMS',
+            'felrakó',
+            'lerakó',
+            'fuvar',
+            'navigáció',
+            'kapcsolattartó',
+            'CMR',
+          ],
+      },
     );
+
+    try {
+      await _speech.listen(
+        onResult: _onResult,
+        listenOptions: options,
+      );
+    } catch (_) {
+      if (!wakeOnly) rethrow;
+
+      // Some Android speech engines do not support on-device recognition.
+      // Fall back to a short search session instead of the old 2-minute
+      // continuous dictation loop.
+      await _speech.listen(
+        onResult: _onResult,
+        listenOptions: SpeechListenOptions(
+          listenMode: ListenMode.search,
+          onDevice: false,
+          cancelOnError: false,
+          partialResults: true,
+          autoPunctuation: false,
+          enableHapticFeedback: false,
+          pauseFor: const Duration(seconds: 2),
+          listenFor: const Duration(seconds: 8),
+          localeId: _localeId,
+          contextualPhrases: const ['AIMS'],
+        ),
+      );
+    }
   }
 
   void _onResult(SpeechRecognitionResult result) {
@@ -330,14 +364,19 @@ class AimsVoiceService {
     if (!_enabled || _speaking || _handlingResult) return;
     if (s.contains('done') || s.contains('notlistening')) {
       _restartTimer?.cancel();
-      _restartTimer = Timer(const Duration(milliseconds: 450), () {
+      _restartTimer = Timer(
+        _commandMode
+            ? const Duration(milliseconds: 350)
+            : const Duration(milliseconds: 1200),
+        () {
         if (!_enabled || _speaking || _handlingResult) return;
         if (_commandMode) {
           unawaited(_startCommandListening());
         } else {
           unawaited(_startWakeListening());
         }
-      });
+        },
+      );
     }
   }
 
@@ -367,11 +406,101 @@ class AimsVoiceService {
 
   Future<void> _applyLanguage() async {
     _localeId = _locale.speechLocale;
+
+    // Prefer Google's Android TTS engine when available; it generally exposes
+    // the better quality network/neural voices on modern Android phones.
+    try {
+      final engines = await _tts.getEngines;
+      if (engines is List &&
+          engines.map((e) => e.toString()).contains('com.google.android.tts')) {
+        await _tts.setEngine('com.google.android.tts');
+      }
+    } catch (_) {}
+
     await _tts.setLanguage(_locale.ttsLocale);
-    await _tts.setSpeechRate(0.47);
+    await _selectPreferredVoice();
+    await _tts.setSpeechRate(0.46);
     await _tts.setVolume(1.0);
-    await _tts.setPitch(1.0);
+    await _tts.setPitch(_maleVoiceMatched ? 0.92 : 0.78);
     await _tts.awaitSpeakCompletion(true);
+  }
+
+  Future<void> _selectPreferredVoice() async {
+    _maleVoiceMatched = false;
+    _selectedVoiceName = '';
+
+    try {
+      final raw = await _tts.getVoices;
+      if (raw is! List) return;
+
+      final wantedLocale = _locale.ttsLocale.toLowerCase().replaceAll('_', '-');
+      final wantedLanguage = wantedLocale.split('-').first;
+
+      Map<String, dynamic>? best;
+      var bestScore = -100000;
+
+      for (final item in raw) {
+        if (item is! Map) continue;
+        final voice = Map<String, dynamic>.from(item);
+        final name = (voice['name'] ?? '').toString();
+        final locale =
+            (voice['locale'] ?? '').toString().toLowerCase().replaceAll('_', '-');
+        if (name.isEmpty || locale.isEmpty) continue;
+        if (!locale.startsWith(wantedLanguage)) continue;
+
+        final haystack = [
+          name,
+          voice['gender'],
+          voice['features'],
+        ].where((v) => v != null).join(' ').toLowerCase();
+
+        var score = 0;
+        if (locale == wantedLocale) score += 200;
+        if (haystack.contains('male') ||
+            haystack.contains('masculine') ||
+            haystack.contains('#male')) {
+          score += 1000;
+        }
+        if (haystack.contains('neural') ||
+            haystack.contains('natural') ||
+            haystack.contains('wavenet')) {
+          score += 180;
+        }
+        if ((voice['network_required'] ?? '').toString() == 'true') {
+          score += 50;
+        }
+
+        final quality =
+            int.tryParse((voice['quality'] ?? '').toString()) ?? 0;
+        score += quality ~/ 10;
+
+        if (score > bestScore) {
+          bestScore = score;
+          best = voice;
+        }
+      }
+
+      if (best == null) return;
+
+      final name = (best['name'] ?? '').toString();
+      final locale = (best['locale'] ?? '').toString();
+      if (name.isEmpty || locale.isEmpty) return;
+
+      await _tts.setVoice({'name': name, 'locale': locale});
+      _selectedVoiceName = name;
+
+      final voiceText = [
+        name,
+        best['gender'],
+        best['features'],
+      ].where((v) => v != null).join(' ').toLowerCase();
+      _maleVoiceMatched = voiceText.contains('male') ||
+          voiceText.contains('masculine') ||
+          voiceText.contains('#male');
+    } catch (_) {
+      _maleVoiceMatched = false;
+      _selectedVoiceName = '';
+    }
   }
 
   void _onLanguageChanged() {
