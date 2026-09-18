@@ -51,6 +51,8 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
+          import shutil
+
           p=Path('android/app/src/main/AndroidManifest.xml')
           s=p.read_text()
           permissions=[
@@ -67,52 +69,81 @@ jobs:
             'android.permission.POST_NOTIFICATIONS',
             'android.permission.VIBRATE',
           ]
-          block='\n'.join(f'    <uses-permission android:name="{x}" />' for x in permissions)
-          queries='''    <queries>
-        <intent>
-            <action android:name="android.speech.RecognitionService" />
-        </intent>
-        <intent>
-            <action android:name="android.intent.action.TTS_SERVICE" />
-        </intent>
-    </queries>'''
-          s=s.replace('<application', block+'\n'+queries+'\n    <application',1)
-          s=s.replace('android:label="aims_flow_scanner"','android:label="AIMS Flow"')
+          permission_block='\n'.join(
+              f'    <uses-permission android:name="{name}" />'
+              for name in permissions
+          )
+          queries='\n'.join([
+              '    <queries>',
+              '        <intent>',
+              '            <action android:name="android.speech.RecognitionService" />',
+              '        </intent>',
+              '        <intent>',
+              '            <action android:name="android.intent.action.TTS_SERVICE" />',
+              '        </intent>',
+              '    </queries>',
+          ])
+          s=s.replace(
+              '<application',
+              permission_block+'\n'+queries+'\n    <application',
+              1,
+          )
+          s=s.replace(
+              'android:label="aims_flow_scanner"',
+              'android:label="AIMS Flow"',
+          )
 
-          assist='''            <intent-filter>
-                <action android:name="android.intent.action.ASSIST" />
-                <category android:name="android.intent.category.DEFAULT" />
-            </intent-filter>
-'''
+          assist='\n'.join([
+              '            <intent-filter>',
+              '                <action android:name="android.intent.action.ASSIST" />',
+              '                <category android:name="android.intent.category.DEFAULT" />',
+              '            </intent-filter>',
+              '',
+          ])
           activity_end=s.find('</activity>')
           if activity_end < 0:
               raise SystemExit('MainActivity closing tag not found')
           s=s[:activity_end]+assist+s[activity_end:]
 
-          service='''        <service
-            android:name=".AimsHandsFreeService"
-            android:enabled="true"
-            android:exported="false"
-            android:foregroundServiceType="microphone" />
-'''
+          service='\n'.join([
+              '        <service',
+              '            android:name=".AimsHandsFreeService"',
+              '            android:enabled="true"',
+              '            android:exported="false"',
+              '            android:foregroundServiceType="microphone" />',
+              '',
+          ])
           s=s.replace('</application>',service+'    </application>',1)
           p.write_text(s)
 
-          import shutil
           native=Path('native/android')
           target=Path('android/app/src/main/kotlin/hu/logisticaims/aims_flow_scanner')
           target.mkdir(parents=True,exist_ok=True)
           shutil.copy2(native/'MainActivity.kt',target/'MainActivity.kt')
-          shutil.copy2(native/'AimsHandsFreeService.kt',target/'AimsHandsFreeService.kt')
+          shutil.copy2(
+              native/'AimsHandsFreeService.kt',
+              target/'AimsHandsFreeService.kt',
+          )
 
           g=Path('android/app/build.gradle.kts')
           text=g.read_text()
-          text=text.replace('minSdk = flutter.minSdkVersion','minSdk = 23')
+          text=text.replace(
+              'minSdk = flutter.minSdkVersion',
+              'minSdk = 23',
+          )
           if 'isCoreLibraryDesugaringEnabled = true' not in text:
-              text=text.replace('compileOptions {','compileOptions {\n        isCoreLibraryDesugaringEnabled = true',1)
+              text=text.replace(
+                  'compileOptions {',
+                  'compileOptions {\n        isCoreLibraryDesugaringEnabled = true',
+                  1,
+              )
           if 'coreLibraryDesugaring(' not in text:
               if 'dependencies {' in text:
-                  text=text.replace('dependencies {','dependencies {\n    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")',1)
+                  text=text.replace(
+                      'dependencies {',
+                      'dependencies {\n    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")',
+                      1,
+                  )
               else:
                   text += '\n\ndependencies {\n    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")\n}\n'
           g.write_text(text)
