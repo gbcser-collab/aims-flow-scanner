@@ -145,6 +145,11 @@ class DriverPushService {
     return event;
   }
 
+  Future<void> cancelJobNotification(int jobId) async {
+    if (jobId <= 0) return;
+    await _notifications.cancel(jobId);
+  }
+
   Future<void> registerForPlate(String plate) async {
     final cleanPlate = plate.trim().toUpperCase();
     if (cleanPlate.isEmpty) {
