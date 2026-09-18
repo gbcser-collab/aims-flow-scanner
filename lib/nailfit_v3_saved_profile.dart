@@ -308,10 +308,10 @@ class NailFitV3SavedProfile {
               ),
               const SizedBox(height: 8),
               FilledButton.icon(
-                onPressed: () {
-                  c.clearSaved();
-                  Navigator.pop(sheetContext);
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('A kedvencek, mentett lookok és PNG-fájlok törlése elindult.')));
+                onPressed: () async {
+                  await c.clearSaved();
+                  if (sheetContext.mounted) Navigator.pop(sheetContext);
+                  if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('A kedvencek, mentett lookok és PNG-fájlok törölve.')));
                 },
                 icon: const Icon(Icons.delete_outline_rounded),
                 label: const Text('Mentések + PNG-k törlése'),
