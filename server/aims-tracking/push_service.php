@@ -208,7 +208,6 @@ function aims_send_push(array $device, array $notification): array {
             'android' => [
                 'priority' => 'high',
                 'notification' => [
-                    'channel_id' => 'aims_flow_alerts',
                     'sound' => 'default',
                 ],
             ],
