@@ -214,11 +214,25 @@ class NailFitV3Controller extends ChangeNotifier {
     return File('${dir.path}/nailfit_state_v4.json');
   }
 
+  Future<Map<String, dynamic>?> _readPersistedState() async {
+    final file = await _stateFile;
+    final backup = File('${file.path}.bak');
+    for (final candidate in <File>[file, backup]) {
+      try {
+        if (!await candidate.exists()) continue;
+        final decoded = jsonDecode(await candidate.readAsString());
+        if (decoded is Map<String, dynamic>) return decoded;
+      } catch (_) {
+        // Try the backup before giving up.
+      }
+    }
+    return null;
+  }
+
   Future<void> restore() async {
     try {
-      final file = await _stateFile;
-      if (!await file.exists()) return;
-      final raw = jsonDecode(await file.readAsString()) as Map<String, dynamic>;
+      final raw = await _readPersistedState();
+      if (raw == null) return;
       favorites
         ..clear()
         ..addAll((raw['favorites'] as List<dynamic>? ?? const []).map((e) => '$e'));
@@ -304,9 +318,12 @@ class NailFitV3Controller extends ChangeNotifier {
   }
 
   Future<void> _persist() async {
+    File? temp;
     try {
       final file = await _stateFile;
-      await file.writeAsString(jsonEncode(<String, dynamic>{
+      final backup = File('${file.path}.bak');
+      temp = File('${file.path}.tmp');
+      final payload = jsonEncode(<String, dynamic>{
         'favorites': favorites.toList(),
         'saved': saved.map((e) => e.name).toList(),
         'savedLooks': saved.map(_lookToJson).toList(),
@@ -326,9 +343,26 @@ class NailFitV3Controller extends ChangeNotifier {
         'photoHeight': photoHeight,
         'lastScanAt': lastScanAt?.toIso8601String(),
         'appointment': appointment?.toIso8601String(),
-      }), flush: true);
+      });
+
+      await temp.writeAsString(payload, flush: true);
+      jsonDecode(await temp.readAsString());
+
+      if (await file.exists()) {
+        await file.copy(backup.path);
+        await file.delete();
+      }
+      await temp.rename(file.path);
     } catch (_) {
-      // Best effort: a futó állapot mentés nélkül is használható.
+      try {
+        final file = await _stateFile;
+        final backup = File('${file.path}.bak');
+        if (!await file.exists() && await backup.exists()) await backup.copy(file.path);
+      } catch (_) {}
+    } finally {
+      try {
+        if (temp != null && await temp.exists()) await temp.delete();
+      } catch (_) {}
     }
   }
 
