@@ -99,13 +99,13 @@ class DriverApiService {
     _ensureConfigured();
     final normalized = plate.trim().toUpperCase();
     final uri = Uri.parse(
-      '\${_base()}/driver_jobs.php?plate=\${Uri.encodeQueryComponent(normalized)}',
+      '${_base()}/driver_jobs.php?plate=${Uri.encodeQueryComponent(normalized)}',
     );
     final response =
         await http.get(uri, headers: _headers).timeout(const Duration(seconds: 12));
     final body = _decode(response);
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw StateError(body['error']?.toString() ?? 'HTTP \${response.statusCode}');
+      throw StateError(body['error']?.toString() ?? 'HTTP ${response.statusCode}');
     }
     return (body['jobs'] as List? ?? const [])
         .whereType<Map>()
@@ -121,7 +121,7 @@ class DriverApiService {
     _ensureConfigured();
     final response = await http
         .post(
-          Uri.parse('\${_base()}/driver_job_ack.php'),
+          Uri.parse('${_base()}/driver_job_ack.php'),
           headers: _headers,
           body: jsonEncode({
             'plate': plate.trim().toUpperCase(),
@@ -132,7 +132,7 @@ class DriverApiService {
         .timeout(const Duration(seconds: 12));
     final body = _decode(response);
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw StateError(body['error']?.toString() ?? 'HTTP \${response.statusCode}');
+      throw StateError(body['error']?.toString() ?? 'HTTP ${response.statusCode}');
     }
   }
 
@@ -144,7 +144,7 @@ class DriverApiService {
     _ensureConfigured();
     final response = await http
         .post(
-          Uri.parse('\${_base()}/driver_push_device.php'),
+          Uri.parse('${_base()}/driver_push_device.php'),
           headers: _headers,
           body: jsonEncode({
             'plate': plate.trim().toUpperCase(),
@@ -156,7 +156,7 @@ class DriverApiService {
         .timeout(const Duration(seconds: 12));
     final body = _decode(response);
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw StateError(body['error']?.toString() ?? 'HTTP \${response.statusCode}');
+      throw StateError(body['error']?.toString() ?? 'HTTP ${response.statusCode}');
     }
   }
 
@@ -171,7 +171,7 @@ class DriverApiService {
     _ensureConfigured();
     final response = await http
         .post(
-          Uri.parse('\${_base()}/driver_event.php'),
+          Uri.parse('${_base()}/driver_event.php'),
           headers: _headers,
           body: jsonEncode({
             'plate': plate.trim().toUpperCase(),
@@ -185,7 +185,7 @@ class DriverApiService {
         .timeout(const Duration(seconds: 12));
     final body = _decode(response);
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw StateError(body['error']?.toString() ?? 'HTTP \${response.statusCode}');
+      throw StateError(body['error']?.toString() ?? 'HTTP ${response.statusCode}');
     }
   }
 
