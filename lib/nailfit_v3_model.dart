@@ -109,6 +109,9 @@ class NailFitV3Controller extends ChangeNotifier {
   double length = premiumLooks.first.length;
 
   Rect? _skinBounds;
+  List<Offset>? _smartPoints;
+  Timer? _persistTimer;
+  Future<void> _persistChain = Future<void>.value();
 
   static const List<Offset> defaultPoints = <Offset>[
     Offset(.79, .57),
@@ -118,8 +121,84 @@ class NailFitV3Controller extends ChangeNotifier {
     Offset(.72, .34),
   ];
 
-  bool get hasSmartCalibration => _skinBounds != null;
+  bool get hasSmartCalibration => _smartPoints?.length == 5 || _skinBounds != null;
   double get photoAspectRatio => photoWidth > 0 && photoHeight > 0 ? photoWidth / photoHeight : 1.0;
+
+  PremiumLook currentSnapshot({String? name}) => PremiumLook(
+        name ?? (shape == look.shape && color.toARGB32() == look.color.toARGB32() && finish == look.finish && (length - look.length).abs() <= .01 ? look.name : '${look.name} · egyedi'),
+        '$shape · ${finish.name} · személyre szabva',
+        color,
+        currentMatchScore,
+        look.image,
+        shape == look.shape && color.toARGB32() == look.color.toARGB32() && finish == look.finish && (length - look.length).abs() <= .01 ? look.category : 'Egyedi',
+        shape: shape,
+        finish: finish,
+        length: length,
+      );
+
+  String get currentLookSignature => _lookSignature(currentSnapshot());
+  bool get isCurrentFavorite => favorites.contains(currentLookSignature) || favorites.contains(look.name);
+  bool isFavorite(PremiumLook item) => favorites.contains(_lookSignature(item)) || favorites.contains(item.name);
+
+  int get currentMatchScore {
+    var score = 76;
+    final recommended = scan?.recommendedShape;
+    if (recommended != null && shape == recommended) score += 9;
+    if (shape == preferredShape) score += 5;
+    if (look.category == preferredStyle) score += 4;
+    if (finish == look.finish) score += 2;
+    if ((length - look.length).abs() <= .14) score += 2;
+    if (scan != null) {
+      final rb = color.r - color.b;
+      final warmColor = rb > 24;
+      final coolColor = rb < 8;
+      if (scan!.undertone == 'meleg' && warmColor) score += 2;
+      if (scan!.undertone == 'hűvös' && coolColor) score += 2;
+      if (scan!.undertone == 'semleges') score += 1;
+      if (scan!.qualityScore < 54) score -= 3;
+    }
+    return score.clamp(68, 98).toInt();
+  }
+
+  String get currentMatchReason {
+    final parts = <String>[];
+    if (scan != null && shape == scan!.recommendedShape) parts.add('ajánlott forma');
+    if (shape == preferredShape) parts.add('profilforma');
+    if (look.category == preferredStyle) parts.add('kedvelt stílus');
+    return parts.isEmpty ? 'stílusprofil és aktuális beállítások' : parts.join(' · ');
+  }
+
+  Offset sourcePointFromViewport(Offset local, Size viewport) {
+    if (photoWidth <= 0 || photoHeight <= 0 || viewport.width <= 0 || viewport.height <= 0) {
+      return Offset((local.dx / viewport.width).clamp(0.0, 1.0).toDouble(), (local.dy / viewport.height).clamp(0.0, 1.0).toDouble());
+    }
+    final scale = math.max(viewport.width / photoWidth, viewport.height / photoHeight);
+    final renderedW = photoWidth * scale;
+    final renderedH = photoHeight * scale;
+    final originX = (viewport.width - renderedW) / 2;
+    final originY = (viewport.height - renderedH) / 2;
+    return Offset(
+      ((local.dx - originX) / renderedW).clamp(0.0, 1.0).toDouble(),
+      ((local.dy - originY) / renderedH).clamp(0.0, 1.0).toDouble(),
+    );
+  }
+
+  Offset viewportPointFromSource(Offset point, Size viewport) {
+    if (photoWidth <= 0 || photoHeight <= 0 || viewport.width <= 0 || viewport.height <= 0) {
+      return Offset(point.dx * viewport.width, point.dy * viewport.height);
+    }
+    final scale = math.max(viewport.width / photoWidth, viewport.height / photoHeight);
+    final renderedW = photoWidth * scale;
+    final renderedH = photoHeight * scale;
+    final originX = (viewport.width - renderedW) / 2;
+    final originY = (viewport.height - renderedH) / 2;
+    return Offset(originX + point.dx * renderedW, originY + point.dy * renderedH);
+  }
+
+  List<Offset> pointsForViewport(Size viewport) => points.map((p) {
+        final q = viewportPointFromSource(p, viewport);
+        return Offset((q.dx / viewport.width).clamp(-.5, 1.5).toDouble(), (q.dy / viewport.height).clamp(-.5, 1.5).toDouble());
+      }).toList(growable: false);
 
   Future<File> get _stateFile async {
     final dir = await getApplicationDocumentsDirectory();
@@ -162,9 +241,14 @@ class NailFitV3Controller extends ChangeNotifier {
       if (finishName != null) finish = NailFinish.values.where((e) => e.name == finishName).firstOrNull ?? finish;
       length = (raw['length'] as num?)?.toDouble().clamp(.68, 1.35).toDouble() ?? length;
 
-      points
-        ..clear()
-        ..addAll((raw['points'] as List<dynamic>? ?? const []).whereType<List<dynamic>>().where((e) => e.length >= 2).map((e) => Offset((e[0] as num).toDouble(), (e[1] as num).toDouble())));
+      points.clear();
+      final pointSpace = raw['pointSpace'] as String?;
+      if (pointSpace == 'source-v1') {
+        points.addAll((raw['points'] as List<dynamic>? ?? const [])
+            .whereType<List<dynamic>>()
+            .where((e) => e.length >= 2 && e[0] is num && e[1] is num)
+            .map((e) => Offset((e[0] as num).toDouble().clamp(0.0, 1.0), (e[1] as num).toDouble().clamp(0.0, 1.0))));
+      }
 
       photoWidth = raw['photoWidth'] as int? ?? 0;
       photoHeight = raw['photoHeight'] as int? ?? 0;
@@ -175,7 +259,7 @@ class NailFitV3Controller extends ChangeNotifier {
       final appointmentRaw = raw['appointment'] as String?;
       appointment = appointmentRaw == null ? null : DateTime.tryParse(appointmentRaw);
       notifyListeners();
-      if (savedPngPaths.length != ((raw['savedPngPaths'] as List<dynamic>? ?? const []).length)) unawaited(_persist());
+      if (savedPngPaths.length != ((raw['savedPngPaths'] as List<dynamic>? ?? const []).length)) _schedulePersist();
     } catch (_) {
       // A sérült helyi állapot nem akadályozhatja az app indulását.
     }
@@ -189,13 +273,20 @@ class NailFitV3Controller extends ChangeNotifier {
       final sourceFile = File(source.path);
       if (sourceFile.absolute.path != target.absolute.path) await sourceFile.copy(target.path);
       lastPhotoPath = target.path;
-      unawaited(_persist());
+      _schedulePersist();
       return XFile(target.path);
     } catch (_) {
       lastPhotoPath = source.path;
-      unawaited(_persist());
+      _schedulePersist();
       return source;
     }
+  }
+
+  void _schedulePersist({Duration delay = const Duration(milliseconds: 180)}) {
+    _persistTimer?.cancel();
+    _persistTimer = Timer(delay, () {
+      _persistChain = _persistChain.then((_) => _persist()).catchError((_) {});
+    });
   }
 
   Future<void> _persist() async {
@@ -215,6 +306,7 @@ class NailFitV3Controller extends ChangeNotifier {
         'finish': finish.name,
         'length': length,
         'points': points.map((e) => <double>[e.dx, e.dy]).toList(),
+        'pointSpace': 'source-v1',
         'lastPhotoPath': lastPhotoPath,
         'photoWidth': photoWidth,
         'photoHeight': photoHeight,
@@ -266,32 +358,32 @@ class NailFitV3Controller extends ChangeNotifier {
       tryCount++;
     }
     notifyListeners();
-    unawaited(_persist());
+    _schedulePersist();
   }
 
   void setShape(String value) {
     shape = value;
     preferredShape = value;
     notifyListeners();
-    unawaited(_persist());
+    _schedulePersist();
   }
 
   void setColor(Color value) {
     color = value;
     notifyListeners();
-    unawaited(_persist());
+    _schedulePersist();
   }
 
   void setFinish(NailFinish value) {
     finish = value;
     notifyListeners();
-    unawaited(_persist());
+    _schedulePersist();
   }
 
   void setLength(double value) {
     length = value.clamp(.68, 1.35).toDouble();
     notifyListeners();
-    unawaited(_persist());
+    _schedulePersist();
   }
 
   void toggleOverlay() {
@@ -300,36 +392,27 @@ class NailFitV3Controller extends ChangeNotifier {
   }
 
   void toggleFavorite([PremiumLook? value]) {
-    final item = value ?? look;
-    if (favorites.contains(item.name)) {
-      favorites.remove(item.name);
-    } else {
-      favorites.add(item.name);
+    final item = value ?? currentSnapshot();
+    final signature = _lookSignature(item);
+    final legacyName = value?.name ?? look.name;
+    final selected = favorites.contains(signature) || favorites.contains(legacyName);
+    favorites.remove(signature);
+    favorites.remove(legacyName);
+    if (!selected) {
+      favorites.add(signature);
+      if (!saved.any((e) => _lookSignature(e) == signature)) saved.insert(0, item);
     }
     notifyListeners();
-    unawaited(_persist());
+    _schedulePersist();
   }
 
   void saveCurrent() {
-    final customized = shape != look.shape || color.toARGB32() != look.color.toARGB32() || finish != look.finish || (length - look.length).abs() > .01;
-    final item = customized
-        ? PremiumLook(
-            '${look.name} · egyedi',
-            '$shape · ${finish.name} · saját finomhangolás',
-            color,
-            look.match,
-            look.image,
-            'Egyedi',
-            shape: shape,
-            finish: finish,
-            length: length,
-          )
-        : look;
+    final item = currentSnapshot();
     final signature = _lookSignature(item);
     saved.removeWhere((e) => _lookSignature(e) == signature);
     saved.insert(0, item);
     notifyListeners();
-    unawaited(_persist());
+    _schedulePersist();
   }
 
   String _lookSignature(PremiumLook p) => '${p.name}|${p.shape}|${p.color.toARGB32()}|${p.finish.name}|${p.length.toStringAsFixed(2)}';
@@ -338,7 +421,7 @@ class NailFitV3Controller extends ChangeNotifier {
     savedPngPaths.remove(path);
     savedPngPaths.insert(0, path);
     saveCurrent();
-    unawaited(_persist());
+    _schedulePersist();
   }
 
   void clearSaved() {
@@ -349,26 +432,26 @@ class NailFitV3Controller extends ChangeNotifier {
     saved.clear();
     savedPngPaths.clear();
     notifyListeners();
-    unawaited(_persist());
+    _schedulePersist();
   }
 
   void toggleNotifications() {
     notificationsEnabled = !notificationsEnabled;
     notifyListeners();
-    unawaited(_persist());
+    _schedulePersist();
   }
 
   void setProfile({String? shape, String? style}) {
     if (shape != null) preferredShape = shape;
     if (style != null) preferredStyle = style;
     notifyListeners();
-    unawaited(_persist());
+    _schedulePersist();
   }
 
   void setAppointment(DateTime value) {
     appointment = value;
     notifyListeners();
-    unawaited(_persist());
+    _schedulePersist();
   }
 
   void resetScan() {
@@ -377,47 +460,69 @@ class NailFitV3Controller extends ChangeNotifier {
     analyzing = false;
     _skinBounds = null;
     notifyListeners();
-    unawaited(_persist());
+    _schedulePersist();
   }
 
   void seedCalibration() {
     final b = _skinBounds;
     points
       ..clear()
-      ..addAll(b == null
-          ? defaultPoints
-          : <Offset>[
-              Offset(b.left + b.width * .88, b.top + b.height * .55),
-              Offset(b.left + b.width * .20, b.top + b.height * .25),
-              Offset(b.left + b.width * .41, b.top + b.height * .14),
-              Offset(b.left + b.width * .62, b.top + b.height * .22),
-              Offset(b.left + b.width * .78, b.top + b.height * .34),
-            ].map((p) => Offset(p.dx.clamp(.02, .98).toDouble(), p.dy.clamp(.02, .98).toDouble())));
+      ..addAll(_smartPoints?.length == 5
+          ? _smartPoints!
+          : b == null
+              ? defaultPoints
+              : <Offset>[
+                  Offset(b.left + b.width * .88, b.top + b.height * .55),
+                  Offset(b.left + b.width * .20, b.top + b.height * .25),
+                  Offset(b.left + b.width * .41, b.top + b.height * .14),
+                  Offset(b.left + b.width * .62, b.top + b.height * .22),
+                  Offset(b.left + b.width * .78, b.top + b.height * .34),
+                ].map((p) => Offset(p.dx.clamp(.02, .98).toDouble(), p.dy.clamp(.02, .98).toDouble())));
+    _refreshGeometryFromPoints();
     notifyListeners();
-    unawaited(_persist());
+    _schedulePersist();
   }
 
   void addPoint(Offset local, Size size) {
     if (points.length >= 5 || size.width <= 0 || size.height <= 0) return;
-    points.add(Offset(
-      (local.dx / size.width).clamp(0.0, 1.0).toDouble(),
-      (local.dy / size.height).clamp(0.0, 1.0).toDouble(),
-    ));
+    points.add(sourcePointFromViewport(local, size));
+    _refreshGeometryFromPoints();
     notifyListeners();
-    unawaited(_persist());
+    _schedulePersist();
+  }
+
+  void moveNearestPoint(Offset local, Size size, {double maxDistance = 72}) {
+    if (points.isEmpty || size.width <= 0 || size.height <= 0) return;
+    var best = -1;
+    var bestDistance = double.infinity;
+    for (var i = 0; i < points.length; i++) {
+      final p = viewportPointFromSource(points[i], size);
+      final d = (p - local).distance;
+      if (d < bestDistance) {
+        bestDistance = d;
+        best = i;
+      }
+    }
+    if (best < 0 || bestDistance > maxDistance) return;
+    points[best] = sourcePointFromViewport(local, size);
+    _refreshGeometryFromPoints();
+    notifyListeners();
+    _schedulePersist();
   }
 
   void undoPoint() {
     if (points.isEmpty) return;
     points.removeLast();
+    _refreshGeometryFromPoints();
     notifyListeners();
-    unawaited(_persist());
+    _schedulePersist();
   }
 
   void clearPoints() {
     points.clear();
+    _refreshGeometryFromPoints();
     notifyListeners();
-    unawaited(_persist());
+    _schedulePersist();
   }
 
   Future<ScanResult?> analyzePhoto(XFile file) async {
@@ -587,7 +692,7 @@ class NailFitV3Controller extends ChangeNotifier {
       finish = candidate.finish;
       length = candidate.length;
       notifyListeners();
-      unawaited(_persist());
+      _schedulePersist();
       return scan;
     } catch (_) {
       scan = const ScanResult(
@@ -615,6 +720,32 @@ class NailFitV3Controller extends ChangeNotifier {
     }
   }
 
+  void _refreshGeometryFromPoints() {
+    final current = scan;
+    if (current == null) return;
+    final hand = _estimateHandShape();
+    final nailBed = _estimateNailBed();
+    final recommended = hand.contains('hossz')
+        ? 'Ovális'
+        : hand.contains('széles')
+            ? 'Mandula'
+            : preferredShape;
+    scan = ScanResult(
+      tone: current.tone,
+      undertone: current.undertone,
+      handShape: hand,
+      nailBed: nailBed,
+      recommendedShape: recommended,
+      quality: current.quality,
+      qualityScore: current.qualityScore,
+      brightness: current.brightness,
+      contrast: current.contrast,
+      resolution: current.resolution,
+      skinCoverage: current.skinCoverage,
+      hint: current.hint,
+    );
+  }
+
   String _estimateHandShape() {
     if (points.length < 5) return 'Arányos · becslés';
     final xs = points.map((e) => e.dx).toList()..sort();
@@ -640,6 +771,13 @@ class NailFitV3Controller extends ChangeNotifier {
     if (avgGap < .085) return 'Keskenyebb · becslés';
     if (avgGap > .16) return 'Szélesebb · becslés';
     return 'Közepes · becslés';
+  }
+
+  @override
+  void dispose() {
+    _persistTimer?.cancel();
+    _persistChain = _persistChain.then((_) => _persist()).catchError((_) {});
+    super.dispose();
   }
 
   PremiumLook recommendFromPrompt(String input) {
