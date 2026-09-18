@@ -313,6 +313,11 @@ class _FlowRegisterScreenState extends State<FlowRegisterScreen> {
       return;
     }
 
+    FocusManager.instance.primaryFocus?.unfocus();
+    _countryFocus.unfocus();
+    await Future<void>.delayed(const Duration(milliseconds: 80));
+    if (!mounted) return;
+
     setState(() {
       _busy = true;
       _error = null;
@@ -334,10 +339,15 @@ class _FlowRegisterScreenState extends State<FlowRegisterScreen> {
       );
       if (!mounted) return;
 
+      FocusManager.instance.primaryFocus?.unfocus();
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+      if (!mounted) return;
+
       await showDialog<void>(
         context: context,
         barrierDismissible: false,
-        builder: (context) => AlertDialog(
+        useRootNavigator: true,
+        builder: (dialogContext) => AlertDialog(
           backgroundColor: const Color(0xFF071522),
           title: Text(
             t(
@@ -362,13 +372,16 @@ class _FlowRegisterScreenState extends State<FlowRegisterScreen> {
           ),
           actions: [
             FilledButton(
-              onPressed: () => Navigator.pop(context),
+              onPressed: () => Navigator.of(dialogContext).pop(),
               child: Text(t('ok')),
             ),
           ],
         ),
       );
-      if (mounted) Navigator.pop(context);
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+      if (mounted) {
+        await Navigator.of(context).maybePop();
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() {
