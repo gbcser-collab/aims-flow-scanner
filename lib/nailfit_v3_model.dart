@@ -655,7 +655,7 @@ class NailFitV3Controller extends ChangeNotifier {
       if (skinSamples.length > 24) {
         final xs = skinSamples.map((p) => p.dx).toList()..sort();
         final ys = skinSamples.map((p) => p.dy).toList()..sort();
-        double q(List<double> values, double p) => values[((values.length - 1) * p).round().clamp(0, values.length - 1)];
+        double q(List<double> values, double p) => values[((values.length - 1) * p).round().clamp(0, values.length - 1).toInt()];
         final left = q(xs, .025);
         final right = q(xs, .975);
         final top = q(ys, .025);
