@@ -12,6 +12,9 @@ void main() {
     expect(find.text('AIMS FLOW'), findsOneWidget);
     expect(find.text('DRIVER OPERATIONS'), findsOneWidget);
     expect(find.text('Belépés'), findsOneWidget);
-    expect(find.textContaining('Nincs készülék-jóváhagyás'), findsOneWidget);
+    expect(
+      find.textContaining('Sofőr belépés rendszámmal és 6 karakteres kóddal'),
+      findsOneWidget,
+    );
   });
 }
