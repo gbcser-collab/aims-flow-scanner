@@ -206,293 +206,352 @@ class _FlowLoginScreenState extends State<FlowLoginScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFF020813),
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [Color(0xFF071E3D), Color(0xFF030A13), Color(0xFF02070E)],
-          ),
-        ),
-        child: SafeArea(
-          child: Center(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(22, 26, 22, 32),
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 520),
-                child: Column(
-                  children: [
-                    Image.memory(_logo, width: 118, height: 118),
-                    const SizedBox(height: 14),
-                    const Text(
-                      'AIMS FLOW',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 30,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 3,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    const Text(
-                      'DRIVER OPERATIONS',
-                      style: TextStyle(
-                        color: _blue,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 3.2,
-                      ),
-                    ),
-                    const SizedBox(height: 28),
-                    Container(
-                      padding: const EdgeInsets.all(20),
-                      decoration: BoxDecoration(
-                        color: const Color(0xDD071725),
-                        borderRadius: BorderRadius.circular(24),
-                        border: Border.all(color: _blue.withValues(alpha: .5)),
-                        boxShadow: [
-                          BoxShadow(
-                            color: _blue.withValues(alpha: .12),
-                            blurRadius: 30,
+    final locale = AimsLocaleController.instance;
+    return AnimatedBuilder(
+      animation: locale,
+      builder: (context, _) {
+        final t = locale.t;
+        return Scaffold(
+          backgroundColor: const Color(0xFF020813),
+          body: Container(
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  Color(0xFF071E3D),
+                  Color(0xFF030A13),
+                  Color(0xFF02070E),
+                ],
+              ),
+            ),
+            child: SafeArea(
+              child: Center(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(22, 18, 22, 32),
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 520),
+                    child: Column(
+                      children: [
+                        const Align(
+                          alignment: Alignment.centerRight,
+                          child: AimsLanguageSelector(),
+                        ),
+                        const SizedBox(height: 12),
+                        Image.memory(_logo, width: 118, height: 118),
+                        const SizedBox(height: 14),
+                        const Text(
+                          'AIMS FLOW',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 30,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 3,
                           ),
-                        ],
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          const Text(
-                            'Belépés',
-                            style: TextStyle(
-                              fontSize: 30,
-                              fontWeight: FontWeight.w900,
+                        ),
+                        const SizedBox(height: 4),
+                        const Text(
+                          'DRIVER OPERATIONS',
+                          style: TextStyle(
+                            color: _blue,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 3.2,
+                          ),
+                        ),
+                        const SizedBox(height: 28),
+                        Container(
+                          padding: const EdgeInsets.all(20),
+                          decoration: BoxDecoration(
+                            color: const Color(0xDD071725),
+                            borderRadius: BorderRadius.circular(24),
+                            border: Border.all(
+                              color: _blue.withValues(alpha: .5),
                             ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: _blue.withValues(alpha: .12),
+                                blurRadius: 30,
+                              ),
+                            ],
                           ),
-                          const SizedBox(height: 6),
-                          Text(
-                            _adminMode
-                                ? 'Admin belépés jelszóval és Authenticator-kóddal.'
-                                : 'Sofőr belépés rendszámmal és 6 karakteres kóddal.',
-                            style: const TextStyle(color: Colors.white54, height: 1.4),
-                          ),
-                          const SizedBox(height: 18),
-                          if (!_adminMode) ...[
-                            TextField(
-                              key: const Key('flow-login-user'),
-                              controller: _login,
-                              textCapitalization: TextCapitalization.characters,
-                              textInputAction: TextInputAction.next,
-                              inputFormatters: [
-                                LengthLimitingTextInputFormatter(12),
-                              ],
-                              decoration: _decoration(
-                                'Rendszám',
-                                Icons.local_shipping_outlined,
-                              ).copyWith(hintText: 'pl. SIP-115'),
-                            ),
-                            const SizedBox(height: 12),
-                            TextField(
-                              key: const Key('flow-login-password'),
-                              controller: _password,
-                              obscureText: _obscure,
-                              textCapitalization: TextCapitalization.characters,
-                              textInputAction: TextInputAction.done,
-                              maxLength: 6,
-                              inputFormatters: [
-                                FilteringTextInputFormatter.allow(
-                                  RegExp(r'[A-Za-z0-9]'),
-                                ),
-                              ],
-                              onSubmitted: (_) => _submit(),
-                              decoration: _decoration(
-                                'Sofőr belépőkód',
-                                Icons.key_rounded,
-                              ).copyWith(
-                                counterText: '',
-                                hintText: 'ABC123',
-                                suffixIcon: IconButton(
-                                  onPressed: () =>
-                                      setState(() => _obscure = !_obscure),
-                                  icon: Icon(
-                                    _obscure
-                                        ? Icons.visibility_off_outlined
-                                        : Icons.visibility_outlined,
-                                  ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Text(
+                                t('login'),
+                                style: const TextStyle(
+                                  fontSize: 30,
+                                  fontWeight: FontWeight.w900,
                                 ),
                               ),
-                            ),
-                          ] else ...[
-                            TextField(
-                              key: const Key('flow-login-password'),
-                              controller: _password,
-                              obscureText: _obscure,
-                              textInputAction: TextInputAction.next,
-                              decoration: _decoration(
-                                'Admin jelszó',
-                                Icons.lock_outline_rounded,
-                              ).copyWith(
-                                suffixIcon: IconButton(
-                                  onPressed: () =>
-                                      setState(() => _obscure = !_obscure),
-                                  icon: Icon(
-                                    _obscure
-                                        ? Icons.visibility_off_outlined
-                                        : Icons.visibility_outlined,
-                                  ),
+                              const SizedBox(height: 6),
+                              Text(
+                                t(
+                                  _adminMode
+                                      ? 'admin_login_help'
+                                      : 'driver_login_help',
+                                ),
+                                style: const TextStyle(
+                                  color: Colors.white54,
+                                  height: 1.4,
                                 ),
                               ),
-                            ),
-                          ],
-                          const SizedBox(height: 10),
-                          InkWell(
-                            key: const Key('flow-admin-toggle'),
-                            borderRadius: BorderRadius.circular(12),
-                            onTap: _busy
-                                ? null
-                                : () => setState(() {
-                                      _adminMode = !_adminMode;
-                                      _password.clear();
-                                      _code.clear();
-                                    }),
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 4),
-                              child: Row(
-                                children: [
-                                  const Icon(
-                                    Icons.admin_panel_settings_outlined,
-                                    color: Color(0xFF9EDBFF),
+                              const SizedBox(height: 18),
+                              if (!_adminMode) ...[
+                                TextField(
+                                  key: const Key('flow-login-user'),
+                                  controller: _login,
+                                  textCapitalization:
+                                      TextCapitalization.characters,
+                                  textInputAction: TextInputAction.next,
+                                  inputFormatters: [
+                                    LengthLimitingTextInputFormatter(12),
+                                  ],
+                                  decoration: _decoration(
+                                    t('plate'),
+                                    Icons.local_shipping_outlined,
+                                  ).copyWith(
+                                    hintText: t('plate_hint'),
                                   ),
-                                  const SizedBox(width: 12),
-                                  const Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          'Admin belépés',
-                                          style: TextStyle(fontWeight: FontWeight.w800),
-                                        ),
-                                        SizedBox(height: 2),
-                                        Text(
-                                          'Csak adminnál kell Authenticator-kód.',
-                                          style: TextStyle(color: Colors.white38),
-                                        ),
-                                      ],
+                                ),
+                                const SizedBox(height: 12),
+                                TextField(
+                                  key: const Key('flow-login-password'),
+                                  controller: _password,
+                                  obscureText: _obscure,
+                                  textCapitalization:
+                                      TextCapitalization.characters,
+                                  textInputAction: TextInputAction.done,
+                                  maxLength: 6,
+                                  inputFormatters: [
+                                    FilteringTextInputFormatter.allow(
+                                      RegExp(r'[A-Za-z0-9]'),
                                     ),
-                                  ),
-                                  Switch(
-                                    value: _adminMode,
-                                    onChanged: _busy
-                                        ? null
-                                        : (value) => setState(() {
-                                              _adminMode = value;
-                                              _password.clear();
-                                              _code.clear();
-                                            }),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                          if (_adminMode) ...[
-                            const SizedBox(height: 8),
-                            TextField(
-                              key: const Key('flow-login-2fa'),
-                              controller: _code,
-                              keyboardType: TextInputType.number,
-                              maxLength: 6,
-                              textInputAction: TextInputAction.done,
-                              onSubmitted: (_) => _submit(),
-                              decoration: _decoration(
-                                '6 jegyű Authenticator-kód',
-                                Icons.shield_outlined,
-                              ).copyWith(counterText: ''),
-                            ),
-                          ],
-                          if (_error != null) ...[
-                            const SizedBox(height: 12),
-                            Text(
-                              _error!,
-                              textAlign: TextAlign.center,
-                              style: const TextStyle(
-                                color: Colors.redAccent,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ],
-                          const SizedBox(height: 18),
-                          FilledButton.icon(
-                            key: const Key('flow-login-submit'),
-                            onPressed: _busy ? null : _submit,
-                            icon: _busy
-                                ? const SizedBox.square(
-                                    dimension: 20,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      color: Color(0xFF00131F),
-                                    ),
-                                  )
-                                : const Icon(Icons.login_rounded),
-                            label: Text(_busy ? 'BELÉPÉS…' : 'BELÉPÉS'),
-                            style: FilledButton.styleFrom(
-                              minimumSize: const Size.fromHeight(58),
-                              backgroundColor: _blue,
-                              foregroundColor: const Color(0xFF00131F),
-                              textStyle: const TextStyle(
-                                fontWeight: FontWeight.w900,
-                                fontSize: 16,
-                              ),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(17),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          OutlinedButton.icon(
-                            key: const Key('flow-register-open'),
-                            onPressed: _busy
-                                ? null
-                                : () => Navigator.of(context).push(
-                                      MaterialPageRoute(
-                                        builder: (_) => const FlowRegisterScreen(),
+                                  ],
+                                  onSubmitted: (_) => _submit(),
+                                  decoration: _decoration(
+                                    t('driver_code'),
+                                    Icons.key_rounded,
+                                  ).copyWith(
+                                    counterText: '',
+                                    hintText: t('driver_code_hint'),
+                                    suffixIcon: IconButton(
+                                      onPressed: () => setState(
+                                        () => _obscure = !_obscure,
+                                      ),
+                                      icon: Icon(
+                                        _obscure
+                                            ? Icons.visibility_off_outlined
+                                            : Icons.visibility_outlined,
                                       ),
                                     ),
-                            icon: const Icon(Icons.person_add_alt_1_rounded),
-                            label: const Text('REGISZTRÁCIÓ'),
-                            style: OutlinedButton.styleFrom(
-                              minimumSize: const Size.fromHeight(54),
-                              foregroundColor: Colors.white,
-                              side: const BorderSide(color: _blue),
-                              textStyle: const TextStyle(
-                                fontWeight: FontWeight.w900,
-                                fontSize: 15,
+                                  ),
+                                ),
+                                Align(
+                                  alignment: Alignment.centerRight,
+                                  child: TextButton.icon(
+                                    key: const Key('flow-forgot-code-open'),
+                                    onPressed: _busy
+                                        ? null
+                                        : () => Navigator.of(context).push(
+                                              MaterialPageRoute(
+                                                builder: (_) =>
+                                                    FlowForgotCodeScreen(
+                                                  initialPlate: _login.text,
+                                                ),
+                                              ),
+                                            ),
+                                    icon: const Icon(
+                                      Icons.help_outline_rounded,
+                                      size: 18,
+                                    ),
+                                    label: Text(t('forgot_code')),
+                                  ),
+                                ),
+                              ] else ...[
+                                TextField(
+                                  key: const Key('flow-login-password'),
+                                  controller: _password,
+                                  obscureText: _obscure,
+                                  textInputAction: TextInputAction.next,
+                                  decoration: _decoration(
+                                    t('admin_password'),
+                                    Icons.lock_outline_rounded,
+                                  ).copyWith(
+                                    suffixIcon: IconButton(
+                                      onPressed: () => setState(
+                                        () => _obscure = !_obscure,
+                                      ),
+                                      icon: Icon(
+                                        _obscure
+                                            ? Icons.visibility_off_outlined
+                                            : Icons.visibility_outlined,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                              const SizedBox(height: 10),
+                              InkWell(
+                                key: const Key('flow-admin-toggle'),
+                                borderRadius: BorderRadius.circular(12),
+                                onTap: _busy
+                                    ? null
+                                    : () => setState(() {
+                                          _adminMode = !_adminMode;
+                                          _password.clear();
+                                          _code.clear();
+                                        }),
+                                child: Padding(
+                                  padding:
+                                      const EdgeInsets.symmetric(vertical: 4),
+                                  child: Row(
+                                    children: [
+                                      const Icon(
+                                        Icons.admin_panel_settings_outlined,
+                                        color: Color(0xFF9EDBFF),
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              t('admin_login'),
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.w800,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 2),
+                                            Text(
+                                              t('admin_2fa_note'),
+                                              style: const TextStyle(
+                                                color: Colors.white38,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      Switch(
+                                        value: _adminMode,
+                                        onChanged: _busy
+                                            ? null
+                                            : (value) => setState(() {
+                                                  _adminMode = value;
+                                                  _password.clear();
+                                                  _code.clear();
+                                                }),
+                                      ),
+                                    ],
+                                  ),
+                                ),
                               ),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(17),
+                              if (_adminMode) ...[
+                                const SizedBox(height: 8),
+                                TextField(
+                                  key: const Key('flow-login-2fa'),
+                                  controller: _code,
+                                  keyboardType: TextInputType.number,
+                                  maxLength: 6,
+                                  textInputAction: TextInputAction.done,
+                                  onSubmitted: (_) => _submit(),
+                                  decoration: _decoration(
+                                    t('authenticator_code'),
+                                    Icons.shield_outlined,
+                                  ).copyWith(counterText: ''),
+                                ),
+                              ],
+                              if (_error != null) ...[
+                                const SizedBox(height: 12),
+                                Text(
+                                  _error!,
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(
+                                    color: Colors.redAccent,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ],
+                              const SizedBox(height: 18),
+                              FilledButton.icon(
+                                key: const Key('flow-login-submit'),
+                                onPressed: _busy ? null : _submit,
+                                icon: _busy
+                                    ? const SizedBox.square(
+                                        dimension: 20,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          color: Color(0xFF00131F),
+                                        ),
+                                      )
+                                    : const Icon(Icons.login_rounded),
+                                label: Text(
+                                  t(_busy ? 'signing_in' : 'sign_in'),
+                                ),
+                                style: FilledButton.styleFrom(
+                                  minimumSize: const Size.fromHeight(58),
+                                  backgroundColor: _blue,
+                                  foregroundColor: const Color(0xFF00131F),
+                                  textStyle: const TextStyle(
+                                    fontWeight: FontWeight.w900,
+                                    fontSize: 16,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(17),
+                                  ),
+                                ),
                               ),
-                            ),
+                              const SizedBox(height: 12),
+                              OutlinedButton.icon(
+                                key: const Key('flow-register-open'),
+                                onPressed: _busy
+                                    ? null
+                                    : () => Navigator.of(context).push(
+                                          MaterialPageRoute(
+                                            builder: (_) =>
+                                                const FlowRegisterScreen(),
+                                          ),
+                                        ),
+                                icon:
+                                    const Icon(Icons.person_add_alt_1_rounded),
+                                label: Text(t('register')),
+                                style: OutlinedButton.styleFrom(
+                                  minimumSize: const Size.fromHeight(54),
+                                  foregroundColor: Colors.white,
+                                  side: const BorderSide(color: _blue),
+                                  textStyle: const TextStyle(
+                                    fontWeight: FontWeight.w900,
+                                    fontSize: 15,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(17),
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
-                        ],
-                      ),
+                        ),
+                        const SizedBox(height: 18),
+                        Text(
+                          t('driver_footer'),
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            color: Colors.white38,
+                            height: 1.45,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 18),
-                    const Text(
-                      'Sofőr: rendszám + 3 betű / 3 szám belépőkód. '
-                      'Adminnál külön jelszó + Authenticator marad.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: Colors.white38,
-                        height: 1.45,
-                        fontSize: 11,
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
               ),
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 }
