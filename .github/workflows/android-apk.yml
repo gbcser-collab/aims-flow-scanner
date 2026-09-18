@@ -90,7 +90,23 @@ jobs:
         run: flutter test
 
       - name: Build production-like debug APK
-        run: flutter build apk --debug --dart-define=AIMS_API_BASE_URL=https://logistic-aims.hu/api
+        env:
+          AIMS_TRACKING_TOKEN: ${{ secrets.AIMS_TRACKING_TOKEN }}
+          AIMS_FIREBASE_API_KEY: ${{ secrets.AIMS_FIREBASE_API_KEY }}
+          AIMS_FIREBASE_PROJECT_ID: ${{ secrets.AIMS_FIREBASE_PROJECT_ID }}
+          AIMS_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.AIMS_FIREBASE_MESSAGING_SENDER_ID }}
+          AIMS_FIREBASE_ANDROID_APP_ID: ${{ secrets.AIMS_FIREBASE_ANDROID_APP_ID }}
+          AIMS_FIREBASE_STORAGE_BUCKET: ${{ secrets.AIMS_FIREBASE_STORAGE_BUCKET }}
+        run: |
+          flutter build apk --debug \
+            --dart-define=AIMS_API_BASE_URL=https://logistic-aims.hu/api \
+            --dart-define=AIMS_TRACKING_BASE_URL=https://logistic-aims.hu/api/aims-tracking \
+            --dart-define=AIMS_TRACKING_TOKEN="$AIMS_TRACKING_TOKEN" \
+            --dart-define=AIMS_FIREBASE_API_KEY="$AIMS_FIREBASE_API_KEY" \
+            --dart-define=AIMS_FIREBASE_PROJECT_ID="$AIMS_FIREBASE_PROJECT_ID" \
+            --dart-define=AIMS_FIREBASE_MESSAGING_SENDER_ID="$AIMS_FIREBASE_MESSAGING_SENDER_ID" \
+            --dart-define=AIMS_FIREBASE_ANDROID_APP_ID="$AIMS_FIREBASE_ANDROID_APP_ID" \
+            --dart-define=AIMS_FIREBASE_STORAGE_BUCKET="$AIMS_FIREBASE_STORAGE_BUCKET"
 
       - name: APK sanity check
         run: |
