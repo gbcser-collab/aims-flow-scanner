@@ -44,19 +44,23 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          p=Path('android/app/src/main/AndroidManifest.xml')
-          s=p.read_text()
-          permissions='''    <uses-permission android:name="android.permission.CAMERA" />
-    <uses-permission android:name="android.permission.INTERNET" />
-    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
-    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
-    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
-    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-'''
-          s=s.replace('<application', permissions+'\n    <application',1)
-          s=s.replace('android:label="aims_flow_scanner"','android:label="AIMS Flow"')
+          p = Path('android/app/src/main/AndroidManifest.xml')
+          s = p.read_text()
+          names = [
+              'android.permission.CAMERA',
+              'android.permission.INTERNET',
+              'android.permission.ACCESS_COARSE_LOCATION',
+              'android.permission.ACCESS_FINE_LOCATION',
+              'android.permission.ACCESS_BACKGROUND_LOCATION',
+              'android.permission.FOREGROUND_SERVICE',
+              'android.permission.FOREGROUND_SERVICE_LOCATION',
+              'android.permission.POST_NOTIFICATIONS',
+          ]
+          permissions = '\n'.join(
+              f'    <uses-permission android:name="{name}" />' for name in names
+          )
+          s = s.replace('<application', permissions + '\n    <application', 1)
+          s = s.replace('android:label="aims_flow_scanner"', 'android:label="AIMS Flow"')
           p.write_text(s)
           PY
 
