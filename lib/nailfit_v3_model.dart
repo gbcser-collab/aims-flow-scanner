@@ -461,6 +461,16 @@ class NailFitV3Controller extends ChangeNotifier {
     }
   }
 
+  Future<void> removePng(String path) async {
+    savedPngPaths.remove(path);
+    notifyListeners();
+    _schedulePersist(delay: Duration.zero);
+    try {
+      final file = File(path);
+      if (await file.exists()) await file.delete();
+    } catch (_) {}
+  }
+
   void clearSaved() {
     for (final path in List<String>.from(savedPngPaths)) {
       unawaited(File(path).delete().catchError((_) => File(path)));
