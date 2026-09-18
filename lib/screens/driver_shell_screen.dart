@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../services/aims_voice_command.dart';
+import '../services/aims_voice_service.dart';
 import '../services/driver_api_service.dart';
 import '../services/driver_push_service.dart';
 import '../services/vehicle_tracking_service.dart';
@@ -23,12 +25,15 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
   static const _green = Color(0xFF4DE3A4);
   static const _panelColor = Color(0xFF071725);
   static const _prefsPlate = 'aims_driver_plate';
+  static const _prefsHandsFree = 'aims_hands_free';
 
   final _api = const DriverApiService();
   final _tracking = VehicleTrackingService.instance;
   final _push = DriverPushService.instance;
+  late final AimsVoiceService _voice;
 
   StreamSubscription<DriverPushEvent>? _pushSub;
+  StreamSubscription<AimsVoiceState>? _voiceSub;
   StreamSubscription<VehicleTrackingStatus>? _trackingSub;
 
   int _index = 0;
@@ -38,6 +43,12 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
   bool _actionBusy = false;
   String? _message;
   VehicleTrackingStatus? _trackingStatus;
+  AimsVoiceState _voiceState = const AimsVoiceState(
+    enabled: false,
+    mode: AimsVoiceMode.off,
+    message: 'AIMS Hands-Free kikapcsolva.',
+  );
+  bool _handsFreeBusy = false;
 
   DriverJob? get _job => _jobs.isEmpty ? null : _jobs.first;
   DriverStop? get _stop => _job?.currentStop;
@@ -45,6 +56,10 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
   @override
   void initState() {
     super.initState();
+    _voice = AimsVoiceService(onCommand: _handleVoiceCommand);
+    _voiceSub = _voice.states.listen((state) {
+      if (mounted) setState(() => _voiceState = state);
+    });
     _pushSub = _push.events.listen(_handlePush);
     _trackingSub = _tracking.statusStream.listen((status) {
       if (mounted) setState(() => _trackingStatus = status);
@@ -71,6 +86,13 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
       WidgetsBinding.instance.addPostFrameCallback((_) => _askPlate());
     } else {
       await _activateDriverServices();
+    }
+
+    final handsFree = prefs.getBool(_prefsHandsFree) ?? false;
+    if (handsFree && mounted) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        unawaited(_setHandsFree(true));
+      });
     }
 
     final pending = _push.takePendingLaunch();
@@ -280,8 +302,16 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
 
   Future<void> _openMaps() async {
     final stop = _stop;
-    if (stop == null || stop.address.trim().isEmpty) {
+    if (stop == null) {
       _snack('Nincs megnyitható következő cím.');
+      return;
+    }
+    await _openMapsForStop(stop);
+  }
+
+  Future<void> _openMapsForStop(DriverStop stop) async {
+    if (stop.address.trim().isEmpty) {
+      _snack('Nincs megnyitható cím.');
       return;
     }
     final uri = Uri.parse(
@@ -358,6 +388,173 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
     }
   }
 
+  DriverStop? _nextStopOfType(String type) {
+    final job = _job;
+    if (job == null) return null;
+    for (final stop in job.stops) {
+      if (!stop.completed && stop.type == type) return stop;
+    }
+    return null;
+  }
+
+  Future<String> _markStop(
+    DriverStop stop,
+    String action, {
+    required String expectedType,
+  }) async {
+    if (stop.type != expectedType) {
+      return expectedType == 'pickup'
+          ? 'A következő megálló nem felrakó.'
+          : 'A következő megálló nem lerakó.';
+    }
+
+    try {
+      await _api.updateStop(
+        plate: _plate,
+        stopId: stop.id,
+        action: action,
+        source: 'voice',
+      );
+      await _refreshJobs();
+      if (action == 'arrived') {
+        return expectedType == 'pickup'
+            ? 'Megérkezés a felrakóra rögzítve.'
+            : 'Megérkezés a lerakóra rögzítve.';
+      }
+      return expectedType == 'pickup'
+          ? 'Felrakás kész. Jöhet a következő megálló.'
+          : 'Lerakás kész. Rögzítettem.';
+    } catch (e) {
+      return 'A stop állapotát nem sikerült rögzíteni.';
+    }
+  }
+
+  Future<String> _callCurrentContact() async {
+    final stop = _stop;
+    if (stop == null) return 'Nincs aktív megálló.';
+    final phone = stop.phone.trim();
+    if (phone.isEmpty) return 'Ehhez a megállóhoz nincs telefonszám megadva.';
+    final uri = Uri(scheme: 'tel', path: phone);
+    if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+      return 'A telefonhívást nem sikerült elindítani.';
+    }
+    return 'Hívom a kapcsolattartót.';
+  }
+
+  String _jobVoiceSummary() {
+    final job = _job;
+    if (job == null) return 'Nincs aktív fuvar.';
+    final stop = job.currentStop;
+    if (stop == null) return 'A fuvar minden megállója kész.';
+    final kind = stop.type == 'pickup' ? 'felrakó' : 'lerakó';
+    final company = stop.company.trim().isEmpty ? '' : ' ${stop.company}.';
+    return 'Aktív fuvar: ${job.reference}. Következő ${kind}.${company} Cím: ${stop.address}.';
+  }
+
+  Future<String> _handleVoiceCommand(AimsVoiceCommand command) async {
+    final job = _job;
+    final current = _stop;
+
+    switch (command.intent) {
+      case AimsVoiceIntent.showJob:
+        if (mounted) setState(() => _index = 1);
+        return _jobVoiceSummary();
+
+      case AimsVoiceIntent.navigatePickup:
+        final stop = _nextStopOfType('pickup');
+        if (stop == null) return 'Nincs következő felrakó.';
+        await _openMapsForStop(stop);
+        return 'Navigáció indítása a felrakóra.';
+
+      case AimsVoiceIntent.navigateDelivery:
+        final stop = _nextStopOfType('delivery');
+        if (stop == null) return 'Nincs következő lerakó.';
+        await _openMapsForStop(stop);
+        return 'Navigáció indítása a lerakóra.';
+
+      case AimsVoiceIntent.arrivePickup:
+        if (current == null) return 'Nincs aktív megálló.';
+        return _markStop(current, 'arrived', expectedType: 'pickup');
+
+      case AimsVoiceIntent.arriveDelivery:
+        if (current == null) return 'Nincs aktív megálló.';
+        return _markStop(current, 'arrived', expectedType: 'delivery');
+
+      case AimsVoiceIntent.pickupComplete:
+        if (current == null) return 'Nincs aktív megálló.';
+        return _markStop(current, 'completed', expectedType: 'pickup');
+
+      case AimsVoiceIntent.deliveryComplete:
+        if (current == null) return 'Nincs aktív megálló.';
+        return _markStop(current, 'completed', expectedType: 'delivery');
+
+      case AimsVoiceIntent.nextAddress:
+        if (current == null) return 'Nincs következő cím.';
+        final company = current.company.trim();
+        return company.isEmpty
+            ? 'A következő cím: ${current.address}.'
+            : 'A következő megálló ${company}. Cím: ${current.address}.';
+
+      case AimsVoiceIntent.callContact:
+        return _callCurrentContact();
+
+      case AimsVoiceIntent.delaySignal:
+        await _sendSignal('Késés', message: 'Hangparancs');
+        return 'A késés jelzést elküldtem a főnökségnek.';
+
+      case AimsVoiceIntent.fuelReceipt:
+        unawaited(_openFuelReceipt());
+        return 'Megnyitottam a tankolási bizonylatot.';
+
+      case AimsVoiceIntent.cmrDocument:
+        unawaited(_openCmrScanner());
+        return 'Megnyitottam a CMR scannert.';
+
+      case AimsVoiceIntent.technicalIssue:
+        await _sendSignal('Műszaki hiba', message: 'Hangparancs');
+        return 'A műszaki hibát jeleztem a főnökségnek.';
+
+      case AimsVoiceIntent.readJobDetails:
+        return _jobVoiceSummary();
+
+      case AimsVoiceIntent.waitingSignal:
+        await _sendSignal('Várakozás', message: 'Hangparancs');
+        return 'A várakozást jeleztem.';
+
+      case AimsVoiceIntent.urgentSignal:
+        await _sendSignal(
+          'Baleset / sürgős',
+          urgent: true,
+          message: 'Hangparancs',
+        );
+        return 'Sürgős jelzést küldtem.';
+
+      case AimsVoiceIntent.unknown:
+        return 'Ezt nem értettem.';
+    }
+  }
+
+  Future<void> _setHandsFree(bool enabled) async {
+    if (_handsFreeBusy) return;
+    setState(() => _handsFreeBusy = true);
+    final prefs = await SharedPreferences.getInstance();
+
+    try {
+      if (enabled) {
+        final ok = await _voice.enableHandsFree();
+        await prefs.setBool(_prefsHandsFree, ok);
+        if (!ok && mounted) {
+          _snack('A hangfelismerés nem indítható. Ellenőrizd a mikrofon engedélyt.');
+        }
+      } else {
+        await _voice.disableHandsFree();
+        await prefs.setBool(_prefsHandsFree, false);
+      }
+    } finally {
+      if (mounted) setState(() => _handsFreeBusy = false);
+    }
+  }
+
   void _snack(String value) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(value)));
@@ -367,6 +564,8 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
   void dispose() {
     _pushSub?.cancel();
     _trackingSub?.cancel();
+    _voiceSub?.cancel();
+    unawaited(_voice.dispose());
     super.dispose();
   }
 
