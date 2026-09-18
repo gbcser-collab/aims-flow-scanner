@@ -4,6 +4,7 @@ import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 
+import '../services/aims_locale.dart';
 import '../services/aims_scan_engine.dart';
 import '../services/cmr_parser.dart';
 import '../services/ocr_service.dart';
@@ -31,6 +32,14 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
   String _phase = '';
   int _cameraGeneration = 0;
   double _viewportAspect = 9 / 16;
+
+  String _l(String hu, String en, String de) => switch (
+        AimsLocaleController.instance.languageCode
+      ) {
+        'en' => en,
+        'de' => de,
+        _ => hu,
+      };
 
   @override
   void initState() {
@@ -108,14 +117,14 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
       switch (error.code) {
         case 'CameraAccessDenied':
         case 'CameraAccessDeniedWithoutPrompt':
-          return 'A kameraengedély nincs megadva. Engedélyezd a Beállításokban, majd próbáld újra.';
+          return _l('A kameraengedély nincs megadva. Engedélyezd a Beállításokban, majd próbáld újra.', 'Camera permission is missing. Enable it in Settings and try again.', 'Die Kameraberechtigung fehlt. In den Einstellungen aktivieren und erneut versuchen.');
         case 'CameraAccessRestricted':
-          return 'A kamera használata ezen a készüléken korlátozva van.';
+          return _l('A kamera használata ezen a készüléken korlátozva van.', 'Camera use is restricted on this device.', 'Die Kameranutzung ist auf diesem Gerät eingeschränkt.');
         default:
-          return 'A kamera nem indult el (${error.code}).';
+          return _l('A kamera nem indult el (${error.code}).', 'The camera could not start (${error.code}).', 'Die Kamera konnte nicht gestartet werden (${error.code}).');
       }
     }
-    return 'A kamera nem indult el. Próbáld újra.';
+    return _l('A kamera nem indult el. Próbáld újra.', 'The camera could not start. Try again.', 'Die Kamera konnte nicht gestartet werden. Erneut versuchen.');
   }
 
   @override
@@ -149,11 +158,11 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
   String _flashLabel(_ScannerFlashMode mode) {
     switch (mode) {
       case _ScannerFlashMode.off:
-        return 'KI';
+        return _l('KI', 'OFF', 'AUS');
       case _ScannerFlashMode.auto:
         return 'AUTO';
       case _ScannerFlashMode.on:
-        return 'BE';
+        return _l('BE', 'ON', 'EIN');
     }
   }
 
@@ -178,7 +187,7 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
       if (mounted) setState(() => _flashMode = mode);
     } on CameraException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('A vaku ezen a kamerán nem állítható (${e.code}).')));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(_l('A vaku ezen a kamerán nem állítható (${e.code}).', 'Flash cannot be changed on this camera (${e.code}).', 'Der Blitz kann bei dieser Kamera nicht geändert werden (${e.code}).'))));
     } finally {
       if (mounted) setState(() => _flashChanging = false);
     }
@@ -190,7 +199,7 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
 
     setState(() {
       _processing = true;
-      _phase = 'Fotó készítése…';
+      _phase = _l('Fotó készítése…', 'Taking photo…', 'Foto wird aufgenommen…');
     });
 
     final ocr = OcrService();
@@ -198,7 +207,7 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
     try {
       shot = await controller.takePicture();
       if (!mounted) return;
-      setState(() => _phase = 'Kereten kívüli rész levágása…');
+      setState(() => _phase = _l('Kereten kívüli rész levágása…', 'Cropping outside the frame…', 'Bereich außerhalb des Rahmens wird zugeschnitten…'));
 
       final temp = await getTemporaryDirectory();
       final processed = '${temp.path}/aims_smart_${DateTime.now().microsecondsSinceEpoch}.jpg';
@@ -209,11 +218,11 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
       );
 
       if (!mounted) return;
-      setState(() => _phase = 'Szöveg felismerése…');
+      setState(() => _phase = _l('Szöveg felismerése…', 'Recognizing text…', 'Text wird erkannt…'));
       final text = await ocr.recognize(result.outputPath);
 
       if (!mounted) return;
-      setState(() => _phase = 'CMR mezők kitöltése…');
+      setState(() => _phase = _l('CMR mezők kitöltése…', 'Filling CMR fields…', 'CMR-Felder werden ausgefüllt…'));
       final cmr = const CmrParser().parse(text);
 
       if (!mounted) return;
@@ -234,14 +243,14 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
         _processing = false;
         _phase = '';
       });
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Kamerahiba (${e.code}): ${e.description ?? 'a kép nem készült el'}')));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(_l('Kamerahiba (${e.code}): ${e.description ?? 'a kép nem készült el'}', 'Camera error (${e.code}): ${e.description ?? 'the image was not captured'}', 'Kamerafehler (${e.code}): ${e.description ?? 'das Bild wurde nicht aufgenommen'}'))));
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _processing = false;
         _phase = '';
       });
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('A Smart Scan nem sikerült: $e')));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(_l('A Smart Scan nem sikerült: $e', 'Smart Scan failed: $e', 'Smart Scan fehlgeschlagen: $e'))));
     } finally {
       await ocr.dispose();
       if (shot != null) {
@@ -307,7 +316,7 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                       decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(18)),
-                      child: const Text('Csak ami a keretben van, az kerül a scanbe', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+                      child: Text(_l('Csak ami a keretben van, az kerül a scanbe', 'Only content inside the frame will be scanned', 'Nur der Inhalt im Rahmen wird gescannt'), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
                     ),
                   ),
                 ),
@@ -332,7 +341,7 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
                             return Semantics(
                               button: true,
                               selected: selected,
-                              label: 'Vaku ${_flashLabel(mode)}',
+                              label: _l('Vaku ${_flashLabel(mode)}', 'Flash ${_flashLabel(mode)}', 'Blitz ${_flashLabel(mode)}'),
                               child: InkWell(
                                 key: ValueKey('flash-${mode.name}'),
                                 borderRadius: BorderRadius.circular(20),
@@ -365,7 +374,7 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
                     child: Center(
                       child: Semantics(
                         button: true,
-                        label: 'CMR fényképezése és feldolgozása',
+                        label: _l('CMR fényképezése és feldolgozása', 'Photograph and process CMR', 'CMR fotografieren und verarbeiten'),
                         child: GestureDetector(
                           key: const ValueKey('capture-and-process'),
                           onTap: _processing ? null : _captureAndProcess,
@@ -396,7 +405,7 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
                               const SizedBox(height: 8),
                               Text(_phase, textAlign: TextAlign.center, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w800)),
                               const SizedBox(height: 8),
-                              const Text('A vaku feldolgozás közben nem világít.', style: TextStyle(color: Colors.white54)),
+                              Text(_l('A vaku feldolgozás közben nem világít.', 'Flash stays off during processing.', 'Der Blitz bleibt während der Verarbeitung aus.'), style: const TextStyle(color: Colors.white54)),
                             ],
                           ),
                         ),
@@ -429,7 +438,7 @@ class _CameraErrorView extends StatelessWidget {
             const SizedBox(height: 12),
             Text(message, textAlign: TextAlign.center, style: const TextStyle(color: Colors.white)),
             const SizedBox(height: 16),
-            FilledButton(onPressed: onRetry, child: const Text('Újrapróbálás')),
+            FilledButton(onPressed: onRetry, child: Text(AimsLocaleController.instance.languageCode == 'en' ? 'Try again' : AimsLocaleController.instance.languageCode == 'de' ? 'Erneut versuchen' : 'Újrapróbálás')),
           ],
         ),
       ),
