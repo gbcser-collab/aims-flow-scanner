@@ -913,8 +913,16 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
                       SizedBox(height: 2),
                       Text(
                         _driverName.isEmpty
-                            ? 'Ébresztőszó: „AIMS”'
-                            : 'Sofőr: $_driverName • ébresztőszó: „AIMS”',
+                            ? _l(
+                                'Ébresztőszó: „AIMS”',
+                                'Wake word: “AIMS”',
+                                'Aktivierungswort: „AIMS“',
+                              )
+                            : _l(
+                                'Sofőr: $_driverName • ébresztőszó: „AIMS”',
+                                'Driver: $_driverName • wake word: “AIMS”',
+                                'Fahrer: $_driverName • Aktivierungswort: „AIMS“',
+                              ),
                         style: const TextStyle(color: Colors.white38, fontSize: 11),
                       ),
                     ],
@@ -935,7 +943,11 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
             if (_voiceState.lastHeard.trim().isNotEmpty) ...[
               const SizedBox(height: 5),
               Text(
-                'Hallottam: ${_voiceState.lastHeard}',
+                _l(
+                  'Hallottam: ${_voiceState.lastHeard}',
+                  'Heard: ${_voiceState.lastHeard}',
+                  'Gehört: ${_voiceState.lastHeard}',
+                ),
                 style: const TextStyle(color: Colors.white38, fontSize: 10),
               ),
             ],
@@ -948,7 +960,9 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
                         ? null
                         : () => unawaited(_voice.triggerAssistant()),
                     icon: const Icon(Icons.record_voice_over_outlined),
-                    label: const Text('MONDD MOST'),
+                    label: Text(
+                      _l('MONDD MOST', 'SPEAK NOW', 'JETZT SPRECHEN'),
+                    ),
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -957,15 +971,29 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
                     onPressed: () =>
                         unawaited(_voice.requestAndroidAssistantRole()),
                     icon: const Icon(Icons.assistant_outlined),
-                    label: const Text('ANDROID ASSZISZTENS'),
+                    label: Text(
+                      _l(
+                        'ANDROID ASSZISZTENS',
+                        'ANDROID ASSISTANT',
+                        'ANDROID-ASSISTENT',
+                      ),
+                    ),
                   ),
                 ),
               ],
             ),
             const SizedBox(height: 8),
-            const Text(
-              'Hands-Free módban a Flow háttérszolgáltatással fut, és az „AIMS” szó után várja a parancsot.',
-              style: TextStyle(color: Colors.white38, height: 1.35, fontSize: 10),
+            Text(
+              _l(
+                'Hands-Free módban a Flow háttérszolgáltatással fut, és az „AIMS” szó után várja a parancsot.',
+                'In Hands-Free mode Flow runs as a background service and waits for a command after “AIMS”.',
+                'Im Hands-Free-Modus läuft Flow als Hintergrunddienst und wartet nach „AIMS“ auf einen Befehl.',
+              ),
+              style: const TextStyle(
+                color: Colors.white38,
+                height: 1.35,
+                fontSize: 10,
+              ),
             ),
           ],
         ),
