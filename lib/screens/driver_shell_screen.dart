@@ -25,6 +25,7 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
   static const _green = Color(0xFF4DE3A4);
   static const _panelColor = Color(0xFF071725);
   static const _prefsPlate = 'aims_driver_plate';
+  static const _prefsDriverName = 'aims_driver_name';
   static const _prefsHandsFree = 'aims_hands_free';
 
   final _api = const DriverApiService();
@@ -38,6 +39,7 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
 
   int _index = 0;
   String _plate = '';
+  String _driverName = '';
   List<DriverJob> _jobs = const [];
   bool _loading = true;
   bool _actionBusy = false;
@@ -56,7 +58,10 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
   @override
   void initState() {
     super.initState();
-    _voice = AimsVoiceService(onCommand: _handleVoiceCommand);
+    _voice = AimsVoiceService(
+      onCommand: _handleVoiceCommand,
+      driverNameProvider: () => _driverName,
+    );
     _voiceSub = _voice.states.listen((state) {
       if (mounted) setState(() => _voiceState = state);
     });
@@ -70,6 +75,7 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
   Future<void> _initialize() async {
     final prefs = await SharedPreferences.getInstance();
     var plate = (prefs.getString(_prefsPlate) ?? '').trim().toUpperCase();
+    final driverName = (prefs.getString(_prefsDriverName) ?? '').trim();
 
     final status = await _tracking.currentStatus();
     if (plate.isEmpty && status.vehicleLabel.trim().isNotEmpty) {
@@ -79,12 +85,17 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
     if (!mounted) return;
     setState(() {
       _plate = plate;
+      _driverName = driverName;
       _trackingStatus = status;
     });
 
     if (_plate.isEmpty) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _askPlate());
+      setState(() {
+        _loading = false;
+        _message = 'Nincs bejelentkezett rendszám. Lépj be újra.';
+      });
     } else {
+      await _tracking.setVehicleLabel(_plate);
       await _activateDriverServices();
     }
 
@@ -99,44 +110,6 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
     if (pending != null && mounted) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _handlePush(pending));
     }
-  }
-
-  Future<void> _askPlate() async {
-    final controller = TextEditingController(text: _plate);
-    final result = await showDialog<String>(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF071522),
-        title: const Text('Jármű beállítása'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          textCapitalization: TextCapitalization.characters,
-          decoration: const InputDecoration(
-            labelText: 'Rendszám',
-            hintText: 'pl. SIP-115',
-          ),
-        ),
-        actions: [
-          FilledButton(
-            onPressed: () {
-              final value = controller.text.trim().toUpperCase();
-              if (value.length >= 4) Navigator.pop(context, value);
-            },
-            child: const Text('MENTÉS'),
-          ),
-        ],
-      ),
-    );
-    controller.dispose();
-    if (result == null || !mounted) return;
-
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_prefsPlate, result);
-    await _tracking.setVehicleLabel(result);
-    setState(() => _plate = result);
-    await _activateDriverServices();
   }
 
   Future<void> _activateDriverServices() async {
@@ -799,8 +772,10 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
                       ),
                       SizedBox(height: 2),
                       Text(
-                        'Ébresztőszó: „AIMS”',
-                        style: TextStyle(color: Colors.white38, fontSize: 11),
+                        _driverName.isEmpty
+                            ? 'Ébresztőszó: „AIMS”'
+                            : 'Sofőr: $_driverName • ébresztőszó: „AIMS”',
+                        style: const TextStyle(color: Colors.white38, fontSize: 11),
                       ),
                     ],
                   ),
