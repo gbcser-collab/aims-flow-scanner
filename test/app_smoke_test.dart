@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  testWidgets('AIMS Flow starts on web-account login', (tester) async {
+  testWidgets('AIMS Flow starts on plate and short-code login', (tester) async {
     await tester.pumpWidget(const AimsFlowApp());
     await tester.pump();
 
@@ -17,7 +17,11 @@ void main() {
     expect(find.byKey(const Key('flow-login-2fa')), findsNothing);
     expect(find.byKey(const Key('flow-login-submit')), findsOneWidget);
     expect(find.byKey(const Key('flow-register-open')), findsOneWidget);
-    expect(find.textContaining('Nincs készülék-jóváhagyás'), findsOneWidget);
+    expect(
+      find.textContaining('Sofőr belépés rendszámmal és 6 karakteres kóddal'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('3 betű / 3 szám'), findsOneWidget);
   });
 
   testWidgets('admin mode reveals 2FA only when requested', (tester) async {
