@@ -1,4 +1,5 @@
 import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter/foundation.dart';
 
 class RuntimeFirebaseOptions {
   RuntimeFirebaseOptions._();
@@ -25,16 +26,15 @@ class RuntimeFirebaseOptions {
   );
 
   static FirebaseOptions? get current {
-    if (_apiKey.isEmpty ||
-        _projectId.isEmpty ||
-        _senderId.isEmpty) {
+    if (_apiKey.isEmpty || _projectId.isEmpty || _senderId.isEmpty) {
       return null;
     }
 
-    const isIOS = bool.fromEnvironment('dart.library.io') &&
-        !bool.fromEnvironment('dart.library.html');
-
-    final appId = _androidAppId.isNotEmpty ? _androidAppId : _iosAppId;
+    final appId = switch (defaultTargetPlatform) {
+      TargetPlatform.android => _androidAppId,
+      TargetPlatform.iOS => _iosAppId,
+      _ => '',
+    };
     if (appId.isEmpty) return null;
 
     return FirebaseOptions(
