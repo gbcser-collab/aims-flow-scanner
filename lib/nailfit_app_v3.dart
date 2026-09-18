@@ -29,10 +29,27 @@ class _NailFitAppState extends State<NailFitApp> {
 
   Future<void> _bootstrap() async {
     await c.restore();
+    await _recoverLostPickerData();
+    if (!mounted || photo != null) return;
     final path = c.lastPhotoPath;
-    if (!mounted || path == null) return;
+    if (path == null) return;
     if (await File(path).exists()) {
       setState(() => photo = XFile(path));
+    }
+  }
+
+  Future<void> _recoverLostPickerData() async {
+    try {
+      final response = await picker.retrieveLostData();
+      if (response.isEmpty || response.file == null) return;
+      c.resetScan();
+      final recovered = await c.rememberPhoto(response.file!);
+      if (!mounted) return;
+      setState(() => photo = recovered);
+      c.go(1);
+      await c.analyzePhoto(recovered);
+    } catch (_) {
+      // A lost-data recovery failure must never block normal startup.
     }
   }
 
