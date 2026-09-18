@@ -243,6 +243,20 @@ class VehicleTrackingService {
     for (var i = 0; i < lines.length; i++) {
       final line = lines[i];
       try {
+        var outbound = line;
+        try {
+          final decoded = jsonDecode(line);
+          if (decoded is Map) {
+            final payload = Map<String, dynamic>.from(decoded);
+            final captured = DateTime.tryParse(payload['timestamp']?.toString() ?? '');
+            final now = DateTime.now().toUtc();
+            payload['sentAt'] = now.toIso8601String();
+            payload['delayed'] = captured != null &&
+                now.difference(captured.toUtc()) > const Duration(minutes: 2);
+            outbound = jsonEncode(payload);
+          }
+        } catch (_) {}
+
         final response = await http
             .post(
               Uri.parse(_endpoint),
@@ -250,7 +264,7 @@ class VehicleTrackingService {
                 'Content-Type': 'application/json',
                 'Authorization': 'Bearer $_token',
               },
-              body: line,
+              body: outbound,
             )
             .timeout(const Duration(seconds: 8));
         if (response.statusCode < 200 || response.statusCode >= 300) {
