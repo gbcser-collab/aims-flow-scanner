@@ -376,3 +376,109 @@ function aims_try_push(PDO $pdo, int $limit = 10): void {
         error_log('AIMS push delivery: ' . $error->getMessage());
     }
 }
+
+
+function aims_send_driver_job_push(PDO $pdo, int $jobId): array {
+    $stmt = $pdo->prepare('SELECT j.*, v.plate, v.id AS vehicle_id
+                           FROM jobs j JOIN vehicles v ON v.id = j.vehicle_id
+                           WHERE j.id = :job AND j.status = "active" LIMIT 1');
+    $stmt->execute([':job' => $jobId]);
+    $job = $stmt->fetch(PDO::FETCH_ASSOC);
+    if (!$job) return ['configured' => true, 'sent' => 0, 'failed' => 0, 'error' => 'job_not_found'];
+
+    $st = $pdo->prepare('SELECT * FROM job_stops WHERE job_id = :job ORDER BY stop_order ASC');
+    $st->execute([':job' => $jobId]);
+    $stops = $st->fetchAll(PDO::FETCH_ASSOC);
+    $first = $stops[0] ?? null;
+    $last = $stops ? $stops[count($stops) - 1] : null;
+    $company = trim((string)($first['company'] ?? ''));
+    $from = trim((string)($first['address'] ?? ''));
+    $to = trim((string)($last['address'] ?? ''));
+    $route = $from !== '' && $to !== '' ? ($from . ' → ' . $to) : trim($from . ' ' . $to);
+
+    $devices = $pdo->prepare('SELECT * FROM driver_push_devices WHERE vehicle_id = :vehicle AND enabled = 1');
+    $devices->execute([':vehicle' => $job['vehicle_id']]);
+    $rows = $devices->fetchAll(PDO::FETCH_ASSOC);
+    if (!$rows) return ['configured' => true, 'sent' => 0, 'failed' => 0];
+
+    $config = aims_push_config();
+    if ($config === null) return ['configured' => false, 'sent' => 0, 'failed' => count($rows)];
+
+    $data = aims_fcm_data([
+        'type' => 'driver_job',
+        'jobId' => (string)$jobId,
+        'plate' => (string)$job['plate'],
+        'reference' => (string)$job['reference'],
+        'partial' => ((int)($job['partial_load'] ?? 0) === 1) ? '1' : '0',
+        'company' => $company,
+        'route' => $route,
+    ]);
+
+    $sent = 0;
+    $failed = 0;
+    foreach ($rows as $device) {
+        if ($config['mode'] === 'fake') {
+            $line = json_encode([
+                'driverVehicleId' => (int)$job['vehicle_id'],
+                'driverPushDeviceId' => (int)$device['id'],
+                'data' => $data,
+            ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            if (is_string($line)) @file_put_contents($config['log'], $line . PHP_EOL, FILE_APPEND | LOCK_EX);
+            $sent++;
+            continue;
+        }
+
+        $accessToken = aims_fcm_access_token($config);
+        if ($accessToken === null) {
+            $failed++;
+            continue;
+        }
+        $message = [
+            'message' => [
+                'token' => $device['fcm_token'],
+                'data' => $data,
+                'android' => ['priority' => 'high'],
+            ],
+        ];
+        $response = aims_http_post(
+            'https://fcm.googleapis.com/v1/projects/' . rawurlencode($config['project_id']) . '/messages:send',
+            ['Authorization: Bearer ' . $accessToken],
+            json_encode($message, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
+        );
+        if ($response['ok']) {
+            $sent++;
+        } else {
+            $failed++;
+            $body = (string)$response['body'];
+            if ($response['status'] === 404 || str_contains($body, 'UNREGISTERED') || str_contains($body, 'registration-token-not-registered')) {
+                $pdo->prepare('UPDATE driver_push_devices SET enabled = 0, updated_at = :now WHERE id = :id')
+                    ->execute([':now' => gmdate(DateTimeInterface::ATOM), ':id' => $device['id']]);
+            }
+        }
+    }
+
+    if ($sent > 0) {
+        $pdo->prepare('UPDATE jobs SET driver_push_last_at = :now WHERE id = :job')
+            ->execute([':now' => gmdate(DateTimeInterface::ATOM), ':job' => $jobId]);
+    }
+    return ['configured' => true, 'sent' => $sent, 'failed' => $failed];
+}
+
+function aims_process_driver_job_reminders(PDO $pdo, int $limit = 20): array {
+    $cutoff = (new DateTimeImmutable('-60 seconds', new DateTimeZone('UTC')))->format(DateTimeInterface::ATOM);
+    $stmt = $pdo->prepare('SELECT id FROM jobs
+                           WHERE status = "active"
+                             AND driver_seen_at IS NULL
+                             AND (driver_push_last_at IS NULL OR driver_push_last_at <= :cutoff)
+                           ORDER BY id ASC LIMIT ' . max(1, min(50, $limit)));
+    $stmt->execute([':cutoff' => $cutoff]);
+    $jobs = array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN));
+    $sent = 0;
+    $failed = 0;
+    foreach ($jobs as $jobId) {
+        $result = aims_send_driver_job_push($pdo, $jobId);
+        $sent += (int)($result['sent'] ?? 0);
+        $failed += (int)($result['failed'] ?? 0);
+    }
+    return ['driverJobsProcessed' => count($jobs), 'driverPushSent' => $sent, 'driverPushFailed' => $failed];
+}
