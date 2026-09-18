@@ -140,7 +140,21 @@ class _FlowRegisterScreenState extends State<FlowRegisterScreen> {
   @override
   void initState() {
     super.initState();
-    _chooseCountry(_countries.first);
+    AimsLocaleController.instance.addListener(_onLanguageChanged);
+    _chooseCountry(_countries.first, notify: false);
+  }
+
+  void _onLanguageChanged() {
+    if (_countryCode.isEmpty) return;
+    for (final country in _countries) {
+      if (country.code == _countryCode) {
+        _country.text = _countryLabel(country);
+        _country.selection =
+            TextSelection.collapsed(offset: _country.text.length);
+        if (mounted) setState(() {});
+        return;
+      }
+    }
   }
 
   @override
@@ -153,6 +167,7 @@ class _FlowRegisterScreenState extends State<FlowRegisterScreen> {
     _email.dispose();
     _address.dispose();
     _tax.dispose();
+    AimsLocaleController.instance.removeListener(_onLanguageChanged);
     super.dispose();
   }
 
@@ -175,11 +190,12 @@ class _FlowRegisterScreenState extends State<FlowRegisterScreen> {
   String _countryLabel(_CountryOption country) =>
       country.label(AimsLocaleController.instance.languageCode);
 
-  void _chooseCountry(_CountryOption country) {
+  void _chooseCountry(_CountryOption country, {bool notify = true}) {
     _countryCode = country.code;
     _country.text = _countryLabel(country);
     _country.selection = TextSelection.collapsed(offset: _country.text.length);
-    if (mounted) setState(() => _countryTyping = false);
+    _countryTyping = false;
+    if (notify && mounted) setState(() {});
   }
 
   List<_CountryOption> get _suggestions {
