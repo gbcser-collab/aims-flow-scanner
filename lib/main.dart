@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'screens/admin_center_screen.dart';
-import 'screens/device_gate.dart';
 import 'screens/home_screen.dart';
 import 'services/admin_push_service.dart';
 import 'services/vehicle_tracking_service.dart';
@@ -42,7 +41,9 @@ class AimsFlowApp extends StatelessWidget {
           ),
         ),
       ),
-      home: const DeviceGate(child: _TrackingShell()),
+      // Device approval is intentionally no longer an application gate.
+      // Access control is moving to account-based authentication and roles.
+      home: const _TrackingShell(),
     );
   }
 }
