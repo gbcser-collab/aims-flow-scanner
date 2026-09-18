@@ -6,10 +6,12 @@ class NativeAuthResult {
   const NativeAuthResult({
     required this.role,
     required this.displayName,
+    required this.plate,
   });
 
   final String role;
   final String displayName;
+  final String plate;
 }
 
 class NativeRegistrationResult {
@@ -68,6 +70,7 @@ class NativeAuthService {
       return NativeAuthResult(
         role: body['role']?.toString() ?? 'driver',
         displayName: body['displayName']?.toString() ?? login.trim(),
+        plate: body['plate']?.toString() ?? '',
       );
     }
 
@@ -76,7 +79,7 @@ class NativeAuthService {
       throw StateError('Túl sok sikertelen próbálkozás. Próbáld meg később.');
     }
     if (response.statusCode == 401 || error == 'invalid_credentials') {
-      throw StateError('Hibás belépési adatok vagy 2FA kód.');
+      throw StateError('Hibás rendszám / belépőkód, vagy adminnál hibás 2FA kód.');
     }
     throw StateError('A Logistic-AIMS belépési szerver nem érhető el.');
   }
