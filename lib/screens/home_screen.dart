@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../models/scan_models.dart';
 import '../services/cmr_sync_service.dart';
 import '../services/scan_repository.dart';
+import 'fuel_receipt_screen.dart';
 import 'scan_review_screen.dart';
 import 'scanner_screen.dart';
 
@@ -21,6 +22,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   static const _sync = CmrSyncService();
 
   bool _opening = false;
+  bool _openingFuel = false;
   bool _historyLoading = true;
   bool _syncing = false;
   String? _error;
@@ -118,6 +120,36 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       setState(() => _error = 'A scanner nem indult el: $e');
     } finally {
       if (mounted) setState(() => _opening = false);
+    }
+  }
+
+  Future<void> _openFuelReceipt() async {
+    if (_openingFuel) return;
+    setState(() {
+      _openingFuel = true;
+      _error = null;
+    });
+
+    try {
+      final cameras = await availableCameras();
+      if (!mounted) return;
+      if (cameras.isEmpty) {
+        setState(() => _error = 'Nem található használható kamera.');
+        return;
+      }
+      final backs = cameras.where((c) => c.lensDirection == CameraLensDirection.back).toList();
+      final selected = backs.isNotEmpty ? backs.first : cameras.first;
+      await Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => FuelReceiptScreen(camera: selected)),
+      );
+    } on CameraException catch (e) {
+      if (!mounted) return;
+      setState(() => _error = 'A kamera nem érhető el (${e.code}).');
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = 'A tankolási scanner nem indult el: $e');
+    } finally {
+      if (mounted) setState(() => _openingFuel = false);
     }
   }
 
@@ -227,6 +259,21 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 backgroundColor: const Color(0xFFE6B85C),
                 foregroundColor: Colors.black,
                 textStyle: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+              ),
+            ),
+            const SizedBox(height: 10),
+            OutlinedButton.icon(
+              key: const ValueKey('open-fuel-receipt'),
+              onPressed: _openingFuel ? null : _openFuelReceipt,
+              icon: _openingFuel
+                  ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.local_gas_station_rounded),
+              label: Text(_openingFuel ? 'Kamera indítása…' : 'Tankolási bizonylat küldése'),
+              style: OutlinedButton.styleFrom(
+                minimumSize: const Size.fromHeight(54),
+                foregroundColor: const Color(0xFFE6B85C),
+                side: const BorderSide(color: Color(0xFFE6B85C)),
+                textStyle: const TextStyle(fontWeight: FontWeight.w800),
               ),
             ),
             if (_error != null) ...[
