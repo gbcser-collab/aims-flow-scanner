@@ -12,9 +12,11 @@ class NailOverlayPainter extends CustomPainter {
     required this.length,
     required this.finish,
     required this.calibration,
+    this.sourceSize,
   });
 
   final List<Offset> points;
+  final Size? sourceSize;
   final Color color;
   final String shape;
   final double length;
@@ -23,8 +25,9 @@ class NailOverlayPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    for (var i = 0; i < points.length && i < 5; i++) {
-      final p = Offset(points[i].dx * size.width, points[i].dy * size.height);
+    final mapped = points.take(5).map((point) => _mapPoint(point, size)).toList(growable: false);
+    for (var i = 0; i < mapped.length; i++) {
+      final p = mapped[i];
       if (calibration) {
         final halo = Paint()
           ..color = const Color(0xFFD27B8F).withValues(alpha: .20)
@@ -33,11 +36,10 @@ class NailOverlayPainter extends CustomPainter {
         canvas.drawCircle(p, 10, Paint()..color = const Color(0xFFD27B8F));
         _drawNumber(canvas, p, i + 1);
       } else {
-        final widths = [0.082, 0.062, 0.065, 0.060, 0.052];
         drawNail(
           canvas,
           p,
-          size.width * widths[i],
+          _adaptiveNailWidth(i, mapped, size),
           color,
           shape,
           length,
@@ -46,6 +48,33 @@ class NailOverlayPainter extends CustomPainter {
         );
       }
     }
+  }
+
+  Offset _mapPoint(Offset point, Size viewport) {
+    final source = sourceSize;
+    if (source == null || source.width <= 0 || source.height <= 0) {
+      return Offset(point.dx * viewport.width, point.dy * viewport.height);
+    }
+    final scale = math.max(viewport.width / source.width, viewport.height / source.height);
+    final renderedW = source.width * scale;
+    final renderedH = source.height * scale;
+    final originX = (viewport.width - renderedW) / 2;
+    final originY = (viewport.height - renderedH) / 2;
+    return Offset(originX + point.dx * renderedW, originY + point.dy * renderedH);
+  }
+
+  double _adaptiveNailWidth(int index, List<Offset> mapped, Size size) {
+    if (mapped.length < 2) {
+      const fallback = [0.082, 0.062, 0.065, 0.060, 0.052];
+      return size.width * fallback[index.clamp(0, fallback.length - 1)];
+    }
+    var nearest = double.infinity;
+    for (var i = 0; i < mapped.length; i++) {
+      if (i == index) continue;
+      nearest = math.min(nearest, (mapped[index] - mapped[i]).distance);
+    }
+    final fingerScale = index == 0 ? 1.10 : (index == 4 ? .86 : 1.0);
+    return (nearest * .34 * fingerScale).clamp(size.width * .034, size.width * .092).toDouble();
   }
 
   void _drawNumber(Canvas canvas, Offset p, int n) {
@@ -70,7 +99,8 @@ class NailOverlayPainter extends CustomPainter {
       oldDelegate.shape != shape ||
       oldDelegate.length != length ||
       oldDelegate.finish != finish ||
-      oldDelegate.calibration != calibration;
+      oldDelegate.calibration != calibration ||
+      oldDelegate.sourceSize != sourceSize;
 }
 
 class DemoHandPainter extends CustomPainter {
