@@ -117,6 +117,7 @@ class NailFitV3Controller extends ChangeNotifier {
   Timer? _persistTimer;
   Future<void> _persistChain = Future<void>.value();
   int _analysisEpoch = 0;
+  int? _dragPointIndex;
 
   static const List<Offset> defaultPoints = <Offset>[
     Offset(.79, .57),
@@ -596,8 +597,9 @@ class NailFitV3Controller extends ChangeNotifier {
     _schedulePersist();
   }
 
-  void moveNearestPoint(Offset local, Size size, {double maxDistance = 72}) {
-    if (points.isEmpty || size.width <= 0 || size.height <= 0) return;
+  bool beginPointDrag(Offset local, Size size, {double maxDistance = 72}) {
+    _dragPointIndex = null;
+    if (points.isEmpty || size.width <= 0 || size.height <= 0) return false;
     var best = -1;
     var bestDistance = double.infinity;
     for (var i = 0; i < points.length; i++) {
@@ -608,11 +610,22 @@ class NailFitV3Controller extends ChangeNotifier {
         best = i;
       }
     }
-    if (best < 0 || bestDistance > maxDistance) return;
-    points[best] = sourcePointFromViewport(local, size);
+    if (best < 0 || bestDistance > maxDistance) return false;
+    _dragPointIndex = best;
+    return true;
+  }
+
+  void updatePointDrag(Offset local, Size size) {
+    final index = _dragPointIndex;
+    if (index == null || index < 0 || index >= points.length || size.width <= 0 || size.height <= 0) return;
+    points[index] = sourcePointFromViewport(local, size);
     _refreshGeometryFromPoints();
     notifyListeners();
     _schedulePersist();
+  }
+
+  void endPointDrag() {
+    _dragPointIndex = null;
   }
 
   void undoPoint() {
