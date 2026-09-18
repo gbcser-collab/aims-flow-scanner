@@ -75,7 +75,7 @@ class NailFitV3SavedProfile {
                 _utility(Icons.notifications_none_rounded, c.notificationsEnabled ? 'Értesítések: be' : 'Értesítések: ki', _toggleNotifications),
                 _utility(Icons.favorite_border_rounded, 'Kedvencek és mentések', _openSaved),
                 _utility(Icons.image_outlined, 'PNG exportok', _showExports),
-                _utility(Icons.restart_alt_rounded, 'Mentések nullázása', _resetSaved),
+                _utility(Icons.privacy_tip_outlined, 'Adatvédelem és törlés', _privacy),
                 _utility(Icons.help_outline_rounded, 'Súgó és GYIK', _showHelp),
               ],
             ),
@@ -133,11 +133,17 @@ class NailFitV3SavedProfile {
         scrollDirection: Axis.horizontal,
         itemCount: paths.length,
         separatorBuilder: (_, __) => const SizedBox(width: 9),
-        itemBuilder: (_, i) => Container(
-          width: 142,
-          clipBehavior: Clip.antiAlias,
-          decoration: nfCard(),
-          child: Image.file(File(paths[i]), fit: BoxFit.cover),
+        itemBuilder: (_, i) => Builder(
+          builder: (context) => InkWell(
+            onTap: () => _previewPng(context, paths[i]),
+            borderRadius: BorderRadius.circular(22),
+            child: Container(
+              width: 142,
+              clipBehavior: Clip.antiAlias,
+              decoration: nfCard(),
+              child: Image.file(File(paths[i]), fit: BoxFit.cover),
+            ),
+          ),
         ),
       ),
     );
@@ -237,26 +243,84 @@ class NailFitV3SavedProfile {
   }
 
   void _showExports(BuildContext context) {
+    if (c.savedPngPaths.isEmpty) {
+      showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('PNG exportok'),
+          content: const Text('Még nincs mentett PNG. A Try-On oldalon a „Look mentése” gombbal készíthetsz.'),
+          actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Rendben'))],
+        ),
+      );
+      return;
+    }
+    c.go(3);
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('A PNG-galéria megnyitva a Mentett oldalon. Érints meg egy képet a nagyításhoz.')));
+  }
+
+  void _previewPng(BuildContext context, String path) {
     showDialog<void>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('PNG exportok'),
-        content: Text(c.savedPngPaths.isEmpty ? 'Még nincs mentett PNG. A Try-On oldalon a „Look mentése” gombbal készíthetsz.' : '${c.savedPngPaths.length} PNG van nyilvántartva ezen az eszközön.\n\nLegutóbbi:\n${c.savedPngPaths.first}'),
-        actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Rendben'))],
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Mentett NAILFIT look'),
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(maxHeight: 520),
+          child: Image.file(File(path), fit: BoxFit.contain),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Bezárás')),
+          TextButton(
+            onPressed: () async {
+              await c.removePng(path);
+              if (dialogContext.mounted) Navigator.pop(dialogContext);
+            },
+            child: const Text('PNG törlése'),
+          ),
+        ],
       ),
     );
   }
 
-  void _resetSaved(BuildContext context) {
-    showDialog<void>(
+  void _privacy(BuildContext context) {
+    showModalBottomSheet<void>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Mentések nullázása?'),
-        content: const Text('A kedvencek és a NAILFIT belső mentési listája törlődik. A már létrehozott PNG-fájlokat ez nem törli a tárhelyről.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Mégse')),
-          FilledButton(onPressed: () { c.clearSaved(); Navigator.pop(context); }, child: const Text('Nullázás')),
-        ],
+      backgroundColor: nfCream,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text('Adatvédelem és törlés', style: TextStyle(fontFamily: 'serif', fontSize: 28, color: nfInk)),
+              const SizedBox(height: 8),
+              const Text('A kézfotó, a scan-adatok és a mentett PNG-k ezen az eszközön, az app saját tárhelyén vannak.', style: TextStyle(color: nfMuted, fontSize: 10.5, height: 1.35)),
+              const SizedBox(height: 16),
+              OutlinedButton.icon(
+                onPressed: () async {
+                  await c.clearHandData();
+                  if (sheetContext.mounted) Navigator.pop(sheetContext);
+                  if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('A tárolt kézfotó és scan-adatok törölve.')));
+                },
+                icon: const Icon(Icons.back_hand_outlined),
+                label: const Text('Kézfotó + scan törlése'),
+              ),
+              const SizedBox(height: 8),
+              FilledButton.icon(
+                onPressed: () {
+                  c.clearSaved();
+                  Navigator.pop(sheetContext);
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('A kedvencek, mentett lookok és PNG-fájlok törlése elindult.')));
+                },
+                icon: const Icon(Icons.delete_outline_rounded),
+                label: const Text('Mentések + PNG-k törlése'),
+              ),
+              const SizedBox(height: 6),
+              TextButton(onPressed: () => Navigator.pop(sheetContext), child: const Text('Mégse')),
+            ],
+          ),
+        ),
       ),
     );
   }
