@@ -13,7 +13,7 @@ class NailFitV3Home extends StatelessWidget {
     physics: const BouncingScrollPhysics(),
     padding: const EdgeInsets.fromLTRB(16, 10, 16, 30),
     child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      nfHeader(onAi: () => _showStylist(context), onNotifications: () => _showNotifications(context)),
+      nfHeader(onAi: () => _showStylist(context), onNotifications: () => _showNotifications(context), notificationActive: c.notificationsEnabled && c.appointment != null),
       const SizedBox(height: 18),
       _hero(),
       const SizedBox(height: 26),
