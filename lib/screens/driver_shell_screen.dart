@@ -762,7 +762,7 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
                   color: _voiceState.enabled ? _green : Colors.white38,
                 ),
                 const SizedBox(width: 11),
-                const Expanded(
+                Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
