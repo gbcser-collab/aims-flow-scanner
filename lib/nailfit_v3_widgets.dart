@@ -6,7 +6,7 @@ Widget nfBackground(Widget child) => DecoratedBox(
   child: child,
 );
 
-Widget nfHeader({VoidCallback? onAi, VoidCallback? onNotifications}) => Row(children: [
+Widget nfHeader({VoidCallback? onAi, VoidCallback? onNotifications, bool notificationActive = false}) => Row(children: [
   const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
     Row(children: [Text('NAIL', style: TextStyle(fontSize: 22, letterSpacing: 3.6, fontWeight: FontWeight.w500, color: nfInk)), Text('FIT', style: TextStyle(fontSize: 22, letterSpacing: 3.6, fontWeight: FontWeight.w500, color: nfRose))]),
     Text('B E A U T Y   M E E T S   Y O U', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 6.2, letterSpacing: 1.0, color: nfMuted)),
@@ -21,9 +21,70 @@ Widget nfHeader({VoidCallback? onAi, VoidCallback? onNotifications}) => Row(chil
   InkWell(
     onTap: onNotifications,
     borderRadius: BorderRadius.circular(99),
-    child: Stack(children: [Container(width: 36, height: 36, decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle), child: const Icon(Icons.notifications_none_rounded, size: 20, color: nfInk)), const Positioned(right: 2, top: 2, child: CircleAvatar(radius: 4, backgroundColor: Color(0xFFD97C8F)))]),
+    child: Stack(children: [
+      Container(width: 36, height: 36, decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle), child: const Icon(Icons.notifications_none_rounded, size: 20, color: nfInk)),
+      if (notificationActive) const Positioned(right: 2, top: 2, child: CircleAvatar(radius: 4, backgroundColor: Color(0xFFD97C8F))),
+    ]),
   ),
 ]);
+
+
+Future<void> nfShowStylist(BuildContext context, NailFitV3Controller c, {String initial = ''}) async {
+  final controller = TextEditingController(text: initial);
+  final result = await showModalBottomSheet<String>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: nfCream,
+    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
+    builder: (context) => Padding(
+      padding: EdgeInsets.fromLTRB(18, 20, 18, MediaQuery.of(context).viewInsets.bottom + 22),
+      child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        const Text('Beauty Stylist', style: TextStyle(fontFamily: 'serif', fontSize: 28, color: nfInk)),
+        const SizedBox(height: 6),
+        const Text('Helyi stílusajánló. Példa: „fekete ruha, elegáns vacsora” vagy „minimal köröm munkába”.', style: TextStyle(color: nfMuted, fontSize: 10.5)),
+        const SizedBox(height: 14),
+        TextField(controller: controller, autofocus: true, maxLines: 3, decoration: InputDecoration(hintText: 'Írd le a hangulatot…', filled: true, fillColor: Colors.white, border: OutlineInputBorder(borderRadius: BorderRadius.circular(18), borderSide: BorderSide.none))),
+        const SizedBox(height: 12),
+        FilledButton(onPressed: () => Navigator.pop(context, controller.text.trim()), style: FilledButton.styleFrom(backgroundColor: nfRose, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 14)), child: const Text('Ajánlj lookot')),
+      ]),
+    ),
+  );
+  controller.dispose();
+  if (result == null || result.isEmpty) return;
+  c.recommendFromPrompt(result);
+}
+
+void nfShowNotifications(BuildContext context, NailFitV3Controller c) {
+  showModalBottomSheet<void>(
+    context: context,
+    backgroundColor: nfCream,
+    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
+    builder: (sheetContext) => SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          const Text('Értesítések', style: TextStyle(fontFamily: 'serif', fontSize: 27, color: nfInk)),
+          const SizedBox(height: 12),
+          StatefulBuilder(builder: (context, setLocal) => SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('NAILFIT értesítési preferencia'),
+            subtitle: const Text('Jelenleg alkalmazáson belüli beállítás; rendszerértesítést nem ütemez.'),
+            value: c.notificationsEnabled,
+            onChanged: (_) { c.toggleNotifications(); setLocal(() {}); },
+          )),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.calendar_month_outlined, color: nfRoseDark),
+            title: Text(c.appointment == null ? 'Nincs mentett szalonidőpont' : 'Mentett szalonidőpont'),
+            subtitle: c.appointment == null
+                ? const Text('A Try-On oldalon tudsz időpontot tervezni.')
+                : Text('${c.appointment!.year}.${c.appointment!.month.toString().padLeft(2, '0')}.${c.appointment!.day.toString().padLeft(2, '0')}  ${c.appointment!.hour.toString().padLeft(2, '0')}:${c.appointment!.minute.toString().padLeft(2, '0')}'),
+          ),
+        ]),
+      ),
+    ),
+  );
+}
 
 BoxDecoration nfCard([Color? color]) => BoxDecoration(color: color ?? Colors.white.withValues(alpha: .86), borderRadius: BorderRadius.circular(22), border: Border.all(color: Colors.white), boxShadow: const [BoxShadow(color: Color(0x109B6B74), blurRadius: 16, offset: Offset(0, 7))]);
 
