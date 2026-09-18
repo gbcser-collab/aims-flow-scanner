@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../services/native_auth_service.dart';
 import 'driver_shell_screen.dart';
+import 'flow_register_screen.dart';
 
 class FlowLoginScreen extends StatefulWidget {
   const FlowLoginScreen({super.key});
@@ -25,6 +26,7 @@ class _FlowLoginScreenState extends State<FlowLoginScreen> {
   final _code = TextEditingController();
   bool _busy = false;
   bool _obscure = true;
+  bool _adminMode = false;
   String? _error;
 
   @override
@@ -50,7 +52,7 @@ class _FlowLoginScreenState extends State<FlowLoginScreen> {
         await _auth.login(
           login: _login.text,
           password: _password.text,
-          code: _code.text,
+          code: _adminMode ? _code.text : '',
         );
       }
       if (!mounted) return;
@@ -184,19 +186,45 @@ class _FlowLoginScreenState extends State<FlowLoginScreen> {
                               ),
                             ),
                           ),
-                          const SizedBox(height: 12),
-                          TextField(
-                            key: const Key('flow-login-2fa'),
-                            controller: _code,
-                            keyboardType: TextInputType.number,
-                            maxLength: 6,
-                            textInputAction: TextInputAction.done,
-                            onSubmitted: (_) => _submit(),
-                            decoration: _decoration(
-                              '2FA kód – admin fióknál',
-                              Icons.shield_outlined,
-                            ).copyWith(counterText: ''),
+                          const SizedBox(height: 10),
+                          SwitchListTile(
+                            key: const Key('flow-admin-toggle'),
+                            value: _adminMode,
+                            onChanged: _busy
+                                ? null
+                                : (value) => setState(() {
+                                      _adminMode = value;
+                                      if (!value) _code.clear();
+                                    }),
+                            contentPadding: EdgeInsets.zero,
+                            title: const Text(
+                              'Admin belépés',
+                              style: TextStyle(fontWeight: FontWeight.w800),
+                            ),
+                            subtitle: const Text(
+                              'Csak adminnál kell Authenticator-kód.',
+                              style: TextStyle(color: Colors.white38),
+                            ),
+                            secondary: const Icon(
+                              Icons.admin_panel_settings_outlined,
+                              color: Color(0xFF9EDBFF),
+                            ),
                           ),
+                          if (_adminMode) ...[
+                            const SizedBox(height: 8),
+                            TextField(
+                              key: const Key('flow-login-2fa'),
+                              controller: _code,
+                              keyboardType: TextInputType.number,
+                              maxLength: 6,
+                              textInputAction: TextInputAction.done,
+                              onSubmitted: (_) => _submit(),
+                              decoration: _decoration(
+                                '6 jegyű Authenticator-kód',
+                                Icons.shield_outlined,
+                              ).copyWith(counterText: ''),
+                            ),
+                          ],
                           if (_error != null) ...[
                             const SizedBox(height: 12),
                             Text(
@@ -235,13 +263,38 @@ class _FlowLoginScreenState extends State<FlowLoginScreen> {
                               ),
                             ),
                           ),
+                          const SizedBox(height: 12),
+                          OutlinedButton.icon(
+                            key: const Key('flow-register-open'),
+                            onPressed: _busy
+                                ? null
+                                : () => Navigator.of(context).push(
+                                      MaterialPageRoute(
+                                        builder: (_) => const FlowRegisterScreen(),
+                                      ),
+                                    ),
+                            icon: const Icon(Icons.person_add_alt_1_rounded),
+                            label: const Text('REGISZTRÁCIÓ'),
+                            style: OutlinedButton.styleFrom(
+                              minimumSize: const Size.fromHeight(54),
+                              foregroundColor: Colors.white,
+                              side: const BorderSide(color: _blue),
+                              textStyle: const TextStyle(
+                                fontWeight: FontWeight.w900,
+                                fontSize: 15,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(17),
+                              ),
+                            ),
+                          ),
                         ],
                       ),
                     ),
                     const SizedBox(height: 18),
                     const Text(
-                      'A webes admin fióknál a 6 jegyű Authenticator-kód is kell. '
-                      'Partnerfióknál a 2FA mező üresen hagyható.',
+                      'Partner / sofőr: e-mail vagy felhasználónév + jelszó. '
+                      'Kétfaktoros kód csak admin belépésnél szükséges.',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         color: Colors.white38,
