@@ -65,6 +65,8 @@ class ScanResult {
     required this.contrast,
     required this.resolution,
     required this.skinCoverage,
+    required this.sharpness,
+    required this.centerScore,
     required this.hint,
   });
 
@@ -79,6 +81,8 @@ class ScanResult {
   final double contrast;
   final String resolution;
   final double skinCoverage;
+  final double sharpness;
+  final int centerScore;
   final String hint;
 }
 
@@ -460,6 +464,7 @@ class NailFitV3Controller extends ChangeNotifier {
     scan = null;
     analyzing = false;
     _skinBounds = null;
+    _smartPoints = null;
     notifyListeners();
     _schedulePersist();
   }
@@ -558,12 +563,14 @@ class NailFitV3Controller extends ChangeNotifier {
       var sr = 0.0;
       var sg = 0.0;
       var sb = 0.0;
-      var minX = width;
-      var maxX = 0;
-      var minY = height;
-      var maxY = 0;
+      var gradientSum = 0.0;
+      var gradientCount = 0;
+      var darkCount = 0;
+      var brightCount = 0;
+      final skinSamples = <Offset>[];
 
       for (var y = 0; y < height; y += step) {
+        double? previousLuminance;
         for (var x = 0; x < width; x += step) {
           final i = (y * width + x) * 4;
           final r = data.getUint8(i).toDouble();
@@ -572,6 +579,13 @@ class NailFitV3Controller extends ChangeNotifier {
           final l = .2126 * r + .7152 * g + .0722 * b;
           luminanceSum += l;
           luminanceSq += l * l;
+          if (l < 28) darkCount++;
+          if (l > 245) brightCount++;
+          if (previousLuminance != null) {
+            gradientSum += (l - previousLuminance).abs();
+            gradientCount++;
+          }
+          previousLuminance = l;
           count++;
 
           final maxC = math.max(r, math.max(g, b));
@@ -582,10 +596,7 @@ class NailFitV3Controller extends ChangeNotifier {
             sr += r;
             sg += g;
             sb += b;
-            if (x < minX) minX = x;
-            if (x > maxX) maxX = x;
-            if (y < minY) minY = y;
-            if (y > maxY) maxY = y;
+            skinSamples.add(Offset(x / width, y / height));
           }
         }
       }
@@ -595,19 +606,35 @@ class NailFitV3Controller extends ChangeNotifier {
       final contrast = math.sqrt(math.max(0.0, variance));
       final originalPixels = photoWidth * photoHeight;
       final skinCoverage = count == 0 ? 0.0 : skinCount / count;
+      final sharpness = gradientCount == 0 ? 0.0 : gradientSum / gradientCount;
+      final darkRatio = count == 0 ? 0.0 : darkCount / count;
+      final brightRatio = count == 0 ? 0.0 : brightCount / count;
 
-      if (skinCount > 20 && maxX > minX && maxY > minY) {
-        final padX = (maxX - minX) * .05;
-        final padY = (maxY - minY) * .04;
+      if (skinSamples.length > 24) {
+        final xs = skinSamples.map((p) => p.dx).toList()..sort();
+        final ys = skinSamples.map((p) => p.dy).toList()..sort();
+        double q(List<double> values, double p) => values[((values.length - 1) * p).round().clamp(0, values.length - 1)];
+        final left = q(xs, .025);
+        final right = q(xs, .975);
+        final top = q(ys, .025);
+        final bottom = q(ys, .975);
+        final padX = (right - left) * .04;
+        final padY = (bottom - top) * .035;
         _skinBounds = Rect.fromLTRB(
-          ((minX - padX) / width).clamp(0.0, 1.0).toDouble(),
-          ((minY - padY) / height).clamp(0.0, 1.0).toDouble(),
-          ((maxX + padX) / width).clamp(0.0, 1.0).toDouble(),
-          ((maxY + padY) / height).clamp(0.0, 1.0).toDouble(),
+          (left - padX).clamp(0.0, 1.0).toDouble(),
+          (top - padY).clamp(0.0, 1.0).toDouble(),
+          (right + padX).clamp(0.0, 1.0).toDouble(),
+          (bottom + padY).clamp(0.0, 1.0).toDouble(),
         );
+        _smartPoints = _deriveSmartPoints(skinSamples, _skinBounds!);
       } else {
         _skinBounds = null;
+        _smartPoints = null;
       }
+
+      final center = _skinBounds?.center;
+      final centerDistance = center == null ? 1.0 : math.sqrt(math.pow(center.dx - .5, 2) + math.pow(center.dy - .5, 2));
+      final centerScore = (100 - centerDistance * 155).clamp(0, 100).round();
 
       final avgR = skinCount == 0 ? 178.0 : sr / skinCount;
       final avgG = skinCount == 0 ? 142.0 : sg / skinCount;
@@ -647,8 +674,20 @@ class NailFitV3Controller extends ChangeNotifier {
         hints.add('Túl erős a fény');
       }
       if (contrast < 22) {
-        qualityScore -= 22;
+        qualityScore -= 18;
         hints.add('Kevés a részlet/kontraszt');
+      }
+      if (sharpness < 8.5) {
+        qualityScore -= 18;
+        hints.add('A kép bemozdult vagy életlen');
+      }
+      if (darkRatio > .18) {
+        qualityScore -= 10;
+        hints.add('Sok az elveszett sötét részlet');
+      }
+      if (brightRatio > .14) {
+        qualityScore -= 10;
+        hints.add('Sok a kiégett világos részlet');
       }
       if (originalPixels < 700000) {
         qualityScore -= 18;
@@ -660,6 +699,14 @@ class NailFitV3Controller extends ChangeNotifier {
       } else if (skinCoverage > .82) {
         qualityScore -= 8;
         hints.add('Hagyj egy kis teret a kéz körül');
+      }
+      if (centerScore < 55) {
+        qualityScore -= 12;
+        hints.add('Tedd közelebb a kép közepéhez a kezed');
+      }
+      if (photoAspectRatio > 1.35) {
+        qualityScore -= 8;
+        hints.add('Álló képnél pontosabb a kalibráció');
       }
       qualityScore = qualityScore.clamp(30, 100).toInt();
       final quality = qualityScore >= 84
@@ -682,6 +729,8 @@ class NailFitV3Controller extends ChangeNotifier {
         contrast: contrast,
         resolution: '${photoWidth}×$photoHeight',
         skinCoverage: skinCoverage,
+        sharpness: sharpness,
+        centerScore: centerScore,
         hint: hints.isEmpty ? 'A kép alkalmas a Try-Onhoz.' : hints.join(' · '),
       );
       lastScanAt = DateTime.now();
@@ -708,6 +757,8 @@ class NailFitV3Controller extends ChangeNotifier {
         contrast: 0,
         resolution: 'Elemzés sikertelen',
         skinCoverage: 0,
+        sharpness: 0,
+        centerScore: 0,
         hint: 'A képet nem sikerült biztonságosan feldolgozni.',
       );
       return scan;
@@ -719,6 +770,49 @@ class NailFitV3Controller extends ChangeNotifier {
       analyzing = false;
       notifyListeners();
     }
+  }
+
+  List<Offset> _deriveSmartPoints(List<Offset> samples, Rect bounds) {
+    if (samples.length < 25 || bounds.width <= .08 || bounds.height <= .12) return const <Offset>[];
+
+    Offset fingerTip(double fraction) {
+      final cx = bounds.left + bounds.width * fraction;
+      final halfWindow = bounds.width * .075;
+      final candidates = samples
+          .where((p) => (p.dx - cx).abs() <= halfWindow && p.dy <= bounds.top + bounds.height * .58)
+          .toList()
+        ..sort((a, b) => a.dy.compareTo(b.dy));
+      if (candidates.isEmpty) return Offset(cx, bounds.top + bounds.height * .22);
+      final take = math.max(1, (candidates.length * .16).round());
+      final top = candidates.take(take).toList();
+      final x = top.map((p) => p.dx).reduce((a, b) => a + b) / top.length;
+      final y = top.map((p) => p.dy).reduce((a, b) => a + b) / top.length + bounds.height * .025;
+      return Offset(x.clamp(.02, .98).toDouble(), y.clamp(.02, .98).toDouble());
+    }
+
+    final midTop = bounds.top + bounds.height * .30;
+    final midBottom = bounds.top + bounds.height * .78;
+    final leftSide = samples.where((p) => p.dx <= bounds.left + bounds.width * .18 && p.dy >= midTop && p.dy <= midBottom).length;
+    final rightSide = samples.where((p) => p.dx >= bounds.right - bounds.width * .18 && p.dy >= midTop && p.dy <= midBottom).length;
+    final thumbRight = rightSide >= leftSide;
+    final thumbCandidates = samples.where((p) {
+      final side = thumbRight ? p.dx >= bounds.left + bounds.width * .67 : p.dx <= bounds.left + bounds.width * .33;
+      return side && p.dy >= bounds.top + bounds.height * .28 && p.dy <= bounds.top + bounds.height * .78;
+    }).toList()
+      ..sort((a, b) => thumbRight ? b.dx.compareTo(a.dx) : a.dx.compareTo(b.dx));
+    Offset thumb;
+    if (thumbCandidates.isEmpty) {
+      thumb = Offset(thumbRight ? bounds.left + bounds.width * .88 : bounds.left + bounds.width * .12, bounds.top + bounds.height * .55);
+    } else {
+      final take = math.max(1, (thumbCandidates.length * .14).round());
+      final edge = thumbCandidates.take(take).toList();
+      final x = edge.map((p) => p.dx).reduce((a, b) => a + b) / edge.length;
+      final y = edge.map((p) => p.dy).reduce((a, b) => a + b) / edge.length;
+      thumb = Offset(x.clamp(.02, .98).toDouble(), y.clamp(.02, .98).toDouble());
+    }
+
+    final fractions = thumbRight ? const <double>[.20, .41, .62, .78] : const <double>[.80, .59, .38, .22];
+    return <Offset>[thumb, ...fractions.map(fingerTip)];
   }
 
   void _refreshGeometryFromPoints() {
@@ -743,6 +837,8 @@ class NailFitV3Controller extends ChangeNotifier {
       contrast: current.contrast,
       resolution: current.resolution,
       skinCoverage: current.skinCoverage,
+      sharpness: current.sharpness,
+      centerScore: current.centerScore,
       hint: current.hint,
     );
   }
