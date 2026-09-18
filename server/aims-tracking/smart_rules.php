@@ -41,7 +41,9 @@ function aims_due_stop_alerts(int $stationarySeconds, int $sentMask): array {
             $due[] = $threshold;
         }
     }
-    return $due;
+    if (count($due) <= 1) return $due;
+    // After an offline/reconnect gap, do not burst 15+30+60 at once.
+    return [end($due)];
 }
 
 function aims_geofence_radius_m(float $configuredRadius, ?float $accuracy): float {
