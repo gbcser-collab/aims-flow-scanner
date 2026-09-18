@@ -516,23 +516,26 @@ class _FlowRegisterScreenState extends State<FlowRegisterScreen> {
                               itemCount: _suggestions.length,
                               itemBuilder: (context, index) {
                                 final country = _suggestions[index];
-                                return ListTile(
-                                  dense: true,
-                                  visualDensity: const VisualDensity(
-                                    vertical: -2,
-                                  ),
-                                  leading: Text(
-                                    country.code,
-                                    style: const TextStyle(
-                                      color: _blue,
-                                      fontWeight: FontWeight.w900,
+                                return Material(
+                                  type: MaterialType.transparency,
+                                  child: ListTile(
+                                    dense: true,
+                                    visualDensity: const VisualDensity(
+                                      vertical: -2,
                                     ),
+                                    leading: Text(
+                                      country.code,
+                                      style: const TextStyle(
+                                        color: _blue,
+                                        fontWeight: FontWeight.w900,
+                                      ),
+                                    ),
+                                    title: Text(_countryLabel(country)),
+                                    onTap: () {
+                                      _chooseCountry(country);
+                                      _countryFocus.unfocus();
+                                    },
                                   ),
-                                  title: Text(_countryLabel(country)),
-                                  onTap: () {
-                                    _chooseCountry(country);
-                                    _countryFocus.unfocus();
-                                  },
                                 );
                               },
                             ),
