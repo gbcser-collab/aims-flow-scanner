@@ -1,0 +1,38 @@
+name: Test AIMS Flow Document Intelligence
+
+on:
+  push:
+    branches:
+      - v1.2-document-intelligence
+    paths:
+      - 'server/document_ingest/**'
+      - '.github/workflows/document-intelligence-test.yml'
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: server/document_ingest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: server/document_ingest/requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pytest
+
+      - name: Compile
+        run: python -m compileall -q aims_docintel
+
+      - name: Unit tests
+        env:
+          PYTHONPATH: .
+        run: pytest -q tests
