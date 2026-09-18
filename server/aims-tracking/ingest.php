@@ -20,6 +20,7 @@ $lat = filter_var($data['latitude'] ?? null, FILTER_VALIDATE_FLOAT);
 $lng = filter_var($data['longitude'] ?? null, FILTER_VALIDATE_FLOAT);
 $accuracy = isset($data['accuracy']) ? (float)$data['accuracy'] : null;
 $speedMps = isset($data['speedMps']) ? max(0.0, (float)$data['speedMps']) : null;
+$delayedReplay = ($data['delayed'] ?? false) === true;
 
 if ($deviceId === '' || strlen($deviceId) > 120 || $capturedAt === '' || $lat === false || $lng === false) {
     aims_json(['ok' => false, 'error' => 'invalid_payload'], 422);
@@ -61,7 +62,8 @@ function aims_process_arrivals(
     float $lng,
     ?float $accuracy,
     ?float $speedMps,
-    DateTimeImmutable $captured
+    DateTimeImmutable $captured,
+    bool $emitNotifications = true
 ): int {
     $stmt = $pdo->prepare('SELECT s.*, j.reference
         FROM job_stops s
@@ -103,6 +105,8 @@ function aims_process_arrivals(
             ':id' => $stop['id'],
         ]);
         if ($update->rowCount() !== 1) continue;
+
+        if (!$emitNotifications) continue;
 
         $kindHu = $stop['stop_type'] === 'pickup' ? 'felrakóra' : 'lerakóra';
         $plate = $vehicle['label'] !== '' ? $vehicle['label'] : $vehicle['plate'];
@@ -149,7 +153,8 @@ function aims_process_stationary(
     float $lng,
     ?float $accuracy,
     ?float $speedMps,
-    DateTimeImmutable $captured
+    DateTimeImmutable $captured,
+    bool $emitNotifications = true
 ): int {
     $stateStmt = $pdo->prepare('SELECT * FROM vehicle_state WHERE vehicle_id = :vehicle');
     $stateStmt->execute([':vehicle' => $vehicle['id']]);
@@ -204,6 +209,7 @@ function aims_process_stationary(
     $events = 0;
 
     foreach ($due as $threshold) {
+        if (!$emitNotifications) continue;
         $minutes = $threshold['minutes'];
         $plate = $vehicle['label'] !== '' ? $vehicle['label'] : $vehicle['plate'];
         if ($context !== null) {
@@ -280,8 +286,12 @@ try {
     $arrivalEvents = 0;
     $stationaryEvents = 0;
     if ($vehicle !== null) {
-        $arrivalEvents = aims_process_arrivals($pdo, $vehicle, (float)$lat, (float)$lng, $accuracy, $speedMps, $captured);
-        $stationaryEvents = aims_process_stationary($pdo, $vehicle, (float)$lat, (float)$lng, $accuracy, $speedMps, $captured);
+        $arrivalEvents = aims_process_arrivals(
+            $pdo, $vehicle, (float)$lat, (float)$lng, $accuracy, $speedMps, $captured, !$delayedReplay
+        );
+        $stationaryEvents = aims_process_stationary(
+            $pdo, $vehicle, (float)$lat, (float)$lng, $accuracy, $speedMps, $captured, !$delayedReplay
+        );
     }
 
     $cutoff = (new DateTimeImmutable('-60 days', new DateTimeZone('UTC')))->format(DateTimeInterface::ATOM);
