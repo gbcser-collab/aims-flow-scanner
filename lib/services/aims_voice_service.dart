@@ -61,7 +61,6 @@ class AimsVoiceService {
   bool _maleVoiceMatched = false;
   String _localeId = 'hu_HU';
   String _lastHeard = '';
-  String _selectedVoiceName = '';
 
   Stream<AimsVoiceState> get states => _states.stream;
   bool get enabled => _enabled;
@@ -456,9 +455,7 @@ class AimsVoiceService {
 
         var score = 0;
         if (locale == wantedLocale) score += 200;
-        if (haystack.contains('male') ||
-            haystack.contains('masculine') ||
-            haystack.contains('#male')) {
+        if (_looksMaleVoice(haystack)) {
           score += 1000;
         }
         if (haystack.contains('neural') ||
@@ -487,20 +484,28 @@ class AimsVoiceService {
       if (name.isEmpty || locale.isEmpty) return;
 
       await _tts.setVoice({'name': name, 'locale': locale});
-      _selectedVoiceName = name;
 
       final voiceText = [
         name,
         best['gender'],
         best['features'],
       ].where((v) => v != null).join(' ').toLowerCase();
-      _maleVoiceMatched = voiceText.contains('male') ||
-          voiceText.contains('masculine') ||
-          voiceText.contains('#male');
+      _maleVoiceMatched = _looksMaleVoice(voiceText);
     } catch (_) {
       _maleVoiceMatched = false;
-      _selectedVoiceName = '';
     }
+  }
+
+  bool _looksMaleVoice(String text) {
+    final value = text.toLowerCase();
+    if (value.contains('female') ||
+        value.contains('#female') ||
+        value.contains('feminine')) {
+      return false;
+    }
+    return value.contains('#male') ||
+        value.contains('masculine') ||
+        RegExp(r'(^|[^a-z])male([^a-z]|$)').hasMatch(value);
   }
 
   void _onLanguageChanged() {
