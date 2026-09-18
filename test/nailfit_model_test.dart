@@ -31,6 +31,26 @@ void main() {
     expect(recovered.dy, closeTo(source.dy, 0.0001));
   });
 
+  test('calibration drag stays locked to the point that was grabbed', () {
+    final c = NailFitV3Controller()
+      ..photoWidth = 1000
+      ..photoHeight = 1600;
+    c.points.addAll(const <Offset>[Offset(.20, .20), Offset(.40, .20), Offset(.60, .20), Offset(.80, .20), Offset(.90, .40)]);
+    const viewport = Size(400, 430);
+
+    final firstDisplay = c.viewportPointFromSource(c.points.first, viewport);
+    final secondBefore = c.points[1];
+    expect(c.beginPointDrag(firstDisplay, viewport), isTrue);
+
+    final nearSecond = c.viewportPointFromSource(const Offset(.39, .21), viewport);
+    c.updatePointDrag(nearSecond, viewport);
+    c.endPointDrag();
+
+    expect(c.points.first.dx, closeTo(.39, .02));
+    expect(c.points.first.dy, closeTo(.21, .02));
+    expect(c.points[1], secondBefore);
+  });
+
   test('personalized match reacts to selected shape instead of staying static', () {
     final c = NailFitV3Controller()
       ..preferredShape = 'Mandula'
