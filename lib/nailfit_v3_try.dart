@@ -36,7 +36,7 @@ class _NailFitV3TryState extends State<NailFitV3Try> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              nfHeader(),
+              nfHeader(onAi: () => nfShowStylist(context, c), onNotifications: () => nfShowNotifications(context, c), notificationActive: c.notificationsEnabled && c.appointment != null),
               const SizedBox(height: 20),
               Row(
                 children: [
