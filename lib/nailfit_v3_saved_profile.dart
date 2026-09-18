@@ -18,7 +18,7 @@ class NailFitV3SavedProfile {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Builder(builder: (context) => nfHeader(onAi: () { c.recommendFromPrompt('elegáns'); }, onNotifications: c.toggleNotifications)),
+            Builder(builder: (context) => nfHeader(onAi: () => nfShowStylist(context, c, initial: 'elegáns '), onNotifications: () => nfShowNotifications(context, c), notificationActive: c.notificationsEnabled && c.appointment != null)),
             const SizedBox(height: 24),
             const Text('Mentett', style: TextStyle(fontFamily: 'serif', fontSize: 39, color: nfInk)),
             Text('${c.favorites.length} kedvenc stílus · ${c.saved.length} mentett look · ${c.savedPngPaths.length} PNG', style: const TextStyle(color: nfMuted, fontSize: 12)),
@@ -51,7 +51,7 @@ class NailFitV3SavedProfile {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Builder(builder: (context) => nfHeader(onAi: () { c.recommendFromPrompt('minimal elegáns'); }, onNotifications: c.toggleNotifications)),
+            Builder(builder: (context) => nfHeader(onAi: () => nfShowStylist(context, c, initial: 'minimal elegáns '), onNotifications: () => nfShowNotifications(context, c), notificationActive: c.notificationsEnabled && c.appointment != null)),
             const SizedBox(height: 20),
             _profileCard(),
             const SizedBox(height: 24),
