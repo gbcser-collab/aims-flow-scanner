@@ -92,7 +92,7 @@ class _NailFitV3TryState extends State<NailFitV3Try> {
               const SizedBox(height: 14),
               Row(
                 children: [
-                  Expanded(child: _action(c.favorites.contains(c.look.name) ? Icons.favorite_rounded : Icons.favorite_border_rounded, c.favorites.contains(c.look.name) ? 'Kedvenc' : 'Kedvencekhez', _favorite)),
+                  Expanded(child: _action(c.isCurrentFavorite ? Icons.favorite_rounded : Icons.favorite_border_rounded, c.isCurrentFavorite ? 'Kedvenc' : 'Kedvencekhez', _favorite)),
                   const SizedBox(width: 8),
                   Expanded(child: _action(Icons.bookmark_border_rounded, _saving ? 'Mentés…' : 'Look mentése', _saving ? () {} : _save)),
                   const SizedBox(width: 8),
@@ -107,7 +107,7 @@ class _NailFitV3TryState extends State<NailFitV3Try> {
       );
 
   Widget _preview() {
-    final match = c.look.match;
+    final match = c.currentMatchScore;
     return Container(
       height: 445,
       clipBehavior: Clip.antiAlias,
@@ -128,6 +128,7 @@ class _NailFitV3TryState extends State<NailFitV3Try> {
               child: CustomPaint(
                 painter: NailOverlayPainter(
                   points: List<Offset>.from(c.points),
+                  sourceSize: c.photoWidth > 0 && c.photoHeight > 0 ? Size(c.photoWidth.toDouble(), c.photoHeight.toDouble()) : null,
                   color: c.color,
                   shape: c.shape,
                   length: c.length,
@@ -154,7 +155,7 @@ class _NailFitV3TryState extends State<NailFitV3Try> {
                 width: 42,
                 height: 42,
                 decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
-                child: Icon(c.favorites.contains(c.look.name) ? Icons.favorite_rounded : Icons.favorite_border_rounded, color: nfRoseDark),
+                child: Icon(c.isCurrentFavorite ? Icons.favorite_rounded : Icons.favorite_border_rounded, color: nfRoseDark),
               ),
             ),
           ),
@@ -190,7 +191,7 @@ class _NailFitV3TryState extends State<NailFitV3Try> {
                   const SizedBox(height: 7),
                   Text('$match% egyezés', style: const TextStyle(fontFamily: 'serif', fontSize: 21, color: nfInk)),
                   const SizedBox(height: 5),
-                  Text(c.scan == null ? 'Stílusprofil alapú javaslat.' : '${c.scan!.recommendedShape} forma · ${c.scan!.tone} tónusbecslés.', style: const TextStyle(color: nfMuted, fontSize: 8.2)),
+                  Text(c.currentMatchReason, style: const TextStyle(color: nfMuted, fontSize: 8.2)),
                 ],
               ),
             ),
@@ -318,7 +319,7 @@ class _NailFitV3TryState extends State<NailFitV3Try> {
 
   void _favorite() {
     c.toggleFavorite();
-    _snack(c.favorites.contains(c.look.name) ? 'Hozzáadva a kedvencekhez.' : 'Eltávolítva a kedvencekből.');
+    _snack(c.isCurrentFavorite ? 'Hozzáadva a kedvencekhez.' : 'Eltávolítva a kedvencekből.');
   }
 
   Future<String?> _capturePng() async {
