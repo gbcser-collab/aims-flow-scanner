@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../services/aims_locale.dart';
 import '../services/aims_voice_command.dart';
 import '../services/aims_voice_service.dart';
 import '../services/driver_api_service.dart';
@@ -54,6 +55,14 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
 
   DriverJob? get _job => _jobs.isEmpty ? null : _jobs.first;
   DriverStop? get _stop => _job?.currentStop;
+
+  String _l(String hu, String en, String de) => switch (
+        AimsLocaleController.instance.languageCode
+      ) {
+        'en' => en,
+        'de' => de,
+        _ => hu,
+      };
 
   @override
   void initState() {
