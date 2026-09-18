@@ -64,6 +64,7 @@ class ExtractedDocument:
             "pages": [page.to_dict() for page in self.pages],
         }
         if not include_page_text:
+            data.pop("fullText", None)
             for page in data["pages"]:
                 page.pop("text", None)
         return data
