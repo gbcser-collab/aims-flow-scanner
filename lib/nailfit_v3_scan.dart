@@ -71,7 +71,7 @@ class NailFitV3Scan extends StatelessWidget {
             nfSecondary(Icons.photo_library_outlined, 'Kép kiválasztása a galériából', () => pick(ImageSource.gallery)),
             const SizedBox(height: 12),
             const Text(
-              'A szkennelés helyi képfeldolgozást és 5 pontos kalibrációt használ. A Smart pontok csak kiindulópontok: húzás helyett töröld/jelöld újra, ha nem a körmök közepére kerültek. Pontos press-on méretezéshez referencia-méret vagy AR kalibráció szükséges.',
+              'A szkennelés helyi képfeldolgozást és 5 pontos kalibrációt használ. A Smart pontok csak kiindulópontok: húzd őket pontosan a körmök közepére, vagy töröld/jelöld újra őket. Pontos press-on méretezéshez referencia-méret vagy AR kalibráció szükséges.',
               style: TextStyle(color: nfMuted, fontSize: 9.2, height: 1.35),
             ),
           ],
@@ -124,9 +124,12 @@ class NailFitV3Scan extends StatelessWidget {
         child: LayoutBuilder(
           builder: (context, constraints) => GestureDetector(
             behavior: HitTestBehavior.opaque,
-            onTapDown: photo == null || c.points.length >= 5
+            onTapDown: photo == null || c.points.length >= 5 || c.analyzing
                 ? null
                 : (details) => c.addPoint(details.localPosition, constraints.biggest),
+            onPanUpdate: photo == null || c.points.isEmpty || c.analyzing
+                ? null
+                : (details) => c.moveNearestPoint(details.localPosition, constraints.biggest),
             child: Stack(
               fit: StackFit.expand,
               children: [
@@ -148,6 +151,7 @@ class NailFitV3Scan extends StatelessWidget {
                     child: CustomPaint(
                       painter: NailOverlayPainter(
                         points: List<Offset>.from(c.points),
+                        sourceSize: c.photoWidth > 0 && c.photoHeight > 0 ? Size(c.photoWidth.toDouble(), c.photoHeight.toDouble()) : null,
                         color: c.color,
                         shape: c.shape,
                         length: c.length,
@@ -170,7 +174,7 @@ class NailFitV3Scan extends StatelessWidget {
                         const SizedBox(width: 7),
                         Flexible(
                           child: Text(
-                            photo == null ? 'Készíts vagy válassz kézfotót' : (c.points.length < 5 ? 'Érintsd meg sorban az 5 köröm közepét' : 'Kalibráció kész · finomíthatod vagy elemezheted'),
+                            photo == null ? 'Készíts vagy válassz kézfotót' : (c.points.length < 5 ? 'Érintsd meg sorban az 5 köröm közepét' : 'Kalibráció kész · a pontokat húzással finomíthatod'),
                             textAlign: TextAlign.center,
                             style: const TextStyle(color: Colors.white, fontSize: 10.5, fontWeight: FontWeight.w800),
                           ),
