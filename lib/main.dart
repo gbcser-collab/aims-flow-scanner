@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'screens/flow_login_screen.dart';
+import 'services/aims_locale.dart';
 import 'services/driver_push_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await AimsLocaleController.instance.initialize();
   await DriverPushService.instance.initialize();
   runApp(const AimsFlowApp());
 }
@@ -15,9 +18,23 @@ class AimsFlowApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const aimsBlue = Color(0xFF1CB8FF);
-    return MaterialApp(
+    final locale = AimsLocaleController.instance;
+    return AnimatedBuilder(
+      animation: locale,
+      builder: (context, _) => MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'AIMS Flow',
+      locale: locale.locale,
+      supportedLocales: const [
+        Locale('hu'),
+        Locale('en'),
+        Locale('de'),
+      ],
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
       theme: ThemeData(
         useMaterial3: true,
         brightness: Brightness.dark,
@@ -47,6 +64,7 @@ class AimsFlowApp extends StatelessWidget {
         ),
       ),
       home: const FlowLoginScreen(),
+    ),
     );
   }
 }
