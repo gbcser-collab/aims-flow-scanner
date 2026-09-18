@@ -2,7 +2,7 @@ name: Build and deep-test Android APK
 
 on:
   push:
-    branches: [ main, v0.8-dev, v0.9-pro, v1.0-road ]
+    branches: [ main, v0.8-dev, v0.9-pro, v1.0-road, v1.3-smart-operations ]
   workflow_dispatch:
 
 jobs:
@@ -40,6 +40,26 @@ jobs:
           flutter create --platforms=android --org hu.logisticaims --project-name aims_flow_scanner /tmp/aims_template
           cp -R /tmp/aims_template/android ./android
 
+      - name: Configure Android permissions for AIMS Flow tracking
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('android/app/src/main/AndroidManifest.xml')
+          s=p.read_text()
+          permissions='''    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+'''
+          s=s.replace('<application', permissions+'\n    <application',1)
+          s=s.replace('android:label="aims_flow_scanner"','android:label="AIMS Flow"')
+          p.write_text(s)
+          PY
+
       - name: Dependencies
         run: flutter pub get
 
@@ -62,7 +82,7 @@ jobs:
       - name: Upload production-like APK before device test
         uses: actions/upload-artifact@v4
         with:
-          name: AIMS-Flow-Smart-Scanner-v1.0-ROAD-END-TO-END
+          name: AIMS-Flow-v1.3-SMART-OPERATIONS
           path: build/app/outputs/flutter-apk/app-debug.apk
           if-no-files-found: error
 
@@ -87,6 +107,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: AIMS-Flow-Scanner-v1.0-ROAD-test-evidence
+          name: AIMS-Flow-v1.3-test-evidence
           path: test-evidence/
           if-no-files-found: warn
