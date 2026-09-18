@@ -857,17 +857,17 @@ class NailFitV3Controller extends ChangeNotifier {
   }
 
   String _estimateNailBed() {
-    if (points.length < 5) return 'Közepes · manuális becslés';
+    if (points.length < 5) return 'Közepes · virtuális skála';
     final ordered = points.sublist(1)..sort((a, b) => a.dx.compareTo(b.dx));
-    if (ordered.length < 3) return 'Közepes · manuális becslés';
+    if (ordered.length < 3) return 'Közepes · virtuális skála';
     var gap = 0.0;
     for (var i = 1; i < ordered.length; i++) {
       gap += (ordered[i].dx - ordered[i - 1].dx).abs() * photoAspectRatio;
     }
     final avgGap = gap / (ordered.length - 1);
-    if (avgGap < .085) return 'Keskenyebb · becslés';
-    if (avgGap > .16) return 'Szélesebb · becslés';
-    return 'Közepes · becslés';
+    if (avgGap < .085) return 'Keskenyebb · virtuális skála';
+    if (avgGap > .16) return 'Szélesebb · virtuális skála';
+    return 'Közepes · virtuális skála';
   }
 
   @override
