@@ -103,6 +103,7 @@ if ($method === 'POST') {
         aims_json(['ok' => false, 'error' => 'storage_error'], 500);
     }
 
+    aims_try_push($pdo, 8);
     aims_json(['ok' => true, 'fuelReceiptId' => $id]);
 }
 
