@@ -21,7 +21,8 @@ void main() {
       find.textContaining('Sofőr belépés rendszámmal és 6 karakteres kóddal'),
       findsOneWidget,
     );
-    expect(find.textContaining('3 betű / 3 szám'), findsOneWidget);
+    expect(find.textContaining('3 betű és 3 szám'), findsOneWidget);
+    expect(find.byKey(const Key('flow-forgot-code-open')), findsOneWidget);
   });
 
   testWidgets('admin mode reveals 2FA only when requested', (tester) async {
@@ -45,6 +46,9 @@ void main() {
 
     expect(find.text('REGISZTRÁCIÓ'), findsOneWidget);
     expect(find.byKey(const Key('flow-register-company')), findsOneWidget);
+    expect(find.byKey(const Key('flow-register-plate')), findsOneWidget);
+    expect(find.byKey(const Key('flow-register-country')), findsOneWidget);
+    expect(find.byKey(const Key('flow-country-globe')), findsOneWidget);
     expect(find.byKey(const Key('flow-register-email')), findsOneWidget);
   });
 
