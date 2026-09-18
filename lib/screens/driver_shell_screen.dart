@@ -452,7 +452,6 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
   }
 
   Future<String> _handleVoiceCommand(AimsVoiceCommand command) async {
-    final job = _job;
     final current = _stop;
 
     switch (command.intent) {
@@ -774,8 +773,88 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
           ],
         ),
       ),
+      const SizedBox(height: 12),
+      _voicePanel(),
     ]);
   }
+
+  Widget _voicePanel() => _panel(
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  _voiceState.enabled ? Icons.mic_rounded : Icons.mic_off_outlined,
+                  color: _voiceState.enabled ? _green : Colors.white38,
+                ),
+                const SizedBox(width: 11),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'AIMS HANDS-FREE',
+                        style: TextStyle(fontWeight: FontWeight.w900),
+                      ),
+                      SizedBox(height: 2),
+                      Text(
+                        'Ébresztőszó: „AIMS”',
+                        style: TextStyle(color: Colors.white38, fontSize: 11),
+                      ),
+                    ],
+                  ),
+                ),
+                Switch(
+                  key: const Key('aims-hands-free-toggle'),
+                  value: _voiceState.enabled,
+                  onChanged: _handsFreeBusy ? null : _setHandsFree,
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Text(
+              _voiceState.message,
+              style: const TextStyle(color: Colors.white70, height: 1.35),
+            ),
+            if (_voiceState.lastHeard.trim().isNotEmpty) ...[
+              const SizedBox(height: 5),
+              Text(
+                'Hallottam: ${_voiceState.lastHeard}',
+                style: const TextStyle(color: Colors.white38, fontSize: 10),
+              ),
+            ],
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _handsFreeBusy
+                        ? null
+                        : () => unawaited(_voice.triggerAssistant()),
+                    icon: const Icon(Icons.record_voice_over_outlined),
+                    label: const Text('MONDD MOST'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () =>
+                        unawaited(_voice.requestAndroidAssistantRole()),
+                    icon: const Icon(Icons.assistant_outlined),
+                    label: const Text('ANDROID ASSZISZTENS'),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Hands-Free módban a Flow háttérszolgáltatással fut, és az „AIMS” szó után várja a parancsot.',
+              style: TextStyle(color: Colors.white38, height: 1.35, fontSize: 10),
+            ),
+          ],
+        ),
+      );
 
   Widget _trip() {
     final job = _job;
@@ -973,11 +1052,13 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    stop.arrived
-                        ? 'MEGÉRKEZÉS RÖGZÍTVE'
-                        : (stop.type == 'delivery' ? 'LERAKÓ' : 'FELRAKÓ'),
+                    stop.completed
+                        ? 'KÉSZ'
+                        : stop.arrived
+                            ? 'MEGÉRKEZETT'
+                            : (stop.type == 'delivery' ? 'LERAKÓ' : 'FELRAKÓ'),
                     style: TextStyle(
-                      color: stop.arrived ? _green : _blue,
+                      color: stop.completed || stop.arrived ? _green : _blue,
                       fontSize: 9,
                       fontWeight: FontWeight.w900,
                     ),
