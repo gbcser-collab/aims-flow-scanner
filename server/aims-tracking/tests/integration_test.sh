@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -euxo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
@@ -9,7 +9,7 @@ export AIMS_TRACKING_TOKEN='write-token-test-1234567890'
 export AIMS_ADMIN_TRACKING_TOKEN='admin-token-test-1234567890'
 php -S 127.0.0.1:8092 >/tmp/aims-tracking-test.log 2>&1 &
 SERVER_PID=$!
-trap 'kill "$SERVER_PID" 2>/dev/null || true; rm -rf "$ROOT/data"' EXIT
+trap 'status=$?; if [ $status -ne 0 ]; then cat /tmp/aims-tracking-test.log || true; fi; kill "$SERVER_PID" 2>/dev/null || true; rm -rf "$ROOT/data"; exit $status' EXIT
 sleep 1
 
 curl -fsS -H "Authorization: Bearer $AIMS_ADMIN_TRACKING_TOKEN" -H "Content-Type: application/json" -X POST   --data '{"plate":"SIP-115","label":"SIP-115"}'   http://127.0.0.1:8092/vehicle_registry.php >/tmp/vehicle.json
