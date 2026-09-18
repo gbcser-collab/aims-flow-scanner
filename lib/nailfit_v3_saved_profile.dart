@@ -9,7 +9,7 @@ class NailFitV3SavedProfile {
   final NailFitV3Controller c;
 
   Widget saved() {
-    final favs = premiumLooks.where((e) => c.favorites.contains(e.name)).toList();
+    final favs = premiumLooks.where(c.isFavorite).toList();
     final data = <PremiumLook>{...c.saved, ...favs}.toList();
     final display = data.isEmpty ? premiumLooks.take(3).toList() : data;
     return nfBackground(
