@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - v1.2-document-intelligence
+      - v1.3-smart-operations
     paths:
       - 'server/document_ingest/**'
       - '.github/workflows/document-intelligence-test.yml'
