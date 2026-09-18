@@ -9,9 +9,13 @@ class DriverStop {
     required this.order,
     required this.company,
     required this.address,
+    required this.phone,
     required this.latitude,
     required this.longitude,
     required this.arrived,
+    required this.completed,
+    this.arrivedAt,
+    this.completedAt,
   });
 
   final int id;
@@ -19,9 +23,13 @@ class DriverStop {
   final int order;
   final String company;
   final String address;
+  final String phone;
   final double latitude;
   final double longitude;
   final bool arrived;
+  final bool completed;
+  final String? arrivedAt;
+  final String? completedAt;
 
   factory DriverStop.fromJson(Map<String, dynamic> json) => DriverStop(
         id: (json['id'] as num?)?.toInt() ?? 0,
@@ -29,9 +37,13 @@ class DriverStop {
         order: (json['order'] as num?)?.toInt() ?? 0,
         company: json['company']?.toString() ?? '',
         address: json['address']?.toString() ?? '',
+        phone: json['phone']?.toString() ?? '',
         latitude: (json['latitude'] as num?)?.toDouble() ?? 0,
         longitude: (json['longitude'] as num?)?.toDouble() ?? 0,
         arrived: json['arrived'] == true,
+        completed: json['completed'] == true,
+        arrivedAt: json['arrivedAt']?.toString(),
+        completedAt: json['completedAt']?.toString(),
       );
 }
 
@@ -54,7 +66,7 @@ class DriverJob {
 
   DriverStop? get currentStop {
     for (final stop in stops) {
-      if (!stop.arrived) return stop;
+      if (!stop.completed) return stop;
     }
     return stops.isEmpty ? null : stops.last;
   }
@@ -127,6 +139,31 @@ class DriverApiService {
             'plate': plate.trim().toUpperCase(),
             'jobId': jobId,
             'action': action,
+          }),
+        )
+        .timeout(const Duration(seconds: 12));
+    final body = _decode(response);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw StateError(body['error']?.toString() ?? 'HTTP ${response.statusCode}');
+    }
+  }
+
+  Future<void> updateStop({
+    required String plate,
+    required int stopId,
+    required String action,
+    String source = 'manual',
+  }) async {
+    _ensureConfigured();
+    final response = await http
+        .post(
+          Uri.parse('${_base()}/driver_stop_action.php'),
+          headers: _headers,
+          body: jsonEncode({
+            'plate': plate.trim().toUpperCase(),
+            'stopId': stopId,
+            'action': action,
+            'source': source,
           }),
         )
         .timeout(const Duration(seconds: 12));
