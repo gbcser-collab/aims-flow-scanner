@@ -7,12 +7,15 @@ rm -rf data
 
 export AIMS_TRACKING_TOKEN='write-token-test-1234567890'
 export AIMS_ADMIN_TRACKING_TOKEN='admin-token-test-1234567890'
+export AIMS_PUSH_FAKE_LOG='/tmp/aims-push.log'
+rm -f "$AIMS_PUSH_FAKE_LOG"
 php -S 127.0.0.1:8092 >/tmp/aims-tracking-test.log 2>&1 &
 SERVER_PID=$!
 trap 'status=$?; if [ $status -ne 0 ]; then cat /tmp/aims-tracking-test.log || true; fi; kill "$SERVER_PID" 2>/dev/null || true; rm -rf "$ROOT/data"; exit $status' EXIT
 sleep 1
 
 curl -fsS -H "Authorization: Bearer $AIMS_ADMIN_TRACKING_TOKEN" -H "Content-Type: application/json" -X POST   --data '{"plate":"SIP-115","label":"SIP-115"}'   http://127.0.0.1:8092/vehicle_registry.php >/tmp/vehicle.json
+curl -fsS -H "Authorization: Bearer $AIMS_ADMIN_TRACKING_TOKEN" -H "Content-Type: application/json" -X POST   --data '{"platform":"android","deviceId":"boss-device-1","appVersion":"1.4-test","fcmToken":"fake-main-admin-token-abcdefghijklmnopqrstuvwxyz0123456789"}'   http://127.0.0.1:8092/push_device.php >/tmp/main-push-device.json
 
 SECOND_ADMIN_TOKEN='second-admin-token-test-1234567890'
 SECOND_ADMIN_PAYLOAD="$(python3 - "$SECOND_ADMIN_TOKEN" <<'PY'
@@ -22,6 +25,7 @@ PY
 )"
 curl -fsS -H "Authorization: Bearer $AIMS_ADMIN_TRACKING_TOKEN" -H "Content-Type: application/json" -X POST   --data "$SECOND_ADMIN_PAYLOAD"   http://127.0.0.1:8092/admin_users.php >/tmp/second-admin.json
 curl -fsS -H "Authorization: Bearer $SECOND_ADMIN_TOKEN" -H "Content-Type: application/json" -X POST   --data '{"plate":"OTHER-222","label":"OTHER-222"}'   http://127.0.0.1:8092/vehicle_registry.php >/tmp/second-vehicle.json
+curl -fsS -H "Authorization: Bearer $SECOND_ADMIN_TOKEN" -H "Content-Type: application/json" -X POST   --data '{"platform":"android","deviceId":"boss-device-2","appVersion":"1.4-test","fcmToken":"fake-second-admin-token-abcdefghijklmnopqrstuvwxyz0123456789"}'   http://127.0.0.1:8092/push_device.php >/tmp/second-push-device.json
 
 curl -fsS -H "Authorization: Bearer $AIMS_ADMIN_TRACKING_TOKEN" -H "Content-Type: application/json" -X POST   --data '{"plate":"SIP-115","driverJob":{"reference":"TEST-001","pickups":[{"company":"Test Pickup","address":"Test address","latitude":47.1000,"longitude":18.1000}],"deliveries":[{"company":"Test Delivery","address":"Test delivery","latitude":48.1000,"longitude":19.1000}]}}'   http://127.0.0.1:8092/job_assign.php >/tmp/job.json
 
@@ -108,4 +112,17 @@ assert len(d['receipts'])==1, d
 assert d['receipts'][0]['plate']=='SIP-115', d
 assert d['receipts'][0]['liters']==40.5, d
 print('fuel receipt integration: PASS')
+PY
+
+
+python3 - <<'PY'
+import json
+lines=[json.loads(x) for x in open('/tmp/aims-push.log') if x.strip()]
+assert lines, 'no push deliveries logged'
+types=[x.get('data',{}).get('type') for x in lines]
+for expected in ['job_registered','stationary','job_arrival','fuel_receipt']:
+    assert expected in types, (expected, types)
+assert all(x.get('adminUserId') == 1 for x in lines), lines
+assert not any(x.get('adminUserId') == 2 for x in lines), lines
+print('native push admin routing: PASS')
 PY
