@@ -17,6 +17,8 @@ $limit = PHP_SAPI === 'cli'
     : max(1, min(50, (int)($_GET['limit'] ?? 25)));
 
 $result = aims_process_push_queue($pdo, $limit);
+$driverResult = aims_process_driver_job_reminders($pdo, $limit);
+$result = array_merge($result, $driverResult);
 
 if (PHP_SAPI === 'cli') {
     echo json_encode(['ok' => true] + $result, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . PHP_EOL;
