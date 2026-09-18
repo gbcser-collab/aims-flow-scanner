@@ -74,7 +74,10 @@ jobs:
           if 'isCoreLibraryDesugaringEnabled = true' not in text:
               text=text.replace('compileOptions {','compileOptions {\n        isCoreLibraryDesugaringEnabled = true',1)
           if 'coreLibraryDesugaring(' not in text:
-              text=text.replace('dependencies {','dependencies {\n    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")',1)
+              if 'dependencies {' in text:
+                  text=text.replace('dependencies {','dependencies {\n    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")',1)
+              else:
+                  text += '\n\ndependencies {\n    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")\n}\n'
           g.write_text(text)
           PY
 
