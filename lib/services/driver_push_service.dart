@@ -147,9 +147,19 @@ class DriverPushService {
 
   Future<void> registerForPlate(String plate) async {
     final cleanPlate = plate.trim().toUpperCase();
-    if (cleanPlate.isEmpty || Firebase.apps.isEmpty) return;
+    if (cleanPlate.isEmpty) {
+      throw StateError('Nincs beállítva rendszám.');
+    }
+    if (Firebase.apps.isEmpty) {
+      await initialize();
+    }
+    if (Firebase.apps.isEmpty) {
+      throw StateError('A Firebase push szolgáltatás nem inicializálódott.');
+    }
     final fcm = await FirebaseMessaging.instance.getToken();
-    if (fcm == null || fcm.isEmpty) return;
+    if (fcm == null || fcm.isEmpty) {
+      throw StateError('A telefon nem kapott Firebase push tokent.');
+    }
     final tracking = await VehicleTrackingService.instance.currentStatus();
     await _api.registerPush(
       plate: cleanPlate,
