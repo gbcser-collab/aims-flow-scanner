@@ -1,5 +1,6 @@
 import 'package:aims_flow_scanner/main.dart';
 import 'package:aims_flow_scanner/screens/driver_shell_screen.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
