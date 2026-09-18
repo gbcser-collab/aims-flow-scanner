@@ -34,7 +34,9 @@ class _NailFitAppState extends State<NailFitApp> {
     final path = c.lastPhotoPath;
     if (path == null) return;
     if (await File(path).exists()) {
-      setState(() => photo = XFile(path));
+      final restored = XFile(path);
+      setState(() => photo = restored);
+      await c.analyzePhoto(restored, applyRecommendation: false);
     }
   }
 
