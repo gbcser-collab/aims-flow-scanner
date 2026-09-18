@@ -60,6 +60,33 @@ point '2026-09-18T09:16:00Z' 46.0001 17.0000 0
 point '2026-09-18T09:20:00Z' 47.1000 18.1000 1.0
 point '2026-09-18T09:21:00Z' 47.1000 18.1000 0
 
+point_other () {
+  local ts="$1" lat="$2" lng="$3" speed="$4" delayed="$5"
+  local payload
+  payload="$(python3 - "$ts" "$lat" "$lng" "$speed" "$delayed" <<'PY'
+import json, sys
+print(json.dumps({
+    "deviceId": "test-device-2",
+    "vehicleLabel": "OTHER-222",
+    "timestamp": sys.argv[1],
+    "latitude": float(sys.argv[2]),
+    "longitude": float(sys.argv[3]),
+    "accuracy": 5,
+    "speedMps": float(sys.argv[4]),
+    "source": "heartbeat",
+    "delayed": sys.argv[5].lower() == "true",
+}))
+PY
+)"
+  curl -fsS -H "Authorization: Bearer $AIMS_TRACKING_TOKEN" -H "Content-Type: application/json" -X POST     --data "$payload" http://127.0.0.1:8092/ingest.php >/dev/null
+}
+
+# Offline replay where movement happened before reconnect: absolutely no stale stop alert.
+point_other '2026-09-18T08:00:00Z' 45.0000 16.0000 0 true
+point_other '2026-09-18T08:30:00Z' 45.0000 16.0000 0 true
+point_other '2026-09-18T09:00:00Z' 45.0000 16.0000 0 true
+point_other '2026-09-18T09:01:00Z' 45.0001 16.0000 1 true
+
 curl -fsS -H "Authorization: Bearer $AIMS_ADMIN_TRACKING_TOKEN"   http://127.0.0.1:8092/notifications.php >/tmp/notifications.json
 
 python3 - <<'PY'
@@ -82,7 +109,28 @@ python3 - <<'PY'
 import json
 d=json.load(open('/tmp/second-notifications.json'))
 items=d['notifications']
+assert items == [], items
+print('offline replay movement suppression: PASS')
+PY
+
+# New offline stop that is still active at reconnect: emit only the highest due threshold once.
+point_other '2026-09-18T10:00:00Z' 45.5000 16.5000 1 true
+point_other '2026-09-18T10:01:00Z' 45.5000 16.5000 0 true
+point_other '2026-09-18T10:31:00Z' 45.5000 16.5000 0 true
+point_other '2026-09-18T11:01:00Z' 45.5000 16.5000 0 true
+point_other '2026-09-18T11:02:00Z' 45.5000 16.5000 0 false
+
+curl -fsS -H "Authorization: Bearer $SECOND_ADMIN_TOKEN"   http://127.0.0.1:8092/notifications.php >/tmp/second-catchup.json
+python3 - <<'PY'
+import json
+d=json.load(open('/tmp/second-catchup.json'))
+items=d['notifications']
+stationary=[x for x in items if x['type']=='stationary']
+assert len(stationary)==1, stationary
+assert stationary[0].get('plate') == 'OTHER-222', stationary
+assert '60 perce' in stationary[0]['title'], stationary
 assert not any(x.get('plate') == 'SIP-115' for x in items), items
+print('offline reconnect highest-threshold catch-up: PASS')
 print('admin notification isolation: PASS')
 PY
 
@@ -122,7 +170,12 @@ assert lines, 'no push deliveries logged'
 types=[x.get('data',{}).get('type') for x in lines]
 for expected in ['job_registered','stationary','job_arrival','fuel_receipt']:
     assert expected in types, (expected, types)
-assert all(x.get('adminUserId') == 1 for x in lines), lines
-assert not any(x.get('adminUserId') == 2 for x in lines), lines
+main=[x for x in lines if x.get('adminUserId') == 1]
+second=[x for x in lines if x.get('adminUserId') == 2]
+assert main, lines
+assert second, lines
+assert all('OTHER-222' not in x.get('title','') for x in main), main
+assert all('SIP-115' not in x.get('title','') for x in second), second
+assert len([x for x in second if x.get('data',{}).get('type') == 'stationary']) == 1, second
 print('native push admin routing: PASS')
 PY
