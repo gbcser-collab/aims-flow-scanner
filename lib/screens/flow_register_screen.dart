@@ -206,6 +206,25 @@ class _FlowRegisterScreenState extends State<FlowRegisterScreen> {
         .toList();
   }
 
+  _CountryOption? _resolveCountryText(String value) {
+    final folded = _CountryOption._fold(value.trim());
+    if (folded.isEmpty) return null;
+
+    for (final country in _countries) {
+      if (_CountryOption._fold(country.hu) == folded ||
+          _CountryOption._fold(country.en) == folded ||
+          _CountryOption._fold(country.de) == folded ||
+          country.code.toLowerCase() == folded) {
+        return country;
+      }
+    }
+
+    final matches =
+        _countries.where((country) => country.matches(value)).toList();
+    if (matches.length == 1) return matches.first;
+    return null;
+  }
+
   void _focusCountrySearch() {
     _countryFocus.requestFocus();
     setState(() {
@@ -257,14 +276,28 @@ class _FlowRegisterScreenState extends State<FlowRegisterScreen> {
     final locale = AimsLocaleController.instance;
     final t = locale.t;
 
-    if (_company.text.trim().isEmpty ||
-        _plate.text.trim().isEmpty ||
-        _country.text.trim().isEmpty ||
-        _countryCode.isEmpty ||
-        _contact.text.trim().isEmpty ||
-        _phone.text.trim().isEmpty ||
-        _email.text.trim().isEmpty) {
-      setState(() => _error = t('required_fields'));
+    final resolvedCountry = _countryCode.isEmpty
+        ? _resolveCountryText(_country.text)
+        : null;
+    if (resolvedCountry != null) {
+      _chooseCountry(resolvedCountry, notify: false);
+    }
+
+    final missing = <String>[];
+    if (_company.text.trim().isEmpty) missing.add(t('company_name'));
+    if (_plate.text.trim().isEmpty) missing.add(t('plate'));
+    if (_country.text.trim().isEmpty || _countryCode.isEmpty) {
+      missing.add(t('country'));
+    }
+    if (_contact.text.trim().isEmpty) missing.add(t('contact_name'));
+    if (_phone.text.trim().isEmpty) missing.add(t('phone'));
+    if (_email.text.trim().isEmpty) missing.add(t('email'));
+
+    if (missing.isNotEmpty) {
+      setState(
+        () => _error =
+            'Hiányzó vagy nem kiválasztott mező: ${missing.join(', ')}.',
+      );
       return;
     }
     if (!_validPlate(_plate.text)) {
