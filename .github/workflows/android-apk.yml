@@ -89,6 +89,20 @@ jobs:
       - name: Unit tests
         run: flutter test
 
+      - name: Firebase client configuration status
+        env:
+          AIMS_FIREBASE_API_KEY: ${{ secrets.AIMS_FIREBASE_API_KEY }}
+          AIMS_FIREBASE_PROJECT_ID: ${{ secrets.AIMS_FIREBASE_PROJECT_ID }}
+          AIMS_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.AIMS_FIREBASE_MESSAGING_SENDER_ID }}
+          AIMS_FIREBASE_ANDROID_APP_ID: ${{ secrets.AIMS_FIREBASE_ANDROID_APP_ID }}
+        run: |
+          mkdir -p test-evidence
+          if [ -n "$AIMS_FIREBASE_API_KEY" ] &&              [ -n "$AIMS_FIREBASE_PROJECT_ID" ] &&              [ -n "$AIMS_FIREBASE_MESSAGING_SENDER_ID" ] &&              [ -n "$AIMS_FIREBASE_ANDROID_APP_ID" ]; then
+            echo "firebase_client_configured=true" | tee test-evidence/firebase-config-status.txt
+          else
+            echo "firebase_client_configured=false" | tee test-evidence/firebase-config-status.txt
+          fi
+
       - name: Build production-like debug APK
         env:
           AIMS_TRACKING_TOKEN: ${{ secrets.AIMS_TRACKING_TOKEN }}
