@@ -15,6 +15,15 @@ concurrency:
   group: android-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  # Safe Firebase Android client identifiers. They are shipped inside the APK
+  # and may be overridden by repository secrets without changing source code.
+  AIMS_FIREBASE_API_KEY_FALLBACK: AIzaSyAAi61i7YCVXJ7Lh5QY0cYnZ42LISC-vNQ
+  AIMS_FIREBASE_PROJECT_ID_FALLBACK: aims-flow
+  AIMS_FIREBASE_MESSAGING_SENDER_ID_FALLBACK: '271406385287'
+  AIMS_FIREBASE_ANDROID_APP_ID_FALLBACK: '1:271406385287:android:83e6c1cdc361ebfe289022'
+  AIMS_FIREBASE_STORAGE_BUCKET_FALLBACK: aims-flow.firebasestorage.app
+
 jobs:
   build-android:
     runs-on: ubuntu-latest
@@ -96,11 +105,20 @@ jobs:
           AIMS_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.AIMS_FIREBASE_MESSAGING_SENDER_ID }}
           AIMS_FIREBASE_ANDROID_APP_ID: ${{ secrets.AIMS_FIREBASE_ANDROID_APP_ID }}
         run: |
+          AIMS_FIREBASE_API_KEY="${AIMS_FIREBASE_API_KEY:-$AIMS_FIREBASE_API_KEY_FALLBACK}"
+          AIMS_FIREBASE_PROJECT_ID="${AIMS_FIREBASE_PROJECT_ID:-$AIMS_FIREBASE_PROJECT_ID_FALLBACK}"
+          AIMS_FIREBASE_MESSAGING_SENDER_ID="${AIMS_FIREBASE_MESSAGING_SENDER_ID:-$AIMS_FIREBASE_MESSAGING_SENDER_ID_FALLBACK}"
+          AIMS_FIREBASE_ANDROID_APP_ID="${AIMS_FIREBASE_ANDROID_APP_ID:-$AIMS_FIREBASE_ANDROID_APP_ID_FALLBACK}"
+
           mkdir -p test-evidence
-          if [ -n "$AIMS_FIREBASE_API_KEY" ] &&              [ -n "$AIMS_FIREBASE_PROJECT_ID" ] &&              [ -n "$AIMS_FIREBASE_MESSAGING_SENDER_ID" ] &&              [ -n "$AIMS_FIREBASE_ANDROID_APP_ID" ]; then
+          if [ -n "$AIMS_FIREBASE_API_KEY" ] && \
+             [ -n "$AIMS_FIREBASE_PROJECT_ID" ] && \
+             [ -n "$AIMS_FIREBASE_MESSAGING_SENDER_ID" ] && \
+             [ -n "$AIMS_FIREBASE_ANDROID_APP_ID" ]; then
             echo "firebase_client_configured=true" | tee test-evidence/firebase-config-status.txt
           else
             echo "firebase_client_configured=false" | tee test-evidence/firebase-config-status.txt
+            exit 1
           fi
 
       - name: Build production-like debug APK
@@ -112,6 +130,12 @@ jobs:
           AIMS_FIREBASE_ANDROID_APP_ID: ${{ secrets.AIMS_FIREBASE_ANDROID_APP_ID }}
           AIMS_FIREBASE_STORAGE_BUCKET: ${{ secrets.AIMS_FIREBASE_STORAGE_BUCKET }}
         run: |
+          AIMS_FIREBASE_API_KEY="${AIMS_FIREBASE_API_KEY:-$AIMS_FIREBASE_API_KEY_FALLBACK}"
+          AIMS_FIREBASE_PROJECT_ID="${AIMS_FIREBASE_PROJECT_ID:-$AIMS_FIREBASE_PROJECT_ID_FALLBACK}"
+          AIMS_FIREBASE_MESSAGING_SENDER_ID="${AIMS_FIREBASE_MESSAGING_SENDER_ID:-$AIMS_FIREBASE_MESSAGING_SENDER_ID_FALLBACK}"
+          AIMS_FIREBASE_ANDROID_APP_ID="${AIMS_FIREBASE_ANDROID_APP_ID:-$AIMS_FIREBASE_ANDROID_APP_ID_FALLBACK}"
+          AIMS_FIREBASE_STORAGE_BUCKET="${AIMS_FIREBASE_STORAGE_BUCKET:-$AIMS_FIREBASE_STORAGE_BUCKET_FALLBACK}"
+
           flutter build apk --debug \
             --dart-define=AIMS_API_BASE_URL=https://logistic-aims.hu/api \
             --dart-define=AIMS_TRACKING_BASE_URL=https://logistic-aims.hu/api/aims-tracking \
@@ -132,7 +156,7 @@ jobs:
       - name: Upload production-like APK before device test
         uses: actions/upload-artifact@v4
         with:
-          name: AIMS-Flow-v1.3-SMART-OPERATIONS
+          name: AIMS-Flow-v1.4-NATIVE-PUSH
           path: build/app/outputs/flutter-apk/app-debug.apk
           if-no-files-found: error
 
@@ -157,6 +181,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: AIMS-Flow-v1.3-test-evidence
+          name: AIMS-Flow-v1.4-test-evidence
           path: test-evidence/
           if-no-files-found: warn
