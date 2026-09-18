@@ -63,7 +63,12 @@ class _FlowRegisterScreenState extends State<FlowRegisterScreen> {
   bool _validPhone(String value) {
     var phone = value.trim().replaceAll(RegExp(r'[\s().-]'), '');
     if (phone.startsWith('00')) phone = '+' + phone.substring(2);
-    return RegExp(r'^\+[1-9][0-9]{7,14}
+    return RegExp(r'^\+[1-9][0-9]{7,14}$').hasMatch(phone);
+  }
+
+  Future<void> _submit() async {
+    if (_busy) return;
+    if (_company.text.trim().isEmpty ||
         _country.text.trim().isEmpty ||
         _contact.text.trim().isEmpty ||
         _phone.text.trim().isEmpty ||
