@@ -114,3 +114,68 @@ Do not commit production tokens to GitHub.
 - movement reset,
 - automatic pickup arrival,
 - fuel receipt upload and admin visibility.
+
+
+## Native management push (FCM HTTP v1)
+
+AIMS Flow now supports native push delivery to the phone(s) registered for each plate admin.
+
+Delivery path:
+
+1. operational event is written to `notifications`,
+2. all enabled push devices belonging to that admin are copied to `push_queue`,
+3. the endpoint that created the event attempts immediate delivery after the database transaction commits,
+4. failed deliveries stay queued with exponential backoff,
+5. invalid/unregistered FCM tokens are disabled automatically,
+6. `push_worker.php` retries outstanding messages.
+
+Recommended VPS cron:
+
+```bash
+* * * * * php /path/to/aims-tracking/push_worker.php 25 >/dev/null 2>&1
+```
+
+Server-only secrets/configuration:
+
+- `AIMS_FIREBASE_SERVICE_ACCOUNT_FILE=/secure/path/firebase-service-account.json`
+  or `AIMS_FIREBASE_SERVICE_ACCOUNT_JSON` / `AIMS_FIREBASE_SERVICE_ACCOUNT_B64`
+- `AIMS_FIREBASE_PROJECT_ID` (optional override)
+- `AIMS_PUSH_WORKER_TOKEN` for HTTP worker invocation
+
+The Firebase service-account private key must stay on the server and must never be compiled into the APK.
+
+Android APK client configuration is supplied at build time:
+
+- `AIMS_FIREBASE_API_KEY`
+- `AIMS_FIREBASE_PROJECT_ID`
+- `AIMS_FIREBASE_MESSAGING_SENDER_ID`
+- `AIMS_FIREBASE_ANDROID_APP_ID`
+- optional `AIMS_FIREBASE_STORAGE_BUCKET`
+- `AIMS_TRACKING_BASE_URL`
+
+The GitHub Android workflow reads these values from repository secrets. If they are absent, the APK still builds but the management screen reports that native push is not configured.
+
+### Native management mode
+
+The same AIMS Flow APK contains **AIMS Flow • Főnökség**:
+
+- admin token stored with platform secure storage,
+- Android notification permission requested only when the user enables management push,
+- FCM token registered to the authenticated admin,
+- FCM token refresh automatically re-registers the phone,
+- tapping a push opens the management center,
+- foreground pushes appear immediately inside the app,
+- notification inbox and fuel-receipt list are available natively,
+- logging out disables that phone's push registration.
+
+### Push tests
+
+The endpoint integration suite uses a fake push transport and validates all of the following without contacting Firebase:
+
+- FCM device registration endpoint,
+- notification -> push queue creation,
+- immediate push delivery,
+- stationary / arrival / fuel event payloads,
+- two-admin isolation: the other admin receives no push for SIP-115.
+
+Production delivery uses Firebase HTTP v1 with short-lived OAuth 2.0 access tokens generated from the service account.
