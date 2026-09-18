@@ -147,8 +147,8 @@ class VehicleTrackingService {
     final settings = AndroidSettings(
       accuracy: LocationAccuracy.high,
       distanceFilter: 5,
-      intervalDuration: Duration(seconds: 15),
-      foregroundNotificationConfig: ForegroundNotificationConfig(
+      intervalDuration: const Duration(seconds: 15),
+      foregroundNotificationConfig: const ForegroundNotificationConfig(
         notificationTitle: 'AIMS Flow nyomkövetés aktív',
         notificationText: 'A jármű helyzete a munkavégzés alatt frissül.',
         enableWakeLock: true,
