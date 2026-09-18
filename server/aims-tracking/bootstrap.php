@@ -197,6 +197,36 @@ function aims_db(): PDO {
     )');
     $pdo->exec('CREATE INDEX IF NOT EXISTS idx_push_queue_due ON push_queue(status, next_attempt_at, id)');
 
+    $jobColumns = [];
+    foreach ($pdo->query('PRAGMA table_info(jobs)')->fetchAll(PDO::FETCH_ASSOC) as $column) {
+        $jobColumns[(string)$column['name']] = true;
+    }
+    if (!isset($jobColumns['driver_seen_at'])) {
+        $pdo->exec('ALTER TABLE jobs ADD COLUMN driver_seen_at TEXT');
+    }
+    if (!isset($jobColumns['driver_accepted_at'])) {
+        $pdo->exec('ALTER TABLE jobs ADD COLUMN driver_accepted_at TEXT');
+    }
+    if (!isset($jobColumns['driver_push_last_at'])) {
+        $pdo->exec('ALTER TABLE jobs ADD COLUMN driver_push_last_at TEXT');
+    }
+    if (!isset($jobColumns['partial_load'])) {
+        $pdo->exec('ALTER TABLE jobs ADD COLUMN partial_load INTEGER NOT NULL DEFAULT 0');
+    }
+
+    $pdo->exec('CREATE TABLE IF NOT EXISTS driver_push_devices (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        vehicle_id INTEGER NOT NULL,
+        platform TEXT NOT NULL DEFAULT "android",
+        device_id TEXT NOT NULL,
+        fcm_token TEXT NOT NULL UNIQUE,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY(vehicle_id) REFERENCES vehicles(id) ON DELETE CASCADE
+    )');
+    $pdo->exec('CREATE INDEX IF NOT EXISTS idx_driver_push_vehicle_enabled ON driver_push_devices(vehicle_id, enabled)');
+
     aims_ensure_default_admin($pdo);
     return $pdo;
 }
