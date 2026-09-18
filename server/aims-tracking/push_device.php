@@ -12,7 +12,11 @@ if ($method === 'GET') {
                            WHERE admin_user_id = :admin
                            ORDER BY updated_at DESC');
     $stmt->execute([':admin' => $adminId]);
-    aims_json(['ok' => true, 'devices' => $stmt->fetchAll(PDO::FETCH_ASSOC)]);
+    aims_json([
+        'ok' => true,
+        'serverPushConfigured' => aims_push_config() !== null,
+        'devices' => $stmt->fetchAll(PDO::FETCH_ASSOC),
+    ]);
 }
 
 if ($method === 'POST') {
@@ -57,7 +61,11 @@ if ($method === 'POST') {
 
     $find = $pdo->prepare('SELECT id FROM push_devices WHERE fcm_token = :token');
     $find->execute([':token' => $token]);
-    aims_json(['ok' => true, 'pushDeviceId' => (int)$find->fetchColumn()]);
+    aims_json([
+        'ok' => true,
+        'serverPushConfigured' => aims_push_config() !== null,
+        'pushDeviceId' => (int)$find->fetchColumn(),
+    ]);
 }
 
 if ($method === 'DELETE') {
