@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../models/scan_models.dart';
 import '../services/cmr_sync_service.dart';
 import '../services/scan_repository.dart';
+import 'admin_center_screen.dart';
 import 'fuel_receipt_screen.dart';
 import 'scan_review_screen.dart';
 import 'scanner_screen.dart';
@@ -205,6 +206,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         foregroundColor: Colors.white,
         title: const Text('AIMS Flow Smart Scanner'),
         actions: [
+          IconButton(
+            key: const ValueKey('open-admin-center'),
+            tooltip: 'Főnökségi központ',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const AdminCenterScreen()),
+            ),
+            icon: const Icon(Icons.admin_panel_settings_rounded),
+          ),
           if (_syncing)
             const Padding(
               padding: EdgeInsets.symmetric(horizontal: 12),
