@@ -178,7 +178,8 @@ class NailFitV3Controller extends ChangeNotifier {
   }
 
   Offset sourcePointFromViewport(Offset local, Size viewport) {
-    if (photoWidth <= 0 || photoHeight <= 0 || viewport.width <= 0 || viewport.height <= 0) {
+    if (viewport.width <= 0 || viewport.height <= 0) return Offset.zero;
+    if (photoWidth <= 0 || photoHeight <= 0) {
       return Offset((local.dx / viewport.width).clamp(0.0, 1.0).toDouble(), (local.dy / viewport.height).clamp(0.0, 1.0).toDouble());
     }
     final scale = math.max(viewport.width / photoWidth, viewport.height / photoHeight);
@@ -204,10 +205,13 @@ class NailFitV3Controller extends ChangeNotifier {
     return Offset(originX + point.dx * renderedW, originY + point.dy * renderedH);
   }
 
-  List<Offset> pointsForViewport(Size viewport) => points.map((p) {
-        final q = viewportPointFromSource(p, viewport);
-        return Offset((q.dx / viewport.width).clamp(-.5, 1.5).toDouble(), (q.dy / viewport.height).clamp(-.5, 1.5).toDouble());
-      }).toList(growable: false);
+  List<Offset> pointsForViewport(Size viewport) {
+    if (viewport.width <= 0 || viewport.height <= 0) return const <Offset>[];
+    return points.map((p) {
+      final q = viewportPointFromSource(p, viewport);
+      return Offset((q.dx / viewport.width).clamp(-.5, 1.5).toDouble(), (q.dy / viewport.height).clamp(-.5, 1.5).toDouble());
+    }).toList(growable: false);
+  }
 
   Future<File> get _stateFile async {
     final dir = await getApplicationDocumentsDirectory();
@@ -233,9 +237,12 @@ class NailFitV3Controller extends ChangeNotifier {
     try {
       final raw = await _readPersistedState();
       if (raw == null) return;
-      favorites
-        ..clear()
-        ..addAll((raw['favorites'] as List<dynamic>? ?? const []).map((e) => '$e'));
+      favorites.clear();
+      for (final value in (raw['favorites'] as List<dynamic>? ?? const [])) {
+        final rawFavorite = '$value';
+        final legacyLook = premiumLooks.where((p) => p.name == rawFavorite).firstOrNull;
+        favorites.add(legacyLook == null ? rawFavorite : _lookSignature(legacyLook));
+      }
 
       savedPngPaths.clear();
       for (final value in (raw['savedPngPaths'] as List<dynamic>? ?? const [])) {
