@@ -45,8 +45,10 @@ class NailFitV3Home extends StatelessWidget {
     ]),
   ));
 
-  Widget _hero() => Container(
-    height: 312,
+  Widget _hero() => LayoutBuilder(
+    builder: (context, constraints) {
+      return Container(
+        height: constraints.maxWidth < 350 ? 342 : 312,
     clipBehavior: Clip.antiAlias,
     decoration: BoxDecoration(borderRadius: BorderRadius.circular(29), border: Border.all(color: Colors.white, width: 1.3), boxShadow: const [BoxShadow(color: Color(0x1E9C6872), blurRadius: 28, offset: Offset(0, 13))]),
     child: Stack(fit: StackFit.expand, children: [
@@ -63,6 +65,8 @@ class NailFitV3Home extends StatelessWidget {
       ])),
       const Positioned(right: 16, top: 43, child: Text('Your\nNails\nYour Story ♡', textAlign: TextAlign.right, style: TextStyle(color: Colors.white, fontFamily: 'serif', fontStyle: FontStyle.italic, fontSize: 14, height: 1.02))),
     ]),
+  );
+    },
   );
 
   Widget _match() => Container(height: 285, padding: const EdgeInsets.all(16), decoration: BoxDecoration(gradient: const LinearGradient(colors: [Color(0xFFFFE7EB), Color(0xFFF4D3D9)]), borderRadius: BorderRadius.circular(24), border: Border.all(color: Colors.white)), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
