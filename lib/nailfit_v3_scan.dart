@@ -174,7 +174,7 @@ class NailFitV3Scan extends StatelessWidget {
                         const SizedBox(width: 7),
                         Flexible(
                           child: Text(
-                            photo == null ? 'Készíts vagy válassz kézfotót' : (c.points.length < 5 ? 'Érintsd meg sorban az 5 köröm közepét' : 'Kalibráció kész · a pontokat húzással finomíthatod'),
+                            photo == null ? 'Készíts vagy válassz kézfotót' : (c.points.length < 5 ? 'Következő: ${c.nextCalibrationFinger} · érintsd meg a köröm közepét' : 'Kalibráció kész · a pontokat húzással finomíthatod'),
                             textAlign: TextAlign.center,
                             style: const TextStyle(color: Colors.white, fontSize: 10.5, fontWeight: FontWeight.w800),
                           ),
