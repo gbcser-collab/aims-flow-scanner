@@ -8,7 +8,11 @@ Widget nfBackground(Widget child) => DecoratedBox(
 
 Widget nfHeader({VoidCallback? onAi, VoidCallback? onNotifications, bool notificationActive = false}) => Row(children: [
   const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-    Row(children: [Text('NAIL', style: TextStyle(fontSize: 22, letterSpacing: 3.6, fontWeight: FontWeight.w500, color: nfInk)), Text('FIT', style: TextStyle(fontSize: 22, letterSpacing: 3.6, fontWeight: FontWeight.w500, color: nfRose))]),
+    FittedBox(
+      fit: BoxFit.scaleDown,
+      alignment: Alignment.centerLeft,
+      child: Row(children: [Text('NAIL', style: TextStyle(fontSize: 22, letterSpacing: 3.6, fontWeight: FontWeight.w500, color: nfInk)), Text('FIT', style: TextStyle(fontSize: 22, letterSpacing: 3.6, fontWeight: FontWeight.w500, color: nfRose))]),
+    ),
     Text('B E A U T Y   M E E T S   Y O U', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 6.2, letterSpacing: 1.0, color: nfMuted)),
   ])),
   const SizedBox(width: 6),
