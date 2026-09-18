@@ -22,6 +22,7 @@ $vehicle = $vehicleStmt->fetch(PDO::FETCH_ASSOC);
 if (!$vehicle) aims_json(['ok' => false, 'error' => 'vehicle_not_registered'], 404);
 
 $reference = trim((string)($job['reference'] ?? ''));
+$partialLoad = (($job['partialLoad'] ?? $job['partial'] ?? false) === true) ? 1 : 0;
 if ($reference === '') aims_json(['ok' => false, 'error' => 'missing_reference'], 422);
 
 function aims_http_get_json(string $url, array $headers): ?array {
@@ -157,19 +158,23 @@ try {
     $jobId = $existing->fetchColumn();
 
     if ($jobId === false) {
-        $insert = $pdo->prepare('INSERT INTO jobs (reference, vehicle_id, status, created_at, updated_at)
-                                 VALUES (:reference, :vehicle, "active", :created, :updated)');
+        $insert = $pdo->prepare('INSERT INTO jobs (reference, vehicle_id, status, created_at, updated_at, partial_load)
+                                 VALUES (:reference, :vehicle, "active", :created, :updated, :partial)');
         $insert->execute([
             ':reference' => $reference,
             ':vehicle' => $vehicle['id'],
             ':created' => $now,
             ':updated' => $now,
+            ':partial' => $partialLoad,
         ]);
         $jobId = (int)$pdo->lastInsertId();
     } else {
         $jobId = (int)$jobId;
-        $reset = $pdo->prepare('UPDATE jobs SET status = "active", updated_at = :updated WHERE id = :id');
-        $reset->execute([':updated' => $now, ':id' => $jobId]);
+        $reset = $pdo->prepare('UPDATE jobs
+            SET status = "active", updated_at = :updated, partial_load = :partial,
+                driver_seen_at = NULL, driver_accepted_at = NULL, driver_push_last_at = NULL
+            WHERE id = :id');
+        $reset->execute([':updated' => $now, ':partial' => $partialLoad, ':id' => $jobId]);
         $delete = $pdo->prepare('DELETE FROM job_stops WHERE job_id = :job');
         $delete->execute([':job' => $jobId]);
     }
@@ -211,6 +216,7 @@ try {
 }
 
 aims_try_push($pdo, 8);
+$driverPush = aims_send_driver_job_push($pdo, (int)$jobId);
 
 aims_json([
     'ok' => true,
@@ -218,4 +224,5 @@ aims_json([
     'reference' => $reference,
     'plate' => $plate,
     'stops' => $resolved,
+    'driverPush' => $driverPush,
 ]);
