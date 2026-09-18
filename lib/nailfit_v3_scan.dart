@@ -23,7 +23,7 @@ class NailFitV3Scan extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            nfHeader(),
+            nfHeader(onAi: () => nfShowStylist(context, c), onNotifications: () => nfShowNotifications(context, c), notificationActive: c.notificationsEnabled && c.appointment != null),
             const SizedBox(height: 22),
             Row(
               crossAxisAlignment: CrossAxisAlignment.end,
