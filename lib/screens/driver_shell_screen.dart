@@ -1004,42 +1004,70 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
     return _page([
       _header(),
       const SizedBox(height: 16),
-      const Text(
-        'Fuvarom',
-        style: TextStyle(fontSize: 28, fontWeight: FontWeight.w900),
+      Text(
+        _l('Fuvarom', 'My job', 'Mein Auftrag'),
+        style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w900),
       ),
       const SizedBox(height: 4),
       Text(
-        job == null ? 'Nincs aktív fuvar.' : job.reference,
+        job == null
+            ? _l(
+                'Nincs aktív fuvar.',
+                'There is no active job.',
+                'Es gibt keinen aktiven Auftrag.',
+              )
+            : job.reference,
         style: const TextStyle(color: Colors.white54),
       ),
       const SizedBox(height: 14),
       if (job == null)
-        _panel(const Text('A következő kiosztott fuvar itt jelenik meg.'))
+        _panel(
+          Text(
+            _l(
+              'A következő kiosztott fuvar itt jelenik meg.',
+              'The next assigned job will appear here.',
+              'Der nächste zugewiesene Auftrag erscheint hier.',
+            ),
+          ),
+        )
       else ...[
-        ...job.stops.map((stop) => Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: _stopCard(stop),
-            )),
+        ...job.stops.map(
+          (stop) => Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: _stopCard(stop),
+          ),
+        ),
         const SizedBox(height: 4),
         _panel(
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                'Nyomkövetés',
-                style: TextStyle(fontWeight: FontWeight.w900),
+              Text(
+                _l('Nyomkövetés', 'Tracking', 'Tracking'),
+                style: const TextStyle(fontWeight: FontWeight.w900),
               ),
               const SizedBox(height: 7),
               Text(
                 _trackingStatus?.lastPosition == null
-                    ? 'GPS-pozícióra vár.'
-                    : 'Útvonal mentve · utolsó pont elküldve a szervernek.',
+                    ? _l(
+                        'GPS-pozícióra vár.',
+                        'Waiting for GPS position.',
+                        'Warte auf GPS-Position.',
+                      )
+                    : _l(
+                        'Útvonal mentve · utolsó pont elküldve a szervernek.',
+                        'Route saved · latest point sent to the server.',
+                        'Route gespeichert · letzter Punkt an den Server gesendet.',
+                      ),
                 style: const TextStyle(color: Colors.white60),
               ),
               const SizedBox(height: 10),
               Text(
-                '15 és 30 perc hiteles tétlenségnél a főnökség push értesítést kap. A GPS-zaj nem nullázza az időzítőt.',
+                _l(
+                  '15 és 30 perc hiteles tétlenségnél a főnökség push értesítést kap. A GPS-zaj nem nullázza az időzítőt.',
+                  'The office gets a push after 15 and 30 minutes of confirmed inactivity. GPS noise does not reset the timer.',
+                  'Die Disposition erhält nach 15 und 30 Minuten bestätigtem Stillstand eine Push-Meldung. GPS-Rauschen setzt den Timer nicht zurück.',
+                ),
                 style: const TextStyle(color: Colors.white38, height: 1.4),
               ),
             ],
@@ -1052,14 +1080,18 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
   Widget _quickSignal() => _page([
         _header(),
         const SizedBox(height: 16),
-        const Text(
-          'Gyors jelzés',
-          style: TextStyle(fontSize: 28, fontWeight: FontWeight.w900),
+        Text(
+          _l('Gyors jelzés', 'Quick signal', 'Schnellmeldung'),
+          style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w900),
         ),
         const SizedBox(height: 4),
-        const Text(
-          'Egy koppintás. A rendszám, fuvar, időpont és GPS-hely automatikusan mellé kerül.',
-          style: TextStyle(color: Colors.white54, height: 1.4),
+        Text(
+          _l(
+            'Egy koppintás. A rendszám, fuvar, időpont és GPS-hely automatikusan mellé kerül.',
+            'One tap. Plate, job, time and GPS location are attached automatically.',
+            'Ein Tippen. Kennzeichen, Auftrag, Zeit und GPS-Position werden automatisch hinzugefügt.',
+          ),
+          style: const TextStyle(color: Colors.white54, height: 1.4),
         ),
         const SizedBox(height: 14),
         GridView.count(
@@ -1070,17 +1102,44 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
           crossAxisSpacing: 9,
           childAspectRatio: 1.18,
           children: [
-            _signal(Icons.timer_outlined, 'Várakozás', 'Rakodás / telephely',
-                () => _sendSignal('Várakozás')),
-            _signal(Icons.location_off_outlined, 'Cím / rakodás',
+            _signal(
+              Icons.timer_outlined,
+              _l('Várakozás', 'Waiting', 'Warten'),
+              _l('Rakodás / telephely', 'Loading / site', 'Beladung / Standort'),
+              () => _sendSignal('Várakozás'),
+            ),
+            _signal(
+              Icons.location_off_outlined,
+              _l('Cím / rakodás', 'Address / loading', 'Adresse / Beladung'),
+              _l(
                 'Nem található / nem engednek be',
-                () => _sendSignal('Cím / rakodás')),
-            _signal(Icons.build_outlined, 'Műszaki hiba', 'Autó / gumi / motor',
-                () => _sendSignal('Műszaki hiba')),
-            _signal(Icons.sos_outlined, 'Sürgős', 'Baleset / azonnali figyelem',
-                () => _sendSignal('Baleset / sürgős', urgent: true)),
-            _signal(Icons.more_horiz_rounded, 'Egyéb', 'Írd le röviden',
-                _otherSignal),
+                'Cannot find it / no entry',
+                'Nicht auffindbar / kein Zutritt',
+              ),
+              () => _sendSignal('Cím / rakodás'),
+            ),
+            _signal(
+              Icons.build_outlined,
+              _l('Műszaki hiba', 'Technical issue', 'Technisches Problem'),
+              _l('Autó / gumi / motor', 'Vehicle / tyre / engine', 'Fahrzeug / Reifen / Motor'),
+              () => _sendSignal('Műszaki hiba'),
+            ),
+            _signal(
+              Icons.sos_outlined,
+              _l('Sürgős', 'Urgent', 'Dringend'),
+              _l(
+                'Baleset / azonnali figyelem',
+                'Accident / immediate attention',
+                'Unfall / sofortige Aufmerksamkeit',
+              ),
+              () => _sendSignal('Baleset / sürgős', urgent: true),
+            ),
+            _signal(
+              Icons.more_horiz_rounded,
+              _l('Egyéb', 'Other', 'Sonstiges'),
+              _l('Írd le röviden', 'Describe briefly', 'Kurz beschreiben'),
+              _otherSignal,
+            ),
           ],
         ),
       ]);
@@ -1088,14 +1147,18 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
   Widget _documents() => _page([
         _header(),
         const SizedBox(height: 16),
-        const Text(
-          'Dokumentum',
-          style: TextStyle(fontSize: 28, fontWeight: FontWeight.w900),
+        Text(
+          _l('Dokumentum', 'Documents', 'Dokumente'),
+          style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w900),
         ),
         const SizedBox(height: 4),
-        const Text(
-          'Fotózd le, a Flow feldolgozza és továbbítja.',
-          style: TextStyle(color: Colors.white54),
+        Text(
+          _l(
+            'Fotózd le, a Flow feldolgozza és továbbítja.',
+            'Take a photo. Flow processes and forwards it.',
+            'Foto aufnehmen. Flow verarbeitet und leitet es weiter.',
+          ),
+          style: const TextStyle(color: Colors.white54),
         ),
         const SizedBox(height: 14),
         _panel(
@@ -1104,13 +1167,21 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
               FilledButton.icon(
                 onPressed: _openCmrScanner,
                 icon: const Icon(Icons.document_scanner_rounded),
-                label: const Text('CMR / DOKUMENTUM'),
+                label: Text(
+                  _l('CMR / DOKUMENTUM', 'CMR / DOCUMENT', 'CMR / DOKUMENT'),
+                ),
               ),
               const SizedBox(height: 10),
               OutlinedButton.icon(
                 onPressed: _openFuelReceipt,
                 icon: const Icon(Icons.local_gas_station_outlined),
-                label: const Text('TANKOLÁSI BIZONYLAT'),
+                label: Text(
+                  _l(
+                    'TANKOLÁSI BIZONYLAT',
+                    'FUEL RECEIPT',
+                    'TANKBELEG',
+                  ),
+                ),
                 style: OutlinedButton.styleFrom(
                   minimumSize: const Size.fromHeight(54),
                   foregroundColor: Colors.white,
