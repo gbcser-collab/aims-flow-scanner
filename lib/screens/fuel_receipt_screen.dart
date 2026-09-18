@@ -4,6 +4,7 @@ import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 
+import '../services/aims_locale.dart';
 import '../services/aims_scan_engine.dart';
 import '../services/fuel_receipt_parser.dart';
 import '../services/fuel_receipt_service.dart';
@@ -35,6 +36,14 @@ class _FuelReceiptScreenState extends State<FuelReceiptScreen> with WidgetsBindi
   final _liters = TextEditingController();
   final _unitPrice = TextEditingController();
   final _receipt = TextEditingController();
+
+  String _l(String hu, String en, String de) => switch (
+        AimsLocaleController.instance.languageCode
+      ) {
+        'en' => en,
+        'de' => de,
+        _ => hu,
+      };
 
   @override
   void initState() {
@@ -79,7 +88,7 @@ class _FuelReceiptScreenState extends State<FuelReceiptScreen> with WidgetsBindi
       setState(() => _controller = controller);
     } catch (e) {
       await controller.dispose();
-      if (mounted) setState(() => _error = 'A kamera nem indult el: $e');
+      if (mounted) setState(() => _error = _l('A kamera nem indult el: $e', 'The camera could not start: $e', 'Die Kamera konnte nicht gestartet werden: $e'));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -90,7 +99,7 @@ class _FuelReceiptScreenState extends State<FuelReceiptScreen> with WidgetsBindi
     if (controller == null || !controller.value.isInitialized || _busy) return;
     setState(() {
       _busy = true;
-      _phase = 'Bizonylat fényképezése…';
+      _phase = _l('Bizonylat fényképezése…', 'Taking receipt photo…', 'Beleg wird fotografiert…');
       _error = null;
     });
 
@@ -101,7 +110,7 @@ class _FuelReceiptScreenState extends State<FuelReceiptScreen> with WidgetsBindi
       final temp = await getTemporaryDirectory();
       final output = '${temp.path}/aims_fuel_${DateTime.now().microsecondsSinceEpoch}.jpg';
 
-      setState(() => _phase = 'Bizonylat tisztítása…');
+      setState(() => _phase = _l('Bizonylat tisztítása…', 'Cleaning receipt image…', 'Belegbild wird bereinigt…'));
       String finalPath;
       try {
         final processed = await const AimsScanEngine().process(inputPath: shot.path, outputPath: output);
@@ -111,7 +120,7 @@ class _FuelReceiptScreenState extends State<FuelReceiptScreen> with WidgetsBindi
         finalPath = output;
       }
 
-      setState(() => _phase = 'OCR és tankolási adatok felismerése…');
+      setState(() => _phase = _l('OCR és tankolási adatok felismerése…', 'Recognizing OCR and fuel data…', 'OCR- und Tankdaten werden erkannt…'));
       final text = await ocr.recognize(finalPath);
       final data = const FuelReceiptParser().parse(text);
 
@@ -132,7 +141,7 @@ class _FuelReceiptScreenState extends State<FuelReceiptScreen> with WidgetsBindi
         _phase = '';
       });
     } catch (e) {
-      if (mounted) setState(() => _error = 'A tankolási bizonylat feldolgozása nem sikerült: $e');
+      if (mounted) setState(() => _error = _l('A tankolási bizonylat feldolgozása nem sikerült: $e', 'Fuel receipt processing failed: $e', 'Tankbeleg konnte nicht verarbeitet werden: $e'));
     } finally {
       await ocr.dispose();
       if (shot != null) {
@@ -163,7 +172,7 @@ class _FuelReceiptScreenState extends State<FuelReceiptScreen> with WidgetsBindi
     final imagePath = _imagePath;
     if (imagePath == null || _sending) return;
     if (_plate.text.trim().length < 4) {
-      setState(() => _error = 'A küldéshez add meg a jármű rendszámát.');
+      setState(() => _error = _l('A küldéshez add meg a jármű rendszámát.', 'Enter the vehicle plate before sending.', 'Vor dem Senden das Fahrzeugkennzeichen eingeben.'));
       return;
     }
 
@@ -182,7 +191,7 @@ class _FuelReceiptScreenState extends State<FuelReceiptScreen> with WidgetsBindi
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Tankolási bizonylat elküldve a főnökségnek. #$id')),
+        SnackBar(content: Text(_l('Tankolási bizonylat elküldve a főnökségnek. #$id', 'Fuel receipt sent to the office. #$id', 'Tankbeleg an die Disposition gesendet. #$id'))),
       );
       try {
         await File(imagePath).delete();
@@ -239,7 +248,13 @@ class _FuelReceiptScreenState extends State<FuelReceiptScreen> with WidgetsBindi
       appBar: AppBar(
         backgroundColor: const Color(0xFF0C0F13),
         foregroundColor: Colors.white,
-        title: const Text('Tankolási bizonylat'),
+        title: Text(_l('Tankolási bizonylat', 'Fuel receipt', 'Tankbeleg')),
+        actions: const [
+          Padding(
+            padding: EdgeInsets.only(right: 8),
+            child: AimsLanguageSelector(compact: true),
+          ),
+        ],
       ),
       body: SafeArea(
         child: imagePath == null ? _cameraView() : _reviewView(imagePath),
@@ -266,7 +281,7 @@ class _FuelReceiptScreenState extends State<FuelReceiptScreen> with WidgetsBindi
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(color: Colors.black.withValues(alpha: .7), borderRadius: BorderRadius.circular(16)),
             child: const Text(
-              'Töltsd ki a képet a teljes tankolási bizonylattal. Az OCR után ellenőrizheted az adatokat.',
+              _l('Töltsd ki a képet a teljes tankolási bizonylattal. Az OCR után ellenőrizheted az adatokat.', 'Fill the frame with the whole fuel receipt. You can review the data after OCR.', 'Fülle den Rahmen mit dem vollständigen Tankbeleg. Nach der OCR kannst du die Daten prüfen.'),
               textAlign: TextAlign.center,
               style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
             ),
@@ -318,26 +333,26 @@ class _FuelReceiptScreenState extends State<FuelReceiptScreen> with WidgetsBindi
           child: Image.file(File(imagePath), height: 280, fit: BoxFit.contain),
         ),
         const SizedBox(height: 16),
-        const Text('Ellenőrizd a felismert adatokat', style: TextStyle(color: Colors.white, fontSize: 21, fontWeight: FontWeight.w900)),
+        Text(_l('Ellenőrizd a felismert adatokat', 'Review recognized data', 'Erkannte Daten prüfen'), style: const TextStyle(color: Colors.white, fontSize: 21, fontWeight: FontWeight.w900)),
         const SizedBox(height: 12),
-        _field('Rendszám', _plate, caps: true),
-        _field('Töltőállomás', _station),
-        _field('Dátum', _date),
+        _field(_l('Rendszám', 'Plate', 'Kennzeichen'), _plate, caps: true),
+        _field(_l('Töltőállomás', 'Fuel station', 'Tankstelle'), _station),
+        _field(_l('Dátum', 'Date', 'Datum'), _date),
         Row(
           children: [
-            Expanded(child: _field('Összeg', _total, number: true)),
+            Expanded(child: _field(_l('Összeg', 'Total', 'Betrag'), _total, number: true)),
             const SizedBox(width: 8),
-            Expanded(child: _field('Pénznem', _currency, caps: true)),
+            Expanded(child: _field(_l('Pénznem', 'Currency', 'Währung'), _currency, caps: true)),
           ],
         ),
         Row(
           children: [
-            Expanded(child: _field('Liter', _liters, number: true)),
+            Expanded(child: _field(_l('Liter', 'Litres', 'Liter'), _liters, number: true)),
             const SizedBox(width: 8),
-            Expanded(child: _field('Egységár / liter', _unitPrice, number: true)),
+            Expanded(child: _field(_l('Egységár / liter', 'Unit price / litre', 'Preis / Liter'), _unitPrice, number: true)),
           ],
         ),
-        _field('Bizonylatszám', _receipt),
+        _field(_l('Bizonylatszám', 'Receipt number', 'Belegnummer'), _receipt),
         if (_error != null) ...[
           const SizedBox(height: 8),
           Text(_error!, style: const TextStyle(color: Colors.orangeAccent)),
@@ -348,7 +363,7 @@ class _FuelReceiptScreenState extends State<FuelReceiptScreen> with WidgetsBindi
           icon: _sending
               ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
               : const Icon(Icons.cloud_upload_rounded),
-          label: Text(_sending ? 'Küldés…' : 'Küldés a főnökségi appba'),
+          label: Text(_sending ? _l('Küldés…', 'Sending…', 'Senden…') : _l('Küldés a főnökségi appba', 'Send to office app', 'An Dispositions-App senden')),
           style: FilledButton.styleFrom(
             minimumSize: const Size.fromHeight(56),
             backgroundColor: const Color(0xFFE6B85C),
@@ -359,17 +374,17 @@ class _FuelReceiptScreenState extends State<FuelReceiptScreen> with WidgetsBindi
         OutlinedButton.icon(
           onPressed: _sending ? null : _retake,
           icon: const Icon(Icons.refresh_rounded),
-          label: const Text('Újrafotózás'),
+          label: Text(_l('Újrafotózás', 'Retake photo', 'Neu fotografieren')),
           style: OutlinedButton.styleFrom(foregroundColor: Colors.white),
         ),
         ExpansionTile(
           collapsedIconColor: Colors.white54,
           iconColor: const Color(0xFFE6B85C),
-          title: const Text('OCR nyers szöveg', style: TextStyle(color: Colors.white70)),
+          title: Text(_l('OCR nyers szöveg', 'Raw OCR text', 'OCR-Rohtext'), style: const TextStyle(color: Colors.white70)),
           children: [
             Padding(
               padding: const EdgeInsets.all(12),
-              child: SelectableText(_rawText.isEmpty ? 'Nem talált szöveget.' : _rawText, style: const TextStyle(color: Colors.white60)),
+              child: SelectableText(_rawText.isEmpty ? _l('Nem talált szöveget.', 'No text found.', 'Kein Text gefunden.') : _rawText, style: const TextStyle(color: Colors.white60)),
             ),
           ],
         ),
