@@ -426,7 +426,6 @@ class AimsVoiceService {
 
   Future<void> _selectPreferredVoice() async {
     _maleVoiceMatched = false;
-    _selectedVoiceName = '';
 
     try {
       final raw = await _tts.getVoices;
