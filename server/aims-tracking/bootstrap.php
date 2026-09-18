@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/smart_rules.php';
+require_once __DIR__ . '/push_service.php';
 
 function aims_json(array $payload, int $status = 200): never {
     http_response_code($status);
@@ -163,6 +164,39 @@ function aims_db(): PDO {
         FOREIGN KEY(admin_user_id) REFERENCES admin_users(id)
     )');
 
+    $pdo->exec('CREATE TABLE IF NOT EXISTS push_devices (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        admin_user_id INTEGER NOT NULL,
+        platform TEXT NOT NULL,
+        device_id TEXT NOT NULL,
+        fcm_token TEXT NOT NULL UNIQUE,
+        app_version TEXT,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY(admin_user_id) REFERENCES admin_users(id) ON DELETE CASCADE
+    )');
+    $pdo->exec('CREATE INDEX IF NOT EXISTS idx_push_devices_admin_enabled ON push_devices(admin_user_id, enabled)');
+
+    $pdo->exec('CREATE TABLE IF NOT EXISTS push_queue (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        notification_id INTEGER NOT NULL,
+        admin_user_id INTEGER NOT NULL,
+        push_device_id INTEGER NOT NULL,
+        status TEXT NOT NULL DEFAULT "pending",
+        attempts INTEGER NOT NULL DEFAULT 0,
+        next_attempt_at TEXT NOT NULL,
+        last_error TEXT,
+        provider_message_id TEXT,
+        created_at TEXT NOT NULL,
+        sent_at TEXT,
+        UNIQUE(notification_id, push_device_id),
+        FOREIGN KEY(notification_id) REFERENCES notifications(id) ON DELETE CASCADE,
+        FOREIGN KEY(admin_user_id) REFERENCES admin_users(id) ON DELETE CASCADE,
+        FOREIGN KEY(push_device_id) REFERENCES push_devices(id) ON DELETE CASCADE
+    )');
+    $pdo->exec('CREATE INDEX IF NOT EXISTS idx_push_queue_due ON push_queue(status, next_attempt_at, id)');
+
     aims_ensure_default_admin($pdo);
     return $pdo;
 }
@@ -218,6 +252,10 @@ function aims_notify(
         ':payload' => $payload ? json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) : null,
         ':created' => gmdate(DateTimeInterface::ATOM),
     ]);
+    if ($stmt->rowCount() === 1) {
+        $notificationId = (int)$pdo->lastInsertId();
+        aims_enqueue_push_for_notification($pdo, $notificationId, $adminUserId);
+    }
 }
 
 function aims_vehicle_for_point(PDO $pdo, string $deviceId, string $vehicleLabel): ?array {
