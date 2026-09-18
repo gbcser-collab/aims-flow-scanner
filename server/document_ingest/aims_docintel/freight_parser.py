@@ -65,10 +65,20 @@ class FreightOrder:
 
     def to_driver_payload(self) -> dict:
         """Only operational fields intended for the driver UI."""
+        def driver_stop(stop: Stop) -> dict:
+            return {
+                "company": stop.company,
+                "address": stop.address,
+                "date": stop.date,
+                "timeWindow": stop.time_window,
+                "contact": stop.contact,
+                "confidence": round(stop.confidence, 3),
+            }
+
         return {
             "reference": self.reference,
-            "pickups": [stop.to_dict() for stop in self.pickups],
-            "deliveries": [stop.to_dict() for stop in self.deliveries],
+            "pickups": [driver_stop(stop) for stop in self.pickups],
+            "deliveries": [driver_stop(stop) for stop in self.deliveries],
             "cargo": {
                 "description": self.cargo_description,
                 "pieces": self.pieces,
@@ -335,7 +345,7 @@ class FreightOrderParser:
             if match is None:
                 continue
             tail = line[match.end():]
-            tail = re.sub(r"^[\s:;,.#\-–—/]+", "", tail).strip()
+            tail = re.sub(r"^[\s:;,.#|\-–—/]+", "", tail).strip()
             if len(tail) >= 2:
                 return tail
         return None
@@ -431,9 +441,12 @@ class FreightOrderParser:
 
     def _label_in_key(self, label: str, key: str) -> bool:
         label_key = self._key(label)
-        if len(label_key) <= 3:
-            return re.search(rf"(?:^|\s){re.escape(label_key)}(?:\s|$)", key) is not None
-        return label_key in key
+        if not label_key:
+            return False
+        return re.search(
+            rf"(?:^|\s){re.escape(label_key)}(?:\s|$)",
+            key,
+        ) is not None
 
     def _key(self, value: str) -> str:
         value = value.lower()
