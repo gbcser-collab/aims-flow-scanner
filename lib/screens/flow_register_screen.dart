@@ -124,11 +124,11 @@ class _FlowRegisterScreenState extends State<FlowRegisterScreen> {
   final _company = TextEditingController();
   final _plate = TextEditingController();
   final _country = TextEditingController();
+  final _countryFocus = FocusNode();
   final _contact = TextEditingController();
   final _phone = TextEditingController();
   final _email = TextEditingController();
   final _address = TextEditingController();
-  final _tax = TextEditingController();
 
   String _countryCode = '';
   bool _countryTyping = false;
@@ -141,7 +141,6 @@ class _FlowRegisterScreenState extends State<FlowRegisterScreen> {
   void initState() {
     super.initState();
     AimsLocaleController.instance.addListener(_onLanguageChanged);
-    _chooseCountry(_countries.first, notify: false);
   }
 
   void _onLanguageChanged() {
@@ -162,11 +161,11 @@ class _FlowRegisterScreenState extends State<FlowRegisterScreen> {
     _company.dispose();
     _plate.dispose();
     _country.dispose();
+    _countryFocus.dispose();
     _contact.dispose();
     _phone.dispose();
     _email.dispose();
     _address.dispose();
-    _tax.dispose();
     AimsLocaleController.instance.removeListener(_onLanguageChanged);
     super.dispose();
   }
@@ -200,102 +199,20 @@ class _FlowRegisterScreenState extends State<FlowRegisterScreen> {
 
   List<_CountryOption> get _suggestions {
     final query = _country.text.trim();
-    if (query.isEmpty) return _countries;
-    return _countries.where((country) => country.matches(query)).take(8).toList();
+    if (query.length < 2) return const [];
+    return _countries
+        .where((country) => country.matches(query))
+        .take(5)
+        .toList();
   }
 
-  Future<void> _openCountryPicker() async {
-    final locale = AimsLocaleController.instance;
-    final t = locale.t;
-    final search = TextEditingController();
-    var filtered = List<_CountryOption>.from(_countries);
-
-    final selected = await showModalBottomSheet<_CountryOption>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: const Color(0xFF071522),
-      builder: (context) => StatefulBuilder(
-        builder: (context, setModalState) => SafeArea(
-          child: Padding(
-            padding: EdgeInsets.fromLTRB(
-              18,
-              18,
-              18,
-              MediaQuery.viewInsetsOf(context).bottom + 18,
-            ),
-            child: SizedBox(
-              height: MediaQuery.sizeOf(context).height * .72,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Row(
-                    children: [
-                      const Icon(Icons.public_rounded, color: _blue),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          t('country_choose'),
-                          style: const TextStyle(
-                            fontSize: 22,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 14),
-                  TextField(
-                    key: const Key('flow-country-modal-search'),
-                    controller: search,
-                    autofocus: true,
-                    decoration: InputDecoration(
-                      hintText: t('country_search'),
-                      prefixIcon: const Icon(Icons.search_rounded),
-                    ),
-                    onChanged: (value) {
-                      setModalState(() {
-                        filtered = _countries
-                            .where((country) => country.matches(value))
-                            .toList();
-                      });
-                    },
-                  ),
-                  const SizedBox(height: 10),
-                  Expanded(
-                    child: ListView.separated(
-                      itemCount: filtered.length,
-                      separatorBuilder: (_, __) => const Divider(height: 1),
-                      itemBuilder: (context, index) {
-                        final country = filtered[index];
-                        return ListTile(
-                          leading: CircleAvatar(
-                            child: Text(
-                              country.code,
-                              style: const TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w900,
-                              ),
-                            ),
-                          ),
-                          title: Text(_countryLabel(country)),
-                          subtitle: Text(
-                            country.code,
-                            style: const TextStyle(color: Colors.white38),
-                          ),
-                          onTap: () => Navigator.pop(context, country),
-                        );
-                      },
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-    search.dispose();
-    if (selected != null && mounted) _chooseCountry(selected);
+  void _focusCountrySearch() {
+    _countryFocus.requestFocus();
+    setState(() {
+      _country.clear();
+      _countryCode = '';
+      _countryTyping = true;
+    });
   }
 
   Future<void> _open(String path) async {
@@ -343,6 +260,7 @@ class _FlowRegisterScreenState extends State<FlowRegisterScreen> {
     if (_company.text.trim().isEmpty ||
         _plate.text.trim().isEmpty ||
         _country.text.trim().isEmpty ||
+        _countryCode.isEmpty ||
         _contact.text.trim().isEmpty ||
         _phone.text.trim().isEmpty ||
         _email.text.trim().isEmpty) {
@@ -376,7 +294,7 @@ class _FlowRegisterScreenState extends State<FlowRegisterScreen> {
         phone: _phone.text,
         email: _email.text,
         address: _address.text,
-        taxNumber: _tax.text,
+        taxNumber: '',
         language: locale.languageCode,
         terms: _terms,
         privacy: _privacy,
@@ -517,6 +435,7 @@ class _FlowRegisterScreenState extends State<FlowRegisterScreen> {
                         TextField(
                           key: const Key('flow-register-country'),
                           controller: _country,
+                          focusNode: _countryFocus,
                           textInputAction: TextInputAction.next,
                           decoration: _decoration(
                             t('country'),
@@ -526,7 +445,7 @@ class _FlowRegisterScreenState extends State<FlowRegisterScreen> {
                             prefixIcon: IconButton(
                               key: const Key('flow-country-globe'),
                               tooltip: t('country_choose'),
-                              onPressed: _openCountryPicker,
+                              onPressed: _focusCountrySearch,
                               icon: const Icon(
                                 Icons.public_rounded,
                                 color: Color(0xFF9EDBFF),
@@ -534,7 +453,14 @@ class _FlowRegisterScreenState extends State<FlowRegisterScreen> {
                             ),
                             suffixText: _countryCode,
                           ),
-                          onTap: () => setState(() => _countryTyping = true),
+                          onTap: () {
+                            if (_countryCode.isNotEmpty ||
+                                _country.text.trim().isNotEmpty) {
+                              _focusCountrySearch();
+                            } else {
+                              setState(() => _countryTyping = true);
+                            }
+                          },
                           onChanged: (_) => setState(() {
                             _countryTyping = true;
                             _countryCode = '';
@@ -551,7 +477,7 @@ class _FlowRegisterScreenState extends State<FlowRegisterScreen> {
                               ),
                               borderRadius: BorderRadius.circular(12),
                             ),
-                            constraints: const BoxConstraints(maxHeight: 240),
+                            constraints: const BoxConstraints(maxHeight: 224),
                             child: ListView.builder(
                               shrinkWrap: true,
                               itemCount: _suggestions.length,
@@ -559,6 +485,9 @@ class _FlowRegisterScreenState extends State<FlowRegisterScreen> {
                                 final country = _suggestions[index];
                                 return ListTile(
                                   dense: true,
+                                  visualDensity: const VisualDensity(
+                                    vertical: -2,
+                                  ),
                                   leading: Text(
                                     country.code,
                                     style: const TextStyle(
@@ -567,7 +496,10 @@ class _FlowRegisterScreenState extends State<FlowRegisterScreen> {
                                     ),
                                   ),
                                   title: Text(_countryLabel(country)),
-                                  onTap: () => _chooseCountry(country),
+                                  onTap: () {
+                                    _chooseCountry(country);
+                                    _countryFocus.unfocus();
+                                  },
                                 );
                               },
                             ),
@@ -614,15 +546,6 @@ class _FlowRegisterScreenState extends State<FlowRegisterScreen> {
                           decoration: _decoration(
                             t('address'),
                             Icons.location_on_outlined,
-                          ),
-                        ),
-                        const SizedBox(height: 11),
-                        TextField(
-                          controller: _tax,
-                          textInputAction: TextInputAction.done,
-                          decoration: _decoration(
-                            t('tax_number'),
-                            Icons.receipt_long_outlined,
                           ),
                         ),
                         const SizedBox(height: 16),
