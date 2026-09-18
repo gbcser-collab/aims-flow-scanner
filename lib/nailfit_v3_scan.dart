@@ -127,9 +127,14 @@ class NailFitV3Scan extends StatelessWidget {
             onTapDown: photo == null || c.points.length >= 5 || c.analyzing
                 ? null
                 : (details) => c.addPoint(details.localPosition, constraints.biggest),
+            onPanStart: photo == null || c.points.isEmpty || c.analyzing
+                ? null
+                : (details) => c.beginPointDrag(details.localPosition, constraints.biggest),
             onPanUpdate: photo == null || c.points.isEmpty || c.analyzing
                 ? null
-                : (details) => c.moveNearestPoint(details.localPosition, constraints.biggest),
+                : (details) => c.updatePointDrag(details.localPosition, constraints.biggest),
+            onPanEnd: photo == null ? null : (_) => c.endPointDrag(),
+            onPanCancel: photo == null ? null : c.endPointDrag,
             child: Stack(
               fit: StackFit.expand,
               children: [
