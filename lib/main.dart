@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'screens/driver_shell_screen.dart';
+import 'screens/flow_login_screen.dart';
 import 'services/driver_push_service.dart';
 
 Future<void> main() async {
@@ -46,7 +46,7 @@ class AimsFlowApp extends StatelessWidget {
           ),
         ),
       ),
-      home: const DriverShellScreen(),
+      home: const FlowLoginScreen(),
     );
   }
 }
