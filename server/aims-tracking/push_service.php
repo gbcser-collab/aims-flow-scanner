@@ -23,6 +23,10 @@ function aims_push_config(): ?array {
     if ($file === '' && is_file('/etc/aims-flow/firebase-service-account.json')) {
         $file = '/etc/aims-flow/firebase-service-account.json';
     }
+    if ($file === '') {
+        $shared = dirname(__DIR__,3) . '/aims-flow-secrets/firebase-service-account.json';
+        if (is_file($shared)) $file = $shared;
+    }
 
     if ($raw === '' && $b64 !== '') {
         $decoded = base64_decode($b64, true);
@@ -86,7 +90,8 @@ function aims_fcm_access_token(array $config): ?string {
         return $memoryToken;
     }
 
-    $dataDir = __DIR__ . '/data';
+    $dataDir = trim((string)(getenv('AIMS_TRACKING_DATA_DIR') ?: ''));
+    if ($dataDir === '') $dataDir = __DIR__ . '/data';
     if (!is_dir($dataDir)) @mkdir($dataDir, 0700, true);
     $cachePath = $dataDir . '/fcm_access_token.json';
     if (is_file($cachePath)) {
