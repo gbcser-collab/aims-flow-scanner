@@ -280,10 +280,10 @@ class _FuelReceiptScreenState extends State<FuelReceiptScreen> with WidgetsBindi
           child: Container(
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(color: Colors.black.withValues(alpha: .7), borderRadius: BorderRadius.circular(16)),
-            child: const Text(
+            child: Text(
               _l('Töltsd ki a képet a teljes tankolási bizonylattal. Az OCR után ellenőrizheted az adatokat.', 'Fill the frame with the whole fuel receipt. You can review the data after OCR.', 'Fülle den Rahmen mit dem vollständigen Tankbeleg. Nach der OCR kannst du die Daten prüfen.'),
               textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
             ),
           ),
         ),
