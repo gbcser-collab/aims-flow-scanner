@@ -15,7 +15,7 @@ check(array_column(aims_due_stop_alerts(30 * 60, 1), 'minutes') === [30], '30 mi
 check(array_column(aims_due_stop_alerts(60 * 60, 3), 'minutes') === [60], '60 min alert after 15/30');
 check(count(aims_due_stop_alerts(2 * 60 * 60, 7)) === 0, 'No duplicate alerts after all stages sent');
 
-check(aims_motion_detected(47.0, 18.0, 47.00012, 18.0, 5.0, 0.1), 'Credible small movement resets timer');
+check(aims_motion_detected(47.0, 18.0, 47.000055, 18.0, 5.0, 0.1), 'About six metres of credible movement resets timer');
 check(!aims_motion_detected(47.0, 18.0, 47.00002, 18.0, 18.0, 0.1), 'GPS jitter does not reset timer');
 check(aims_motion_detected(47.0, 18.0, 47.0, 18.0, 20.0, 1.0), 'Speed signal resets timer');
 
