@@ -101,7 +101,7 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
     if (_plate.isEmpty) {
       setState(() {
         _loading = false;
-        _message = 'Nincs bejelentkezett rendszám. Lépj be újra.';
+        _message = _l('Nincs bejelentkezett rendszám. Lépj be újra.', 'No signed-in plate. Sign in again.', 'Kein angemeldetes Kennzeichen. Bitte erneut anmelden.');
       });
     } else {
       await _tracking.setVehicleLabel(_plate);
@@ -176,7 +176,7 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
       if (!mounted) return;
       setState(() {
         _loading = false;
-        _message = 'Fuvaradatok nem frissültek: $e';
+        _message = _l('Fuvaradatok nem frissültek: $e', 'Job data could not be refreshed: $e', 'Auftragsdaten konnten nicht aktualisiert werden: $e');
       });
     }
   }
@@ -215,9 +215,9 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
       barrierDismissible: false,
       builder: (context) => AlertDialog(
         backgroundColor: const Color(0xFF071522),
-        title: const Text(
-          'ÚJ FUVAR ÉRKEZETT',
-          style: TextStyle(color: _blue, fontWeight: FontWeight.w900),
+        title: Text(
+          _l('ÚJ FUVAR ÉRKEZETT', 'NEW JOB RECEIVED', 'NEUER AUFTRAG'),
+          style: const TextStyle(color: _blue, fontWeight: FontWeight.w900),
         ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -234,7 +234,7 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              '${job!.stops.length} megálló · ${job.reference}',
+              _l('${job!.stops.length} megálló · ${job.reference}', '${job.stops.length} stops · ${job.reference}', '${job.stops.length} Stopps · ${job.reference}'),
               style: const TextStyle(color: Colors.white38),
             ),
           ],
@@ -244,13 +244,13 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
             onPressed: _actionBusy
                 ? null
                 : () => _ack(job!.id, 'seen', closeDialog: true),
-            child: const Text('LÁTTAM'),
+            child: Text(_l('LÁTTAM', 'SEEN', 'GESEHEN')),
           ),
           FilledButton(
             onPressed: _actionBusy
                 ? null
                 : () => _ack(job!.id, 'accepted', closeDialog: true),
-            child: const Text('ELFOGADOM'),
+            child: Text(_l('ELFOGADOM', 'ACCEPT', 'ANNEHMEN')),
           ),
         ],
       ),
@@ -272,11 +272,11 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
       await _refreshJobs();
       if (mounted) {
         _snack(action == 'accepted'
-            ? 'Fuvar elfogadva.'
-            : 'Visszaigazolva: LÁTTAM.');
+            ? _l('Fuvar elfogadva.', 'Job accepted.', 'Auftrag angenommen.')
+            : _l('Visszaigazolva: LÁTTAM.', 'Acknowledged: SEEN.', 'Bestätigt: GESEHEN.'));
       }
     } catch (e) {
-      if (mounted) _snack('Visszaigazolási hiba: $e');
+      if (mounted) _snack(_l('Visszaigazolási hiba: $e', 'Acknowledgement error: $e', 'Bestätigungsfehler: $e'));
     } finally {
       if (mounted) setState(() => _actionBusy = false);
     }
@@ -285,7 +285,7 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
   Future<void> _openMaps() async {
     final stop = _stop;
     if (stop == null) {
-      _snack('Nincs megnyitható következő cím.');
+      _snack(_l('Nincs megnyitható következő cím.', 'There is no next address to open.', 'Es gibt keine nächste Adresse zum Öffnen.'));
       return;
     }
     await _openMapsForStop(stop);
@@ -293,14 +293,14 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
 
   Future<void> _openMapsForStop(DriverStop stop) async {
     if (stop.address.trim().isEmpty) {
-      _snack('Nincs megnyitható cím.');
+      _snack(_l('Nincs megnyitható cím.', 'There is no address to open.', 'Es gibt keine Adresse zum Öffnen.'));
       return;
     }
     final uri = Uri.parse(
       'https://www.google.com/maps/dir/?api=1&destination=${Uri.encodeQueryComponent(stop.address)}&travelmode=driving',
     );
     if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
-      _snack('A Google Maps nem nyitható meg.');
+      _snack(_l('A Google Maps nem nyitható meg.', 'Google Maps could not be opened.', 'Google Maps konnte nicht geöffnet werden.'));
     }
   }
 
@@ -317,7 +317,7 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
       final camera = await _backCamera();
       if (!mounted) return;
       if (camera == null) {
-        _snack('Nem található kamera.');
+        _snack(_l('Nem található kamera.', 'No camera found.', 'Keine Kamera gefunden.'));
         return;
       }
       await Navigator.of(context).push(
@@ -362,9 +362,9 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
         latitude: p?.latitude,
         longitude: p?.longitude,
       );
-      if (mounted) _snack('Jelzés elküldve a főnökségnek.');
+      if (mounted) _snack(_l('Jelzés elküldve a főnökségnek.', 'Signal sent to the office.', 'Meldung an die Disposition gesendet.'));
     } catch (e) {
-      if (mounted) _snack('A jelzés nem ment el: $e');
+      if (mounted) _snack(_l('A jelzés nem ment el: $e', 'Signal could not be sent: $e', 'Meldung konnte nicht gesendet werden: $e'));
     } finally {
       if (mounted) setState(() => _actionBusy = false);
     }
@@ -611,7 +611,7 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
         final ok = await _voice.enableHandsFree();
         await prefs.setBool(_prefsHandsFree, ok);
         if (!ok && mounted) {
-          _snack('A hangfelismerés nem indítható. Ellenőrizd a mikrofon engedélyt.');
+          _snack(_l('A hangfelismerés nem indítható. Ellenőrizd a mikrofon engedélyt.', 'Speech recognition could not start. Check microphone permission.', 'Spracherkennung konnte nicht gestartet werden. Mikrofonberechtigung prüfen.'));
         }
       } else {
         await _voice.disableHandsFree();
@@ -1199,22 +1199,22 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: const Color(0xFF071522),
-        title: const Text('Egyéb jelzés'),
+        title: Text(_l('Egyéb jelzés', 'Other signal', 'Sonstige Meldung')),
         content: TextField(
           controller: controller,
           autofocus: true,
           minLines: 2,
           maxLines: 5,
-          decoration: const InputDecoration(hintText: 'Mi történt?'),
+          decoration: InputDecoration(hintText: _l('Mi történt?', 'What happened?', 'Was ist passiert?')),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('MÉGSE'),
+            child: Text(_l('MÉGSE', 'CANCEL', 'ABBRECHEN')),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(context, controller.text.trim()),
-            child: const Text('KÜLDÉS'),
+            child: Text(_l('KÜLDÉS', 'SEND', 'SENDEN')),
           ),
         ],
       ),
@@ -1256,7 +1256,7 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    stop.company.isEmpty ? 'Megálló' : stop.company,
+                    stop.company.isEmpty ? _l('Megálló', 'Stop', 'Stopp') : stop.company,
                     style: const TextStyle(fontWeight: FontWeight.w900),
                   ),
                   const SizedBox(height: 3),
@@ -1267,10 +1267,12 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
                   const SizedBox(height: 4),
                   Text(
                     stop.completed
-                        ? 'KÉSZ'
+                        ? _l('KÉSZ', 'DONE', 'FERTIG')
                         : stop.arrived
-                            ? 'MEGÉRKEZETT'
-                            : (stop.type == 'delivery' ? 'LERAKÓ' : 'FELRAKÓ'),
+                            ? _l('MEGÉRKEZETT', 'ARRIVED', 'ANGEKOMMEN')
+                            : (stop.type == 'delivery'
+                                ? _l('LERAKÓ', 'DELIVERY', 'ENTLADUNG')
+                                : _l('FELRAKÓ', 'PICKUP', 'BELADUNG')),
                     style: TextStyle(
                       color: stop.completed || stop.arrived ? _green : _blue,
                       fontSize: 9,
