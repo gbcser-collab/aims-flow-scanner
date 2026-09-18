@@ -149,7 +149,8 @@ class NailFitV3Controller extends ChangeNotifier {
     if (finish == look.finish) score += 2;
     if ((length - look.length).abs() <= .14) score += 2;
     if (scan != null) {
-      final rb = color.r - color.b;
+      final argb = color.toARGB32();
+      final rb = ((argb >> 16) & 0xff) - (argb & 0xff);
       final warmColor = rb > 24;
       final coolColor = rb < 8;
       if (scan!.undertone == 'meleg' && warmColor) score += 2;
