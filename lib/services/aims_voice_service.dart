@@ -6,6 +6,7 @@ import 'package:speech_to_text/speech_recognition_result.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 
 import 'aims_hands_free_platform.dart';
+import 'aims_locale.dart';
 import 'aims_voice_command.dart';
 
 enum AimsVoiceMode {
@@ -36,13 +37,16 @@ class AimsVoiceService {
   AimsVoiceService({
     required this.onCommand,
     required this.driverNameProvider,
-  });
+  }) {
+    _locale.addListener(_onLanguageChanged);
+  }
 
   final AimsVoiceCommandHandler onCommand;
   final String Function() driverNameProvider;
   final SpeechToText _speech = SpeechToText();
   final FlutterTts _tts = FlutterTts();
   final AimsVoiceCommandParser _parser = const AimsVoiceCommandParser();
+  final AimsLocaleController _locale = AimsLocaleController.instance;
   final StreamController<AimsVoiceState> _states =
       StreamController<AimsVoiceState>.broadcast();
 
@@ -71,33 +75,16 @@ class AimsVoiceService {
     );
     if (!available) {
       _emit(
-        const AimsVoiceState(
+        AimsVoiceState(
           enabled: false,
           mode: AimsVoiceMode.error,
-          message: 'A beszédfelismerés nem érhető el ezen a telefonon.',
+          message: _locale.t('speech_unavailable'),
         ),
       );
       return false;
     }
 
-    try {
-      final locales = await _speech.locales();
-      for (final locale in locales) {
-        final id = locale.localeId.toLowerCase();
-        if (id.startsWith('hu')) {
-          _localeId = locale.localeId;
-          break;
-        }
-      }
-    } catch (_) {
-      _localeId = 'hu_HU';
-    }
-
-    await _tts.setLanguage('hu-HU');
-    await _tts.setSpeechRate(0.47);
-    await _tts.setVolume(1.0);
-    await _tts.setPitch(1.0);
-    await _tts.awaitSpeakCompletion(true);
+    await _applyLanguage();
 
     _assistantInvocationSub ??=
         AimsHandsFreePlatform.assistantInvoked.listen((_) {
@@ -127,10 +114,10 @@ class AimsVoiceService {
     await _tts.stop();
     await AimsHandsFreePlatform.stop();
     _emit(
-      const AimsVoiceState(
+      AimsVoiceState(
         enabled: false,
         mode: AimsVoiceMode.off,
-        message: 'AIMS Hands-Free kikapcsolva.',
+        message: _locale.t('hands_free_off'),
       ),
     );
   }
@@ -154,7 +141,7 @@ class AimsVoiceService {
     _commandMode = false;
     await _startListening(
       mode: AimsVoiceMode.wakeWord,
-      message: 'Figyelek. Mondd: AIMS.',
+      message: _locale.t('wake_listening'),
     );
   }
 
@@ -194,15 +181,35 @@ class AimsVoiceService {
         pauseFor: const Duration(seconds: 8),
         listenFor: const Duration(minutes: 2),
         localeId: _localeId,
-        contextualPhrases: const [
-          'AIMS',
-          'felrakó',
-          'lerakó',
-          'fuvar',
-          'navigáció',
-          'kapcsolattartó',
-          'CMR',
-        ],
+        contextualPhrases: switch (_locale.languageCode) {
+          'en' => const [
+              'AIMS',
+              'pickup',
+              'delivery',
+              'job',
+              'navigation',
+              'contact',
+              'CMR',
+            ],
+          'de' => const [
+              'AIMS',
+              'Abholung',
+              'Zustellung',
+              'Auftrag',
+              'Navigation',
+              'Ansprechpartner',
+              'CMR',
+            ],
+          _ => const [
+              'AIMS',
+              'felrakó',
+              'lerakó',
+              'fuvar',
+              'navigáció',
+              'kapcsolattartó',
+              'CMR',
+            ],
+        },
       ),
     );
   }
@@ -252,8 +259,8 @@ class AimsVoiceService {
 
   String _assistantGreeting() {
     final name = driverNameProvider().trim();
-    if (name.isEmpty) return 'Tessék. Miben segíthetek?';
-    return 'Tessék, $name. Miben segíthetek?';
+    if (name.isEmpty) return _locale.t('assistant_empty');
+    return _locale.t('assistant_named', vars: {'name': name});
   }
 
   Future<void> _enterCommandMode() async {
@@ -276,9 +283,12 @@ class AimsVoiceService {
 
     try {
       await _speech.stop();
-      final command = _parser.parse(text);
+      final command = _parser.parse(
+        text,
+        language: _locale.languageCode,
+      );
       if (command.intent == AimsVoiceIntent.unknown) {
-        await _speak('Ezt nem értettem. Mondd újra az AIMS után.');
+        await _speak(_locale.t('not_understood'));
       } else {
         final response = await onCommand(command);
         if (response.trim().isNotEmpty) {
@@ -286,7 +296,7 @@ class AimsVoiceService {
         }
       }
     } catch (_) {
-      await _speak('A parancs végrehajtása nem sikerült.');
+      await _speak(_locale.t('command_failed'));
     } finally {
       _handlingResult = false;
     }
@@ -339,8 +349,8 @@ class AimsVoiceService {
         enabled: true,
         mode: AimsVoiceMode.error,
         message: error.permanent
-            ? 'A mikrofon vagy beszédfelismerés engedélye hiányzik.'
-            : 'A hangfigyelés újraindul.',
+            ? _locale.t('speech_permission_error')
+            : _locale.t('speech_restarting'),
         lastHeard: _lastHeard,
       ),
     );
@@ -352,6 +362,30 @@ class AimsVoiceService {
           unawaited(_startWakeListening());
         }
       });
+    }
+  }
+
+  Future<void> _applyLanguage() async {
+    _localeId = _locale.speechLocale;
+    await _tts.setLanguage(_locale.ttsLocale);
+    await _tts.setSpeechRate(0.47);
+    await _tts.setVolume(1.0);
+    await _tts.setPitch(1.0);
+    await _tts.awaitSpeakCompletion(true);
+  }
+
+  void _onLanguageChanged() {
+    if (!_initialized) return;
+    unawaited(_refreshLanguage());
+  }
+
+  Future<void> _refreshLanguage() async {
+    _restartTimer?.cancel();
+    await _speech.cancel();
+    await _tts.stop();
+    await _applyLanguage();
+    if (_enabled && !_speaking && !_handlingResult) {
+      await _startWakeListening();
     }
   }
 
@@ -368,6 +402,7 @@ class AimsVoiceService {
     await _speech.cancel();
     await _tts.stop();
     await AimsHandsFreePlatform.stop();
+    _locale.removeListener(_onLanguageChanged);
     await _states.close();
   }
 }
