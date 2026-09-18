@@ -920,16 +920,40 @@ class NailFitV3Controller extends ChangeNotifier {
   }
 
   PremiumLook recommendFromPrompt(String input) {
-    final q = input.toLowerCase();
-    final result = q.contains('francia') || q.contains('esküvő') || q.contains('menyasszony')
-        ? premiumLooks[1]
-        : q.contains('csill') || q.contains('party') || q.contains('buli') || q.contains('fény')
-            ? premiumLooks[2]
-            : q.contains('ősz') || q.contains('bordó') || q.contains('sötét') || q.contains('elegáns')
-                ? premiumLooks[3]
-                : q.contains('minimal') || q.contains('bézs') || q.contains('munka')
-                    ? premiumLooks[4]
-                    : premiumLooks.first;
+    final q = input.toLowerCase().trim();
+    final scores = List<int>.filled(premiumLooks.length, 0);
+
+    for (var i = 0; i < premiumLooks.length; i++) {
+      final item = premiumLooks[i];
+      if (item.category.toLowerCase() == preferredStyle.toLowerCase()) scores[i] += 3;
+      if (item.shape == preferredShape) scores[i] += 2;
+      if (scan != null && item.shape == scan!.recommendedShape) scores[i] += 2;
+      if (q.contains(item.shape.toLowerCase())) scores[i] += 4;
+      if (q.contains(item.category.toLowerCase())) scores[i] += 4;
+    }
+
+    void add(int index, int points, List<String> words) {
+      for (final word in words) {
+        if (q.contains(word)) scores[index] += points;
+      }
+    }
+
+    add(0, 5, const ['rózsaszín', 'rozsaszin', 'pink', 'romantikus', 'randi', 'pasztell', 'soft', 'nude']);
+    add(1, 7, const ['francia', 'french', 'esküvő', 'eskuvo', 'menyasszony', 'bridal', 'fehér', 'feher', 'klasszikus', 'clean']);
+    add(2, 7, const ['csillám', 'csillam', 'glitter', 'party', 'buli', 'ünnep', 'unnep', 'szilveszter', 'fényes', 'fenyes', 'ragyog']);
+    add(3, 6, const ['ősz', 'osz', 'bordó', 'bordo', 'burgundy', 'borvörös', 'borvoros', 'sötét', 'sotet', 'fekete', 'vacsora', 'drámai', 'dramatic']);
+    add(4, 6, const ['minimal', 'bézs', 'bezs', 'munka', 'office', 'iroda', 'természetes', 'termeszetes', 'visszafogott']);
+
+    add(3, 3, const ['elegáns', 'elegans', 'luxus', 'esti']);
+    add(1, 2, const ['elegáns', 'elegans', 'alkalmi']);
+    add(4, 3, const ['hétköznap', 'hetkoznap', 'mindennapi']);
+    add(0, 2, const ['tavasz', 'nyár', 'nyar']);
+
+    var bestIndex = 0;
+    for (var i = 1; i < scores.length; i++) {
+      if (scores[i] > scores[bestIndex]) bestIndex = i;
+    }
+    final result = premiumLooks[bestIndex];
     select(result);
     return result;
   }
