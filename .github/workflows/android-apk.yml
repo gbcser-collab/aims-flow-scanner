@@ -5,6 +5,10 @@ on:
     branches: [ nailfit-mvp ]
   workflow_dispatch:
 
+concurrency:
+  group: nailfit-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build-android:
     runs-on: ubuntu-latest
