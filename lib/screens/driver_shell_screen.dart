@@ -21,7 +21,7 @@ class DriverShellScreen extends StatefulWidget {
 class _DriverShellScreenState extends State<DriverShellScreen> {
   static const _blue = Color(0xFF1CB8FF);
   static const _green = Color(0xFF4DE3A4);
-  static const _panel = Color(0xFF071725);
+  static const _panelColor = Color(0xFF071725);
   static const _prefsPlate = 'aims_driver_plate';
 
   final _api = const DriverApiService();
@@ -210,7 +210,7 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              '${job.stops.length} megálló · ${job.reference}',
+              '${job!.stops.length} megálló · ${job.reference}',
               style: const TextStyle(color: Colors.white38),
             ),
           ],
@@ -716,7 +716,7 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
   Widget _stopCard(DriverStop stop) => Container(
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: _panel,
+          color: _panelColor,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
             color: stop.arrived ? _green.withValues(alpha: .45) : const Color(0xFF173B54),
@@ -782,7 +782,7 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
         child: Ink(
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
-            color: _panel,
+            color: _panelColor,
             borderRadius: BorderRadius.circular(16),
             border: Border.all(color: const Color(0xFF173B54)),
           ),
