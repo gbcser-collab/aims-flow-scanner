@@ -18,11 +18,16 @@ if ($method === 'POST') {
     $image = $data['image'] ?? null;
     if (!is_array($image)) aims_json(['ok' => false, 'error' => 'missing_image'], 422);
     $bytes = base64_decode((string)($image['base64'] ?? ''), true);
-    if ($bytes === false || strlen($bytes) < 100 || strlen($bytes) > 10 * 1024 * 1024) {
+    if ($bytes === false || strlen($bytes) < 60 || strlen($bytes) > 10 * 1024 * 1024) {
         aims_json(['ok' => false, 'error' => 'invalid_image'], 422);
     }
 
-    $mime = (string)($image['mimeType'] ?? 'image/jpeg');
+    $imageInfo = @getimagesizefromstring($bytes);
+    $detectedMime = is_array($imageInfo) ? (string)($imageInfo['mime'] ?? '') : '';
+    if (!in_array($detectedMime, ['image/jpeg', 'image/png', 'image/webp'], true)) {
+        aims_json(['ok' => false, 'error' => 'unsupported_image'], 422);
+    }
+    $mime = $detectedMime;
     $ext = match ($mime) {
         'image/png' => 'png',
         'image/webp' => 'webp',
