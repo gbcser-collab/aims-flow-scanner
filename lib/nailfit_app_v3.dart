@@ -44,7 +44,9 @@ class _NailFitAppState extends State<NailFitApp> {
   }
 
   void _refresh() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    if (c.lastPhotoPath == null && photo != null) photo = null;
+    setState(() {});
   }
 
   Future<void> _pick(ImageSource source) async {
