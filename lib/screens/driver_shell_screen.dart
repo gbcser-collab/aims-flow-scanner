@@ -837,8 +837,11 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
     final stop = _stop;
     final currentCompany = stop?.company.trim().isNotEmpty == true
         ? stop!.company
-        : (job?.reference ??
-            _l('Nincs aktív fuvar', 'No active job', 'Kein aktiver Auftrag'));
+        : job == null
+            ? _l('Nincs aktív fuvar', 'No active job', 'Kein aktiver Auftrag')
+            : stop?.type == 'delivery'
+                ? _l('Lerakó', 'Delivery', 'Entladestelle')
+                : _l('Felrakó', 'Pickup', 'Ladestelle');
 
     return _page([
       if (_loading)
@@ -1401,7 +1404,7 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        '${stop.order}. ${stop.type == 'delivery' ? _l('LERAKÓ', 'DELIVERY', 'ENTLADUNG') : _l('FELRAKÓ', 'PICKUP', 'BELADUNG')}',
+                        "${stop.order}. ${stop.type == 'delivery' ? _l('LERAKÓ', 'DELIVERY', 'ENTLADUNG') : _l('FELRAKÓ', 'PICKUP', 'BELADUNG')}",
                         style: const TextStyle(
                           color: _blue,
                           fontSize: 10,
