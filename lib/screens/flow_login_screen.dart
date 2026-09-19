@@ -173,11 +173,18 @@ class _FlowLoginScreenState extends State<FlowLoginScreen> {
             'Az admintelefon belépett, de a push regisztráció nem sikerült.',
           );
         }
+        final adminSessionToken = authResult?.adminSessionToken.trim() ?? '';
+        if (adminSessionToken.isEmpty) {
+          throw StateError(
+            'Az admin munkamenet nem jött létre. Jelentkezz be újra.',
+          );
+        }
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString('aims_user_role', 'admin');
         await prefs.remove('aims_driver_plate');
         await prefs.remove('aims_driver_name');
         await prefs.setBool('aims_driver_local_unlock', false);
+        await prefs.setString('aims_admin_session_token', adminSessionToken);
       }
 
       if (!_e2e && authResult?.role == 'driver') {
@@ -204,6 +211,7 @@ class _FlowLoginScreenState extends State<FlowLoginScreen> {
         await prefs.setString('aims_driver_name', name);
         await prefs.setBool('aims_driver_local_unlock', true);
         await prefs.setString('aims_user_role', 'driver');
+        await prefs.remove('aims_admin_session_token');
       }
 
       await Navigator.of(context).pushReplacement(
