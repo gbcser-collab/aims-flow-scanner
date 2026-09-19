@@ -79,6 +79,19 @@ void main() {
     expect(find.textContaining('Adószám'), findsNothing);
   });
 
+  testWidgets('login has no overflow on a narrow phone', (tester) async {
+    tester.view.physicalSize = const Size(360, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(const AimsFlowApp());
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(tester.takeException(), isNull);
+    expect(find.byKey(const Key('flow-login-submit')), findsOneWidget);
+  });
+
   testWidgets('driver shell keeps developed core actions', (tester) async {
     await tester.pumpWidget(
       const MaterialApp(home: DriverShellScreen()),
