@@ -11,6 +11,7 @@ import '../services/aims_voice_service.dart';
 import '../services/driver_api_service.dart';
 import '../services/driver_push_service.dart';
 import '../services/vehicle_tracking_service.dart';
+import '../widgets/aims_flow_logo.dart';
 import 'fuel_receipt_screen.dart';
 import 'scanner_screen.dart';
 
@@ -742,37 +743,32 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
 
   Widget _header() => Row(
         children: [
-          Container(
-            width: 38,
-            height: 38,
-            decoration: BoxDecoration(
-              color: _blue.withValues(alpha: .12),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: _blue.withValues(alpha: .45)),
-            ),
-            child: const Icon(Icons.alt_route_rounded, color: _blue, size: 24),
-          ),
+          const AimsFlowLogo(width: 46, height: 46),
           const SizedBox(width: 10),
-          const Expanded(
+          Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Text(
-                  'AIMS FLOW',
-                  style: TextStyle(
-                    letterSpacing: 2.8,
-                    color: Colors.white,
-                    fontWeight: FontWeight.w900,
-                    fontSize: 16,
-                  ),
-                ),
-                SizedBox(height: 2),
-                Text(
+                const Text(
                   'DRIVER MODE',
                   style: TextStyle(
                     color: _blue,
                     fontSize: 9,
                     fontWeight: FontWeight.w900,
+                    letterSpacing: 1.5,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  _plate.isEmpty ? '—' : _plate,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white70,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: .8,
                   ),
                 ),
               ],
