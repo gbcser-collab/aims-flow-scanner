@@ -1,6 +1,9 @@
 enum AimsVoiceIntent {
   showJob,
   showNextJobs,
+  navigateNext,
+  assistantHelp,
+  trackingStatus,
   navigatePickup,
   navigateDelivery,
   arrivePickup,
@@ -75,10 +78,16 @@ class AimsVoiceCommandParser {
     bool has(String value) => s.contains(value);
     bool any(List<String> values) => values.any(has);
 
+    if (any(['mit tudsz', 'segits', 'segitseg', 'parancsok', 'miben tudsz segiteni'])) {
+      return AimsVoiceCommand(intent: AimsVoiceIntent.assistantHelp, rawText: raw);
+    }
+    if (any(['gps allapot', 'megy a gps', 'mukodik a gps', 'kovetes allapot', 'megy a kovetes'])) {
+      return AimsVoiceCommand(intent: AimsVoiceIntent.trackingStatus, rawText: raw);
+    }
     if (any(['kovetkezo feladat', 'kovetkezo munka', 'kovetkezo fuvar', 'mi a kovetkezo feladat'])) {
       return AimsVoiceCommand(intent: AimsVoiceIntent.showNextJobs, rawText: raw);
     }
-    if (any(['mutasd a fuvarom', 'mutasd a fuvart', 'fuvarom', 'aktualis fuvar', 'mostani fuvar'])) {
+    if (any(['mutasd a fuvarom', 'mutasd a fuvart', 'fuvarom', 'aktualis fuvar', 'mostani fuvar', 'hol tartunk', 'mi a helyzet', 'mi a feladatom'])) {
       return AimsVoiceCommand(intent: AimsVoiceIntent.showJob, rawText: raw);
     }
     if (any(['navigalj', 'navigacio', 'navi', 'utvonal']) && has('felrako')) {
@@ -86,6 +95,15 @@ class AimsVoiceCommandParser {
     }
     if (any(['navigalj', 'navigacio', 'navi', 'utvonal']) && has('lerako')) {
       return AimsVoiceCommand(intent: AimsVoiceIntent.navigateDelivery, rawText: raw);
+    }
+    if (any([
+      'inditsd a navigaciot',
+      'indulhat a navigacio',
+      'navigalj',
+      'vigyel a kovetkezo cimre',
+      'utvonal a kovetkezo cimre'
+    ])) {
+      return AimsVoiceCommand(intent: AimsVoiceIntent.navigateNext, rawText: raw);
     }
     if (any(['megerkeztem', 'megerkeztunk', 'itt vagyok']) && has('felrako')) {
       return AimsVoiceCommand(intent: AimsVoiceIntent.arrivePickup, rawText: raw);
@@ -133,6 +151,12 @@ class AimsVoiceCommandParser {
     bool has(String value) => s.contains(value);
     bool any(List<String> values) => values.any(has);
 
+    if (any(['what can you do', 'help me', 'commands', 'voice commands'])) {
+      return AimsVoiceCommand(intent: AimsVoiceIntent.assistantHelp, rawText: raw);
+    }
+    if (any(['gps status', 'is gps working', 'tracking status'])) {
+      return AimsVoiceCommand(intent: AimsVoiceIntent.trackingStatus, rawText: raw);
+    }
     if (any(['next task', 'next job', 'next assigned job', 'what is my next job'])) {
       return AimsVoiceCommand(intent: AimsVoiceIntent.showNextJobs, rawText: raw);
     }
@@ -146,6 +170,9 @@ class AimsVoiceCommandParser {
     if (any(['navigate', 'navigation', 'route', 'directions']) &&
         any(['delivery', 'unloading'])) {
       return AimsVoiceCommand(intent: AimsVoiceIntent.navigateDelivery, rawText: raw);
+    }
+    if (any(['start navigation', 'navigate next', 'next destination', 'take me to the next stop'])) {
+      return AimsVoiceCommand(intent: AimsVoiceIntent.navigateNext, rawText: raw);
     }
     if (any(['arrived', 'i am here', "i'm here"]) && any(['pickup', 'loading'])) {
       return AimsVoiceCommand(intent: AimsVoiceIntent.arrivePickup, rawText: raw);
@@ -193,6 +220,12 @@ class AimsVoiceCommandParser {
     bool has(String value) => s.contains(value);
     bool any(List<String> values) => values.any(has);
 
+    if (any(['was kannst du', 'hilfe', 'befehle', 'sprachbefehle'])) {
+      return AimsVoiceCommand(intent: AimsVoiceIntent.assistantHelp, rawText: raw);
+    }
+    if (any(['gps status', 'funktioniert gps', 'tracking status'])) {
+      return AimsVoiceCommand(intent: AimsVoiceIntent.trackingStatus, rawText: raw);
+    }
     if (any(['nachste aufgabe', 'nachster auftrag', 'nachster job', 'was ist der nachste auftrag'])) {
       return AimsVoiceCommand(intent: AimsVoiceIntent.showNextJobs, rawText: raw);
     }
@@ -206,6 +239,9 @@ class AimsVoiceCommandParser {
     if (any(['navigiere', 'navigation', 'route']) &&
         any(['zustellung', 'entladestelle', 'entladung'])) {
       return AimsVoiceCommand(intent: AimsVoiceIntent.navigateDelivery, rawText: raw);
+    }
+    if (any(['navigation starten', 'zum nachsten stopp', 'nachste adresse navigieren'])) {
+      return AimsVoiceCommand(intent: AimsVoiceIntent.navigateNext, rawText: raw);
     }
     if (any(['angekommen', 'ich bin da']) && any(['abholung', 'ladestelle', 'beladung'])) {
       return AimsVoiceCommand(intent: AimsVoiceIntent.arrivePickup, rawText: raw);
