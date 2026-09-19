@@ -7,6 +7,7 @@ void main() {
   test('understands the 10 core Hungarian Flow voice commands', () {
     final cases = <String, AimsVoiceIntent>{
       'Mutasd a fuvarom': AimsVoiceIntent.showJob,
+      'Mi a következő feladat?': AimsVoiceIntent.showNextJobs,
       'Navigálj a felrakóra': AimsVoiceIntent.navigatePickup,
       'Navigálj a lerakóra': AimsVoiceIntent.navigateDelivery,
       'Megérkeztem a felrakóra': AimsVoiceIntent.arrivePickup,
