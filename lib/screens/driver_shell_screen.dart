@@ -308,8 +308,12 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
   }
 
   Future<void> _openMapsForStop(DriverStop stop) async {
-    if (stop.address.trim().isEmpty) {
-      _snack(_l('Nincs megnyitható cím.', 'There is no address to open.', 'Es gibt keine Adresse zum Öffnen.'));
+    if (stop.address.trim().length <= 3) {
+      _snack(_l(
+        'Ehhez a megállóhoz nincs pontos cím megadva.',
+        'No exact address is available for this stop.',
+        'Für diesen Stopp ist keine genaue Adresse hinterlegt.',
+      ));
       return;
     }
     final uri = Uri.parse(
@@ -740,156 +744,231 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
         ),
       );
 
-  Widget _header() => Row(
+  Widget _header() => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Container(
-            width: 38,
-            height: 38,
-            decoration: BoxDecoration(
-              color: _blue.withValues(alpha: .12),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: _blue.withValues(alpha: .45)),
-            ),
-            child: const Icon(Icons.alt_route_rounded, color: _blue, size: 24),
-          ),
-          const SizedBox(width: 10),
-          const Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'AIMS FLOW',
-                  style: TextStyle(
-                    letterSpacing: 2.8,
-                    color: Colors.white,
-                    fontWeight: FontWeight.w900,
-                    fontSize: 16,
-                  ),
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: const [
+                          Text(
+                            'AIMS',
+                            style: TextStyle(
+                              letterSpacing: 3.0,
+                              color: Colors.white,
+                              fontWeight: FontWeight.w900,
+                              fontSize: 21,
+                            ),
+                          ),
+                          SizedBox(width: 8),
+                          Text(
+                            'FLOW',
+                            style: TextStyle(
+                              letterSpacing: 2.3,
+                              color: _blue,
+                              fontWeight: FontWeight.w900,
+                              fontSize: 21,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    const Text(
+                      'DRIVER MODE',
+                      maxLines: 1,
+                      style: TextStyle(
+                        color: Colors.white54,
+                        fontSize: 9,
+                        letterSpacing: 1.3,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ],
                 ),
-                SizedBox(height: 2),
-                Text(
-                  'DRIVER MODE',
-                  style: TextStyle(
-                    color: _blue,
-                    fontSize: 9,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ],
-            ),
+              ),
+              const SizedBox(width: 12),
+              _status(
+                _trackingStatus?.running == true
+                    ? _l('GPS AKTÍV', 'GPS ACTIVE', 'GPS AKTIV')
+                    : 'GPS',
+                _trackingStatus?.running == true ? _green : Colors.white38,
+              ),
+            ],
           ),
-          const AimsLanguageSelector(compact: true),
-          const SizedBox(width: 8),
-          _status(
-            _trackingStatus?.running == true
-                ? _l('GPS AKTÍV', 'GPS ACTIVE', 'GPS AKTIV')
-                : 'GPS',
-            _trackingStatus?.running == true ? _green : Colors.white38,
+          const SizedBox(height: 9),
+          const Align(
+            alignment: Alignment.centerRight,
+            child: AimsLanguageSelector(compact: true),
           ),
         ],
       );
-
   Widget _home() {
     final job = _job;
     final stop = _stop;
-    final currentCompany = stop?.company.trim().isNotEmpty == true
-        ? stop!.company
-        : (job?.reference ??
-            _l('Nincs aktív fuvar', 'No active job', 'Kein aktiver Auftrag'));
+    final hasUsefulAddress =
+        stop != null && stop.address.trim().length > 3;
+
+    final stopType = stop?.type == 'delivery'
+        ? _l('LERAKÓ', 'DELIVERY', 'ENTLADUNG')
+        : _l('FELRAKÓ', 'PICKUP', 'BELADUNG');
 
     return _page([
       if (_loading)
         const LinearProgressIndicator(minHeight: 2)
+      else if (job == null)
+        _panel(
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                _l(
+                  'Nincs aktív fuvar',
+                  'No active job',
+                  'Kein aktiver Auftrag',
+                ),
+                style: const TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 7),
+              Text(
+                _l(
+                  'A nyomkövetés és az értesítések a háttérben működnek.',
+                  'Tracking and notifications continue in the background.',
+                  'Tracking und Benachrichtigungen laufen im Hintergrund.',
+                ),
+                style: const TextStyle(
+                  color: Colors.white54,
+                  height: 1.35,
+                ),
+              ),
+            ],
+          ),
+        )
       else
         _panel(
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                currentCompany,
-                style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                job == null
-                    ? _l(
-                        'Új munka érkezésekor a Flow itt azonnal szól.',
-                        'Flow notifies you here immediately when a new job arrives.',
-                        'Flow meldet hier sofort einen neuen Auftrag.',
-                      )
-                    : _l(
-                        'AKTÍV FUVAR · ${job.reference} · ${job.stops.length} stop',
-                        'ACTIVE JOB · ${job.reference} · ${job.stops.length} stops',
-                        'AKTIVER AUFTRAG · ${job.reference} · ${job.stops.length} Stopps',
-                      ),
+                _l(
+                  'KÖVETKEZŐ LÉPÉS',
+                  'NEXT STEP',
+                  'NÄCHSTER SCHRITT',
+                ),
                 style: const TextStyle(
                   color: _blue,
                   fontSize: 10,
                   fontWeight: FontWeight.w900,
-                  letterSpacing: .8,
+                  letterSpacing: 1.1,
                 ),
               ),
-              const SizedBox(height: 18),
-              if (job == null) ...[
-                Text(
-                  _l('Nincs teendőd.', 'Nothing to do.', 'Keine Aufgabe.'),
-                  style: const TextStyle(
-                    fontSize: 26,
-                    fontWeight: FontWeight.w900,
-                  ),
+              const SizedBox(height: 6),
+              Text(
+                stop?.type == 'delivery'
+                    ? _l(
+                        'Indulás a lerakóra',
+                        'Go to delivery',
+                        'Zur Entladestelle fahren',
+                      )
+                    : _l(
+                        'Indulás a felrakóra',
+                        'Go to pickup',
+                        'Zur Ladestelle fahren',
+                      ),
+                style: const TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.w900,
                 ),
-                const SizedBox(height: 7),
-                Text(
-                  _l(
-                    'A nyomkövetés és az értesítések a háttérben működnek.',
-                    'Tracking and notifications continue in the background.',
-                    'Tracking und Benachrichtigungen laufen im Hintergrund.',
-                  ),
-                  style: const TextStyle(color: Colors.white54, height: 1.35),
+              ),
+              const SizedBox(height: 12),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF06131F),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: const Color(0xFF1C4767)),
                 ),
-              ] else ...[
-                Text(
-                  _l('KÖVETKEZŐ LÉPÉS', 'NEXT STEP', 'NÄCHSTER SCHRITT'),
-                  style: const TextStyle(
-                    color: Colors.white38,
-                    fontSize: 9,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 1.1,
-                  ),
-                ),
-                const SizedBox(height: 5),
-                Text(
-                  stop?.type == 'delivery'
-                      ? _l(
-                          'Indulás a lerakóra',
-                          'Go to delivery',
-                          'Zur Entladestelle fahren',
-                        )
-                      : _l(
-                          'Indulás a felrakóra',
-                          'Go to pickup',
-                          'Zur Ladestelle fahren',
-                        ),
-                  style: const TextStyle(fontSize: 27, fontWeight: FontWeight.w900),
-                ),
-                const SizedBox(height: 7),
-                Text(
-                  stop?.address ?? '—',
-                  style: const TextStyle(color: Colors.white60, height: 1.35),
-                ),
-                const SizedBox(height: 16),
-                FilledButton.icon(
-                  onPressed: _openMaps,
-                  icon: const Icon(Icons.navigation_rounded),
-                  label: Text(
-                    _l(
-                      'NAVIGÁCIÓ INDÍTÁSA',
-                      'START NAVIGATION',
-                      'NAVIGATION STARTEN',
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      stopType,
+                      style: const TextStyle(
+                        color: _blue,
+                        fontSize: 9,
+                        letterSpacing: 1.1,
+                        fontWeight: FontWeight.w900,
+                      ),
                     ),
+                    if (stop?.company.trim().isNotEmpty == true) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        stop!.company.trim(),
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 6),
+                    Text(
+                      hasUsefulAddress
+                          ? stop!.address.trim()
+                          : _l(
+                              'Pontos cím nincs megadva a fuvarban.',
+                              'No exact address was provided for this job.',
+                              'Für diesen Auftrag wurde keine genaue Adresse angegeben.',
+                            ),
+                      style: TextStyle(
+                        color: hasUsefulAddress
+                            ? Colors.white
+                            : Colors.orangeAccent,
+                        fontSize: 16,
+                        height: 1.35,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 14),
+              FilledButton.icon(
+                onPressed: hasUsefulAddress ? _openMaps : null,
+                icon: const Icon(Icons.navigation_rounded),
+                label: Text(
+                  _l(
+                    'NAVIGÁCIÓ INDÍTÁSA',
+                    'START NAVIGATION',
+                    'NAVIGATION STARTEN',
                   ),
                 ),
-              ],
+              ),
+              const SizedBox(height: 12),
+              Text(
+                _l(
+                  'AKTÍV FUVAR · ${job.reference} · ${job.stops.length} stop',
+                  'ACTIVE JOB · ${job.reference} · ${job.stops.length} stops',
+                  'AKTIVER AUFTRAG · ${job.reference} · ${job.stops.length} Stopps',
+                ),
+                style: const TextStyle(
+                  color: Colors.white38,
+                  fontSize: 9,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: .7,
+                ),
+              ),
               const SizedBox(height: 14),
               Row(
                 children: [
@@ -921,16 +1000,22 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
       _panel(
         Row(
           children: [
-            const Icon(Icons.notifications_active_outlined, color: _blue),
+            const Icon(
+              Icons.notifications_active_outlined,
+              color: _blue,
+            ),
             const SizedBox(width: 12),
             Expanded(
               child: Text(
                 _l(
-                  'Új fuvarnál hangos push érkezik. Lezárt képernyőn is jelzi, amíg vissza nem igazolod.',
-                  'A new job triggers an audible push. It also appears on the lock screen until you acknowledge it.',
-                  'Bei einem neuen Auftrag kommt eine hörbare Push-Meldung. Sie bleibt auch auf dem Sperrbildschirm sichtbar, bis du sie bestätigst.',
+                  'Új fuvarnál hangos push érkezik. Elfogadás után az értesítés automatikusan eltűnik.',
+                  'A loud push arrives for a new job. After acceptance the notification disappears automatically.',
+                  'Bei einem neuen Auftrag kommt eine Push-Meldung. Nach Annahme verschwindet sie automatisch.',
                 ),
-                style: const TextStyle(color: Colors.white70, height: 1.35),
+                style: const TextStyle(
+                  color: Colors.white70,
+                  height: 1.35,
+                ),
               ),
             ),
           ],
