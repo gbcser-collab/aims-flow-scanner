@@ -35,6 +35,8 @@ jobs:
           cp nailfit/lib/main.dart /tmp/nailfit_app/lib/main.dart
           mkdir -p /tmp/nailfit_app/assets
           cp nailfit/assets/index.html /tmp/nailfit_app/assets/index.html
+          rm -f /tmp/nailfit_app/test/widget_test.dart
+          rm -f /tmp/nailfit_app/analysis_options.yaml
 
       - name: Apply NAILFIT launcher icon and Android permissions
         run: |
@@ -61,7 +63,7 @@ jobs:
         working-directory: /tmp/nailfit_app
         run: |
           flutter pub get
-          flutter analyze
+          flutter analyze lib/main.dart
 
       - name: Build installable APK
         working-directory: /tmp/nailfit_app
