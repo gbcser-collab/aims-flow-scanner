@@ -2,7 +2,7 @@ name: Build AIMS Flow Driver Android
 
 on:
   push:
-    branches: [aims-flow-driver-v1]
+    branches: [aims-flow-driver-v1, aims-flow-driver-v1-r87-recovery]
     paths:
       - 'lib/**'
       - 'test/**'
@@ -166,7 +166,7 @@ jobs:
       - name: Unit tests
         run: flutter test
 
-      - name: Build production-like debug APK
+      - name: Build production release APK
         env:
           AIMS_TRACKING_TOKEN: ${{ secrets.AIMS_TRACKING_TOKEN }}
           AIMS_FIREBASE_API_KEY: ${{ secrets.AIMS_FIREBASE_API_KEY }}
@@ -181,7 +181,7 @@ jobs:
           AIMS_FIREBASE_MESSAGING_SENDER_ID="${AIMS_FIREBASE_MESSAGING_SENDER_ID:-$AIMS_FIREBASE_MESSAGING_SENDER_ID_FALLBACK}"
           AIMS_FIREBASE_ANDROID_APP_ID="${AIMS_FIREBASE_ANDROID_APP_ID:-$AIMS_FIREBASE_ANDROID_APP_ID_FALLBACK}"
           AIMS_FIREBASE_STORAGE_BUCKET="${AIMS_FIREBASE_STORAGE_BUCKET:-$AIMS_FIREBASE_STORAGE_BUCKET_FALLBACK}"
-          flutter build apk --debug \
+          flutter build apk --release \
             --dart-define=AIMS_TRACKING_BASE_URL=https://logistic-aims.hu/api/aims-tracking \
             --dart-define=AIMS_TRACKING_TOKEN="$AIMS_TRACKING_TOKEN" \
             --dart-define=AIMS_FIREBASE_API_KEY="$AIMS_FIREBASE_API_KEY" \
@@ -192,17 +192,17 @@ jobs:
 
       - name: APK sanity check
         run: |
-          test -s build/app/outputs/flutter-apk/app-debug.apk
+          test -s build/app/outputs/flutter-apk/app-release.apk
           unzip -t build/app/outputs/flutter-apk/app-debug.apk > /tmp/apk-test.txt
           tail -5 /tmp/apk-test.txt
-          cp build/app/outputs/flutter-apk/app-debug.apk AIMS-Flow-Driver-v1.apk
-          sha256sum AIMS-Flow-Driver-v1.apk | tee AIMS-Flow-Driver-v1.sha256
+          cp build/app/outputs/flutter-apk/app-debug.apk AIMS-Flow-R87.apk
+          sha256sum AIMS-Flow-Driver-v1.apk | tee AIMS-Flow-R87.sha256
           ls -lh AIMS-Flow-Driver-v1.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: AIMS-Flow-Driver-v1-ANDROID
+          name: AIMS-Flow-R87-ANDROID
           path: |
             AIMS-Flow-Driver-v1.apk
             AIMS-Flow-Driver-v1.sha256
