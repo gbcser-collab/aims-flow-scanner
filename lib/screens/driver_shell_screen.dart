@@ -71,6 +71,12 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
     return _jobs.where((job) => job.id != current.id).toList();
   }
 
+  String _displayPlate(String value) {
+    final compact = value.trim().toUpperCase().replaceAll(RegExp(r'[^A-Z0-9]'), '');
+    if (compact.length == 6) return '${compact.substring(0, 3)}-${compact.substring(3)}';
+    return value.trim().toUpperCase();
+  }
+
   String _l(String hu, String en, String de) => switch (
         AimsLocaleController.instance.languageCode
       ) {
@@ -843,7 +849,7 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
                     Text(
                       [
                         _l('SOFŐR', 'DRIVER', 'FAHRER'),
-                        if (_plate.isNotEmpty) _plate,
+                        if (_plate.isNotEmpty) _displayPlate(_plate),
                         if (_plate.isEmpty && _driverName.isNotEmpty) _driverName,
                       ].join(' • '),
                       maxLines: 1,
