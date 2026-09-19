@@ -84,7 +84,8 @@ void main() {
     );
     await tester.pump(const Duration(milliseconds: 300));
 
-    expect(find.text('AIMS FLOW'), findsWidgets);
+    expect(find.text('AIMS'), findsWidgets);
+    expect(find.text('FLOW'), findsWidgets);
     expect(find.text('DRIVER MODE'), findsOneWidget);
     expect(find.text('KEZDŐLAP'), findsOneWidget);
     expect(find.text('FUVAROM'), findsOneWidget);
