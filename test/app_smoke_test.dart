@@ -1,5 +1,6 @@
 import 'package:aims_flow_scanner/main.dart';
 import 'package:aims_flow_scanner/screens/driver_shell_screen.dart';
+import 'package:aims_flow_scanner/widgets/aims_flow_logo.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -84,7 +85,7 @@ void main() {
     );
     await tester.pump(const Duration(milliseconds: 300));
 
-    expect(find.text('AIMS FLOW'), findsWidgets);
+    expect(find.byType(AimsFlowLogo), findsOneWidget);
     expect(find.text('DRIVER MODE'), findsOneWidget);
     expect(find.text('KEZDŐLAP'), findsOneWidget);
     expect(find.text('FUVAROM'), findsOneWidget);

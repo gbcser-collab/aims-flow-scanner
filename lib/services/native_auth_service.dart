@@ -11,6 +11,8 @@ class NativeAuthResult {
     required this.plate,
     required this.forceCodeChange,
     required this.language,
+    required this.adminPushRegistered,
+    required this.adminSessionToken,
   });
 
   final String role;
@@ -18,6 +20,8 @@ class NativeAuthResult {
   final String plate;
   final bool forceCodeChange;
   final String language;
+  final bool adminPushRegistered;
+  final String adminSessionToken;
 }
 
 class NativeRegistrationResult {
@@ -56,6 +60,9 @@ class NativeAuthService {
     required String login,
     required String password,
     String code = '',
+    String pushDeviceId = '',
+    String fcmToken = '',
+    String pushPlatform = 'android',
   }) async {
     final response = await http
         .post(
@@ -68,6 +75,11 @@ class NativeAuthService {
             'login': login.trim(),
             'password': password,
             'code': code.trim(),
+            if (pushDeviceId.trim().isNotEmpty)
+              'pushDeviceId': pushDeviceId.trim(),
+            if (fcmToken.trim().isNotEmpty) 'fcmToken': fcmToken.trim(),
+            if (fcmToken.trim().isNotEmpty)
+              'pushPlatform': pushPlatform.trim().toLowerCase(),
           }),
         )
         .timeout(const Duration(seconds: 15));
@@ -87,6 +99,8 @@ class NativeAuthService {
         plate: body['plate']?.toString() ?? '',
         forceCodeChange: body['forceCodeChange'] == true,
         language: body['language']?.toString() ?? 'hu',
+        adminPushRegistered: body['adminPushRegistered'] == true,
+        adminSessionToken: body['adminSessionToken']?.toString() ?? '',
       );
     }
 

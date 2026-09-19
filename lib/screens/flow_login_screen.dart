@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../services/aims_locale.dart';
 import '../services/device_unlock_service.dart';
+import '../services/driver_push_service.dart';
 import '../services/native_auth_service.dart';
 import 'driver_shell_screen.dart';
 import 'flow_change_code_screen.dart';
@@ -140,6 +141,18 @@ class _FlowLoginScreenState extends State<FlowLoginScreen> {
     });
     try {
       NativeAuthResult? authResult;
+      Map<String, String> adminPush = const <String, String>{};
+      if (!_e2e && _adminMode) {
+        try {
+          adminPush =
+              await DriverPushService.instance.adminRegistrationPayload();
+        } catch (e) {
+          throw StateError(
+            'Az admin push regisztráció nem készíthető elő: '
+            '${e.toString().replaceFirst('Bad state: ', '')}',
+          );
+        }
+      }
       if (!_e2e) {
         authResult = await _auth.login(
           login: _adminMode ? 'ADMIN' : _login.text,
@@ -147,9 +160,32 @@ class _FlowLoginScreenState extends State<FlowLoginScreen> {
               ? _password.text
               : _password.text.trim().toUpperCase(),
           code: _adminMode ? _code.text : '',
+          pushDeviceId: adminPush['deviceId'] ?? '',
+          fcmToken: adminPush['fcmToken'] ?? '',
+          pushPlatform: adminPush['platform'] ?? 'android',
         );
       }
       if (!mounted) return;
+
+      if (!_e2e && authResult?.role == 'admin') {
+        if (authResult?.adminPushRegistered != true) {
+          throw StateError(
+            'Az admintelefon belépett, de a push regisztráció nem sikerült.',
+          );
+        }
+        final adminSessionToken = authResult?.adminSessionToken.trim() ?? '';
+        if (adminSessionToken.isEmpty) {
+          throw StateError(
+            'Az admin munkamenet nem jött létre. Jelentkezz be újra.',
+          );
+        }
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('aims_user_role', 'admin');
+        await prefs.remove('aims_driver_plate');
+        await prefs.remove('aims_driver_name');
+        await prefs.setBool('aims_driver_local_unlock', false);
+        await prefs.setString('aims_admin_session_token', adminSessionToken);
+      }
 
       if (!_e2e && authResult?.role == 'driver') {
         final driver = authResult!;
@@ -174,6 +210,8 @@ class _FlowLoginScreenState extends State<FlowLoginScreen> {
         );
         await prefs.setString('aims_driver_name', name);
         await prefs.setBool('aims_driver_local_unlock', true);
+        await prefs.setString('aims_user_role', 'driver');
+        await prefs.remove('aims_admin_session_token');
       }
 
       await Navigator.of(context).pushReplacement(

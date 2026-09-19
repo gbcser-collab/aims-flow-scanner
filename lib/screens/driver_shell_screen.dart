@@ -8,11 +8,37 @@ import 'package:url_launcher/url_launcher.dart';
 import '../services/aims_locale.dart';
 import '../services/aims_voice_command.dart';
 import '../services/aims_voice_service.dart';
+import '../services/admin_reset_service.dart';
 import '../services/driver_api_service.dart';
 import '../services/driver_push_service.dart';
 import '../services/vehicle_tracking_service.dart';
+import '../widgets/aims_flow_logo.dart';
 import 'fuel_receipt_screen.dart';
 import 'scanner_screen.dart';
+
+class _ResetWaitingChip extends StatelessWidget {
+  const _ResetWaitingChip();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+      decoration: BoxDecoration(
+        color: Colors.orange.withValues(alpha: .12),
+        borderRadius: BorderRadius.circular(99),
+        border: Border.all(color: Colors.orange.withValues(alpha: .35)),
+      ),
+      child: const Text(
+        'JÓVÁHAGYÁSRA VÁR',
+        style: TextStyle(
+          color: Colors.orange,
+          fontSize: 8,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+    );
+  }
+}
 
 class DriverShellScreen extends StatefulWidget {
   const DriverShellScreen({super.key});
@@ -28,8 +54,10 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
   static const _prefsPlate = 'aims_driver_plate';
   static const _prefsDriverName = 'aims_driver_name';
   static const _prefsHandsFree = 'aims_hands_free';
+  static const _prefsAdminToken = 'aims_admin_session_token';
 
   final _api = const DriverApiService();
+  final _adminApi = const AdminResetService();
   final _tracking = VehicleTrackingService.instance;
   final _push = DriverPushService.instance;
   final ScrollController _homeScrollController = ScrollController();
@@ -53,6 +81,11 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
     message: 'AIMS Hands-Free kikapcsolva.',
   );
   bool _handsFreeBusy = false;
+  bool _isAdmin = false;
+  String _adminToken = '';
+  List<AdminResetRequest> _adminResets = const [];
+  bool _adminLoading = false;
+  String? _adminError;
 
   DriverJob? get _job => _jobs.isEmpty ? null : _jobs.first;
   DriverStop? get _stop => _job?.currentStop;
@@ -84,10 +117,33 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
 
   Future<void> _initialize() async {
     final prefs = await SharedPreferences.getInstance();
+    final role = (prefs.getString('aims_user_role') ?? 'driver').trim();
     var plate = (prefs.getString(_prefsPlate) ?? '').trim().toUpperCase();
     final driverName = (prefs.getString(_prefsDriverName) ?? '').trim();
 
     final status = await _tracking.currentStatus();
+
+    // Admin phones must never inherit a stale driver plate or start driver GPS.
+    if (role == 'admin') {
+      final adminToken = (prefs.getString(_prefsAdminToken) ?? '').trim();
+      if (!mounted) return;
+      setState(() {
+        _isAdmin = true;
+        _adminToken = adminToken;
+        _plate = '';
+        _driverName = 'AIMS Admin';
+        _trackingStatus = status;
+        _loading = false;
+        _message = _l(
+          'Admin push aktív. A jármű- és sofőrértesítések erre a telefonra érkeznek.',
+          'Admin push is active. Vehicle and driver alerts are delivered to this phone.',
+          'Admin-Push ist aktiv. Fahrzeug- und Fahrerwarnungen kommen auf dieses Telefon.',
+        );
+      });
+      await _refreshAdminResets();
+      return;
+    }
+
     if (plate.isEmpty && status.vehicleLabel.trim().isNotEmpty) {
       plate = status.vehicleLabel.trim().toUpperCase();
     }
@@ -182,9 +238,83 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
     }
   }
 
+  Future<void> _refreshAdminResets() async {
+    if (!_isAdmin) return;
+    final token = _adminToken.trim();
+    if (token.isEmpty) {
+      if (mounted) {
+        setState(() {
+          _adminLoading = false;
+          _adminError = _l(
+            'Az admin munkamenet lejárt. Jelentkezz be újra.',
+            'The admin session has expired. Sign in again.',
+            'Die Admin-Sitzung ist abgelaufen. Bitte erneut anmelden.',
+          );
+        });
+      }
+      return;
+    }
+
+    if (mounted) {
+      setState(() {
+        _adminLoading = true;
+        _adminError = null;
+      });
+    }
+    try {
+      final rows = await _adminApi.fetchPending(sessionToken: token);
+      if (!mounted) return;
+      setState(() {
+        _adminResets = rows;
+        _adminLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _adminLoading = false;
+        _adminError = e.toString().replaceFirst('Bad state: ', '');
+      });
+    }
+  }
+
+  Future<void> _approveAdminReset(AdminResetRequest request) async {
+    if (_actionBusy || _adminToken.trim().isEmpty) return;
+    setState(() => _actionBusy = true);
+    try {
+      await _adminApi.approve(
+        sessionToken: _adminToken,
+        plate: request.plate,
+      );
+      if (!mounted) return;
+      _snack(
+        _l(
+          'Reset jóváhagyva: ${request.plate}. Az új egyszeri kód e-mailben ment ki.',
+          'Reset approved: ${request.plate}. The new one-time code was sent by email.',
+          'Reset bestätigt: ${request.plate}. Der neue Einmalcode wurde per E-Mail gesendet.',
+        ),
+      );
+      await _refreshAdminResets();
+    } catch (e) {
+      if (mounted) {
+        _snack(e.toString().replaceFirst('Bad state: ', ''));
+      }
+    } finally {
+      if (mounted) setState(() => _actionBusy = false);
+    }
+  }
+
   Future<void> _handlePush(DriverPushEvent event) async {
     if (!mounted) return;
-    if (event.data['type']?.toString() != 'driver_job') return;
+    final type = event.data['type']?.toString() ?? '';
+    if (_isAdmin) {
+      if (type == 'driver_reset_request' ||
+          type == 'driver_reset' ||
+          type == 'admin_alert') {
+        await _refreshAdminResets();
+      }
+      return;
+    }
+    if (type != 'driver_job') return;
     await _refreshJobs();
     if (!mounted) return;
 
@@ -655,6 +785,27 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (_isAdmin) {
+      return Scaffold(
+        backgroundColor: const Color(0xFF020813),
+        body: Column(
+          children: [
+            Container(
+              width: double.infinity,
+              color: const Color(0xFF06162A),
+              child: SafeArea(
+                bottom: false,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+                  child: _header(),
+                ),
+              ),
+            ),
+            Expanded(child: _adminHome()),
+          ],
+        ),
+      );
+    }
     return Scaffold(
       backgroundColor: const Color(0xFF020813),
       body: Column(
@@ -729,7 +880,7 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
         child: SafeArea(
           top: false,
           child: RefreshIndicator(
-            onRefresh: _refreshJobs,
+            onRefresh: _isAdmin ? _refreshAdminResets : _refreshJobs,
             child: ListView(
               controller: controller,
               physics: const AlwaysScrollableScrollPhysics(),
@@ -742,37 +893,34 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
 
   Widget _header() => Row(
         children: [
-          Container(
-            width: 38,
-            height: 38,
-            decoration: BoxDecoration(
-              color: _blue.withValues(alpha: .12),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: _blue.withValues(alpha: .45)),
-            ),
-            child: const Icon(Icons.alt_route_rounded, color: _blue, size: 24),
-          ),
+          const AimsFlowLogo(width: 46, height: 46),
           const SizedBox(width: 10),
-          const Expanded(
+          Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  'AIMS FLOW',
-                  style: TextStyle(
-                    letterSpacing: 2.8,
-                    color: Colors.white,
-                    fontWeight: FontWeight.w900,
-                    fontSize: 16,
-                  ),
-                ),
-                SizedBox(height: 2),
-                Text(
-                  'DRIVER MODE',
-                  style: TextStyle(
+                  _isAdmin ? 'ADMIN MODE' : 'DRIVER MODE',
+                  style: const TextStyle(
                     color: _blue,
                     fontSize: 9,
                     fontWeight: FontWeight.w900,
+                    letterSpacing: 1.5,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  _plate.isEmpty
+                      ? (_driverName.isEmpty ? '—' : _driverName)
+                      : _plate,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white70,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: .8,
                   ),
                 ),
               ],
@@ -780,14 +928,211 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
           ),
           const AimsLanguageSelector(compact: true),
           const SizedBox(width: 8),
-          _status(
-            _trackingStatus?.running == true
-                ? _l('GPS AKTÍV', 'GPS ACTIVE', 'GPS AKTIV')
-                : 'GPS',
-            _trackingStatus?.running == true ? _green : Colors.white38,
-          ),
+          _isAdmin
+              ? _status(
+                  _l('ADMIN AKTÍV', 'ADMIN ACTIVE', 'ADMIN AKTIV'),
+                  _green,
+                )
+              : _status(
+                  _trackingStatus?.running == true
+                      ? _l('GPS AKTÍV', 'GPS ACTIVE', 'GPS AKTIV')
+                      : 'GPS',
+                  _trackingStatus?.running == true ? _green : Colors.white38,
+                ),
         ],
       );
+
+  Widget _adminHome() {
+    return _page([
+      Row(
+        children: [
+          Expanded(
+            child: Text(
+              _l('Admin központ', 'Admin center', 'Admin-Zentrale'),
+              style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w900),
+            ),
+          ),
+          IconButton(
+            tooltip: _l('Frissítés', 'Refresh', 'Aktualisieren'),
+            onPressed: _adminLoading ? null : _refreshAdminResets,
+            icon: const Icon(Icons.refresh_rounded),
+          ),
+        ],
+      ),
+      const SizedBox(height: 4),
+      Text(
+        _l(
+          'Sofőrkód-visszaállítási kérelmek és admin értesítések.',
+          'Driver code reset requests and admin alerts.',
+          'Fahrercode-Reset-Anfragen und Admin-Benachrichtigungen.',
+        ),
+        style: const TextStyle(color: Colors.white54),
+      ),
+      const SizedBox(height: 14),
+      if (_adminLoading) const LinearProgressIndicator(minHeight: 2),
+      if (_adminError != null) ...[
+        const SizedBox(height: 10),
+        _info(_adminError!),
+      ],
+      const SizedBox(height: 12),
+      _panel(
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.password_rounded, color: _blue),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    _l(
+                      'KÓD-VISSZAÁLLÍTÁSI KÉRELMEK',
+                      'CODE RESET REQUESTS',
+                      'CODE-RESET-ANFRAGEN',
+                    ),
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: .7,
+                    ),
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: _adminResets.isEmpty
+                        ? Colors.white.withValues(alpha: .05)
+                        : Colors.orange.withValues(alpha: .12),
+                    borderRadius: BorderRadius.circular(99),
+                    border: Border.all(
+                      color: _adminResets.isEmpty
+                          ? Colors.white24
+                          : Colors.orange.withValues(alpha: .35),
+                    ),
+                  ),
+                  child: Text(
+                    '${_adminResets.length}',
+                    style: TextStyle(
+                      color: _adminResets.isEmpty
+                          ? Colors.white54
+                          : Colors.orange,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            if (_adminResets.isEmpty && !_adminLoading)
+              Text(
+                _l(
+                  'Nincs jóváhagyásra váró kód-visszaállítás.',
+                  'There are no code resets waiting for approval.',
+                  'Es gibt keine ausstehenden Code-Resets.',
+                ),
+                style: const TextStyle(color: Colors.white54),
+              )
+            else
+              ..._adminResets.map(
+                (request) => Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: Container(
+                    key: Key('admin-reset-${request.plate}'),
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF06131F),
+                      borderRadius: BorderRadius.circular(15),
+                      border: Border.all(
+                        color: Colors.orange.withValues(alpha: .38),
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                request.plate,
+                                style: const TextStyle(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ),
+                            const _ResetWaitingChip(),
+                          ],
+                        ),
+                        const SizedBox(height: 7),
+                        if (request.email.isNotEmpty)
+                          Text(
+                            request.email,
+                            style: const TextStyle(color: Colors.white60),
+                          ),
+                        if (request.requestedAt.isNotEmpty) ...[
+                          const SizedBox(height: 3),
+                          Text(
+                            _l(
+                              'Kérve: ${request.requestedAt}',
+                              'Requested: ${request.requestedAt}',
+                              'Angefordert: ${request.requestedAt}',
+                            ),
+                            style: const TextStyle(
+                              color: Colors.white38,
+                              fontSize: 11,
+                            ),
+                          ),
+                        ],
+                        const SizedBox(height: 12),
+                        FilledButton.icon(
+                          key: Key('admin-reset-approve-${request.plate}'),
+                          onPressed: _actionBusy
+                              ? null
+                              : () => _approveAdminReset(request),
+                          icon: const Icon(Icons.verified_user_outlined),
+                          label: Text(
+                            _l(
+                              'JÓVÁHAGYÁS + ÚJ KÓD',
+                              'APPROVE + NEW CODE',
+                              'BESTÄTIGEN + NEUER CODE',
+                            ),
+                          ),
+                          style: FilledButton.styleFrom(
+                            minimumSize: const Size.fromHeight(48),
+                            backgroundColor: Colors.orange,
+                            foregroundColor: const Color(0xFF1C1200),
+                            textStyle:
+                                const TextStyle(fontWeight: FontWeight.w900),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+      const SizedBox(height: 12),
+      _panel(
+        Row(
+          children: [
+            const Icon(Icons.notifications_active_outlined, color: _green),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                _l(
+                  'Új kód-visszaállítási kérésnél az admin push után ez a lista automatikusan frissül.',
+                  'This list refreshes automatically after an admin push for a new reset request.',
+                  'Bei einer neuen Reset-Anfrage wird diese Liste nach dem Admin-Push automatisch aktualisiert.',
+                ),
+                style: const TextStyle(color: Colors.white70, height: 1.35),
+              ),
+            ),
+          ],
+        ),
+      ),
+    ]);
+  }
 
   Widget _home() {
     final job = _job;
