@@ -193,17 +193,17 @@ jobs:
       - name: APK sanity check
         run: |
           test -s build/app/outputs/flutter-apk/app-release.apk
-          unzip -t build/app/outputs/flutter-apk/app-debug.apk > /tmp/apk-test.txt
+          unzip -t build/app/outputs/flutter-apk/app-release.apk > /tmp/apk-test.txt
           tail -5 /tmp/apk-test.txt
-          cp build/app/outputs/flutter-apk/app-debug.apk AIMS-Flow-R87.apk
-          sha256sum AIMS-Flow-Driver-v1.apk | tee AIMS-Flow-R87.sha256
-          ls -lh AIMS-Flow-Driver-v1.apk
+          cp build/app/outputs/flutter-apk/app-release.apk AIMS-Flow-R87.apk
+          sha256sum AIMS-Flow-R87.apk | tee AIMS-Flow-R87.sha256
+          ls -lh AIMS-Flow-R87.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: AIMS-Flow-R87-ANDROID
           path: |
-            AIMS-Flow-Driver-v1.apk
-            AIMS-Flow-Driver-v1.sha256
+            AIMS-Flow-R87.apk
+            AIMS-Flow-R87.sha256
           if-no-files-found: error
