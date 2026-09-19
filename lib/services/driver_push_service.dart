@@ -11,6 +11,8 @@ import 'vehicle_tracking_service.dart';
 
 const _jobChannelId = 'aims_jobs';
 const _jobChannelName = 'AIMS Flow fuvarok';
+const _adminChannelId = 'aims_admin_alerts';
+const _adminChannelName = 'AIMS Flow admin értesítések';
 
 class DriverPushEvent {
   const DriverPushEvent({
@@ -79,6 +81,16 @@ class DriverPushService {
         enableVibration: true,
       ),
     );
+    await android?.createNotificationChannel(
+      const AndroidNotificationChannel(
+        _adminChannelId,
+        _adminChannelName,
+        description: 'Járműállás, érkezés és sofőr műveleti értesítések',
+        importance: Importance.max,
+        playSound: true,
+        enableVibration: true,
+      ),
+    );
 
     final launch = await _notifications.getNotificationAppLaunchDetails();
     final response = launch?.notificationResponse;
@@ -107,7 +119,11 @@ class DriverPushService {
     );
 
     _messageSub = FirebaseMessaging.onMessage.listen((message) async {
-      await showJobNotification(message);
+      if (message.data['type']?.toString() == 'driver_job') {
+        await showJobNotification(message);
+      } else {
+        await showAdminNotification(message);
+      }
       _events.add(DriverPushEvent(
         data: Map<String, dynamic>.from(message.data),
         actionId: '',
@@ -150,6 +166,25 @@ class DriverPushService {
     await _notifications.cancel(jobId);
   }
 
+  Future<Map<String, String>> adminRegistrationPayload() async {
+    if (Firebase.apps.isEmpty) {
+      await initialize();
+    }
+    if (Firebase.apps.isEmpty) {
+      throw StateError('A Firebase push szolgáltatás nem inicializálódott.');
+    }
+    final fcm = await FirebaseMessaging.instance.getToken();
+    if (fcm == null || fcm.isEmpty) {
+      throw StateError('A telefon nem kapott Firebase push tokent.');
+    }
+    final tracking = await VehicleTrackingService.instance.currentStatus();
+    return <String, String>{
+      'fcmToken': fcm,
+      'deviceId': tracking.deviceId,
+      'platform': 'android',
+    };
+  }
+
   Future<void> registerForPlate(String plate) async {
     final cleanPlate = plate.trim().toUpperCase();
     if (cleanPlate.isEmpty) {
@@ -172,6 +207,54 @@ class DriverPushService {
       fcmToken: fcm,
     );
     _registeredPlate = cleanPlate;
+  }
+
+  static Future<void> showAdminNotification(RemoteMessage message) async {
+    final notification = message.notification;
+    final title = notification?.title?.trim() ?? '';
+    final body = notification?.body?.trim() ?? '';
+    if (title.isEmpty && body.isEmpty) return;
+
+    const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
+    await _notifications.initialize(
+      const InitializationSettings(android: androidInit),
+    );
+    final android = _notifications.resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>();
+    await android?.createNotificationChannel(
+      const AndroidNotificationChannel(
+        _adminChannelId,
+        _adminChannelName,
+        description: 'Járműállás, érkezés és sofőr műveleti értesítések',
+        importance: Importance.max,
+        playSound: true,
+        enableVibration: true,
+      ),
+    );
+
+    final notificationId =
+        int.tryParse(message.data['notificationId']?.toString() ?? '') ??
+            (DateTime.now().millisecondsSinceEpoch ~/ 1000);
+
+    const details = AndroidNotificationDetails(
+      _adminChannelId,
+      _adminChannelName,
+      channelDescription: 'Járműállás, érkezés és sofőr műveleti értesítések',
+      importance: Importance.max,
+      priority: Priority.max,
+      playSound: true,
+      enableVibration: true,
+      category: AndroidNotificationCategory.status,
+      visibility: NotificationVisibility.public,
+    );
+
+    await _notifications.show(
+      notificationId,
+      title.isEmpty ? 'AIMS Flow' : title,
+      body,
+      const NotificationDetails(android: details),
+      payload: jsonEncode(Map<String, dynamic>.from(message.data)),
+    );
   }
 
   static Future<void> showJobNotification(RemoteMessage message) async {
