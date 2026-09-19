@@ -562,6 +562,22 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
       case AimsVoiceIntent.showJob:
         if (mounted) setState(() => _index = 1);
         return _jobVoiceSummary();
+      case AimsVoiceIntent.showNextJobs:
+        final count = _otherJobs.length;
+        if (mounted && _jobs.isNotEmpty) {
+          unawaited(_showJobsBrowser());
+        }
+        return count == 0
+            ? _l(
+                'Nincs további kiosztott munkád.',
+                'There are no additional assigned jobs.',
+                'Es gibt keine weiteren zugewiesenen Aufträge.',
+              )
+            : _l(
+                '$count további munkád van. Megnyitottam a listát.',
+                'You have $count more assigned job(s). I opened the list.',
+                'Du hast $count weitere Aufträge. Ich habe die Liste geöffnet.',
+              );
       case AimsVoiceIntent.navigatePickup:
         final stop = _nextStopOfType('pickup');
         if (stop == null) {
