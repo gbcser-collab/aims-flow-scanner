@@ -2,7 +2,7 @@ name: Build AIMS Flow Driver Android
 
 on:
   push:
-    branches: [aims-flow-driver-v1, aims-flow-driver-v1-r85-fixes]
+    branches: [aims-flow-driver-v1]
     paths:
       - 'lib/**'
       - 'test/**'
