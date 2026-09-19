@@ -55,8 +55,21 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
   );
   bool _handsFreeBusy = false;
 
-  DriverJob? get _job => _jobs.isEmpty ? null : _jobs.first;
+  DriverJob? get _job {
+    if (_jobs.isEmpty) return null;
+    for (final job in _jobs) {
+      if (job.acceptedAt != null) return job;
+    }
+    return _jobs.first;
+  }
+
   DriverStop? get _stop => _job?.currentStop;
+
+  List<DriverJob> get _otherJobs {
+    final current = _job;
+    if (current == null) return _jobs;
+    return _jobs.where((job) => job.id != current.id).toList();
+  }
 
   String _l(String hu, String en, String de) => switch (
         AimsLocaleController.instance.languageCode
@@ -760,48 +773,61 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
         ),
       );
 
-  Widget _header() => Row(
+  Widget _header() => Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          const AimsFlowLogo(width: 46, height: 46),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text(
-                  'DRIVER MODE',
-                  style: TextStyle(
-                    color: _blue,
-                    fontSize: 9,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 1.5,
-                  ),
+          Row(
+            children: [
+              const AimsFlowLogo(width: 42, height: 42),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text(
+                      'AIMS FLOW',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: _blue,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 1.4,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      [
+                        _l('SOFŐR', 'DRIVER', 'FAHRER'),
+                        if (_plate.isNotEmpty) _plate,
+                        if (_plate.isEmpty && _driverName.isNotEmpty) _driverName,
+                      ].join(' • '),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: .6,
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  _plate.isEmpty
-                      ? (_driverName.isEmpty ? '—' : _driverName)
-                      : _plate,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Colors.white70,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: .8,
-                  ),
-                ),
-              ],
-            ),
+              ),
+              const SizedBox(width: 8),
+              _status(
+                _trackingStatus?.running == true
+                    ? _l('GPS AKTÍV', 'GPS ACTIVE', 'GPS AKTIV')
+                    : 'GPS',
+                _trackingStatus?.running == true ? _green : Colors.white38,
+              ),
+            ],
           ),
-          const AimsLanguageSelector(compact: true),
-          const SizedBox(width: 8),
-          _status(
-            _trackingStatus?.running == true
-                ? _l('GPS AKTÍV', 'GPS ACTIVE', 'GPS AKTIV')
-                : 'GPS',
-            _trackingStatus?.running == true ? _green : Colors.white38,
+          const SizedBox(height: 7),
+          const Align(
+            alignment: Alignment.centerRight,
+            child: AimsLanguageSelector(compact: true),
           ),
         ],
       );
@@ -930,6 +956,8 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
             ],
           ),
         ),
+      const SizedBox(height: 12),
+      _jobsShortcut(),
       if (_message != null) ...[
         const SizedBox(height: 10),
         _info(_message!),
@@ -964,9 +992,24 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
           children: [
             Row(
               children: [
-                Icon(
-                  _voiceState.enabled ? Icons.mic_rounded : Icons.mic_off_outlined,
-                  color: _voiceState.enabled ? _green : Colors.white38,
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: (_voiceState.enabled ? _green : _blue)
+                        .withValues(alpha: .12),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: (_voiceState.enabled ? _green : _blue)
+                          .withValues(alpha: .35),
+                    ),
+                  ),
+                  child: Icon(
+                    _voiceState.mode == AimsVoiceMode.speaking
+                        ? Icons.graphic_eq_rounded
+                        : Icons.mic_rounded,
+                    color: _voiceState.enabled ? _green : _blue,
+                  ),
                 ),
                 const SizedBox(width: 11),
                 Expanded(
@@ -974,39 +1017,110 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'AIMS HANDS-FREE',
-                        style: TextStyle(fontWeight: FontWeight.w900),
+                        _l(
+                          'AIMS VIRTUÁLIS ASSZISZTENS',
+                          'AIMS VIRTUAL ASSISTANT',
+                          'AIMS VIRTUELLER ASSISTENT',
+                        ),
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w900,
+                          fontSize: 14,
+                        ),
                       ),
-                      SizedBox(height: 2),
+                      const SizedBox(height: 3),
                       Text(
-                        _driverName.isEmpty
-                            ? _l(
-                                'Ébresztőszó: „AIMS”',
-                                'Wake word: “AIMS”',
-                                'Aktivierungswort: „AIMS“',
-                              )
-                            : _l(
-                                'Sofőr: $_driverName • ébresztőszó: „AIMS”',
-                                'Driver: $_driverName • wake word: “AIMS”',
-                                'Fahrer: $_driverName • Aktivierungswort: „AIMS“',
-                              ),
-                        style: const TextStyle(color: Colors.white38, fontSize: 11),
+                        switch (_voiceState.mode) {
+                          AimsVoiceMode.command => _l(
+                              'Parancsot várok…',
+                              'Waiting for your command…',
+                              'Ich warte auf deinen Befehl…',
+                            ),
+                          AimsVoiceMode.speaking => _l(
+                              'Válaszolok…',
+                              'Speaking…',
+                              'Ich antworte…',
+                            ),
+                          AimsVoiceMode.wakeWord => _l(
+                              'Figyelek az „AIMS” ébresztőszóra',
+                              'Listening for “AIMS”',
+                              'Ich höre auf „AIMS“',
+                            ),
+                          AimsVoiceMode.error => _l(
+                              'Hangfelismerési hiba',
+                              'Voice recognition error',
+                              'Spracherkennungsfehler',
+                            ),
+                          _ => _l(
+                              'Érintsd meg és mondd, mit szeretnél.',
+                              'Tap and tell me what you need.',
+                              'Tippe und sage, was du brauchst.',
+                            ),
+                        },
+                        style: const TextStyle(
+                          color: Colors.white54,
+                          fontSize: 11,
+                          height: 1.3,
+                        ),
                       ),
                     ],
                   ),
                 ),
-                Switch(
-                  key: const Key('aims-hands-free-toggle'),
-                  value: _voiceState.enabled,
-                  onChanged: _handsFreeBusy ? null : _setHandsFree,
-                ),
               ],
             ),
-            const SizedBox(height: 10),
-            Text(
-              _voiceState.message,
-              style: const TextStyle(color: Colors.white70, height: 1.35),
+            const SizedBox(height: 12),
+            FilledButton.icon(
+              key: const Key('aims-assistant-talk'),
+              onPressed: _handsFreeBusy
+                  ? null
+                  : () => unawaited(_voice.triggerAssistant()),
+              icon: const Icon(Icons.record_voice_over_rounded),
+              label: Text(
+                _l(
+                  'BESZÉLJ AZ AIMS-HEZ',
+                  'TALK TO AIMS',
+                  'MIT AIMS SPRECHEN',
+                ),
+              ),
             ),
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
+              decoration: BoxDecoration(
+                color: const Color(0xFF06131F),
+                borderRadius: BorderRadius.circular(13),
+                border: Border.all(color: const Color(0xFF173B54)),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      _l(
+                        'Hands-Free: mondd, hogy „AIMS”, majd a parancsot.',
+                        'Hands-Free: say “AIMS”, then your command.',
+                        'Hands-Free: sage „AIMS“, dann deinen Befehl.',
+                      ),
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 11,
+                        height: 1.3,
+                      ),
+                    ),
+                  ),
+                  Switch(
+                    key: const Key('aims-hands-free-toggle'),
+                    value: _voiceState.enabled,
+                    onChanged: _handsFreeBusy ? null : _setHandsFree,
+                  ),
+                ],
+              ),
+            ),
+            if (_voiceState.message.trim().isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Text(
+                _voiceState.message,
+                style: const TextStyle(color: Colors.white70, height: 1.35),
+              ),
+            ],
             if (_voiceState.lastHeard.trim().isNotEmpty) ...[
               const SizedBox(height: 5),
               Text(
@@ -1018,53 +1132,341 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
                 style: const TextStyle(color: Colors.white38, fontSize: 10),
               ),
             ],
-            const SizedBox(height: 12),
-            Row(
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 7,
+              runSpacing: 7,
               children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: _handsFreeBusy
-                        ? null
-                        : () => unawaited(_voice.triggerAssistant()),
-                    icon: const Icon(Icons.record_voice_over_outlined),
-                    label: Text(
-                      _l('MONDD MOST', 'SPEAK NOW', 'JETZT SPRECHEN'),
-                    ),
+                _assistantExample(
+                  _l('Mutasd a fuvarom', 'Show my job', 'Zeige meinen Auftrag'),
+                ),
+                _assistantExample(
+                  _l('Következő cím', 'Next address', 'Nächste Adresse'),
+                ),
+                _assistantExample(
+                  _l(
+                    'Navigálj a felrakóra',
+                    'Navigate to pickup',
+                    'Zur Abholung navigieren',
                   ),
                 ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () =>
-                        unawaited(_voice.requestAndroidAssistantRole()),
-                    icon: const Icon(Icons.assistant_outlined),
-                    label: Text(
-                      _l(
-                        'ANDROID ASSZISZTENS',
-                        'ANDROID ASSISTANT',
-                        'ANDROID-ASSISTENT',
-                      ),
-                    ),
+                _assistantExample(
+                  _l(
+                    'Hívd a kapcsolattartót',
+                    'Call the contact',
+                    'Kontakt anrufen',
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 8),
-            Text(
-              _l(
-                'Hands-Free módban a Flow háttérszolgáltatással fut, és az „AIMS” szó után várja a parancsot.',
-                'In Hands-Free mode Flow runs as a background service and waits for a command after “AIMS”.',
-                'Im Hands-Free-Modus läuft Flow als Hintergrunddienst und wartet nach „AIMS“ auf einen Befehl.',
-              ),
-              style: const TextStyle(
-                color: Colors.white38,
-                height: 1.35,
-                fontSize: 10,
-              ),
-            ),
           ],
         ),
       );
+
+  Widget _assistantExample(String command) => ActionChip(
+        label: Text(command),
+        onPressed: () => unawaited(_voice.executeText(command)),
+        visualDensity: VisualDensity.compact,
+      );
+
+  Widget _jobsShortcut() {
+    final current = _job;
+    final others = _otherJobs;
+    final subtitle = current == null
+        ? _l(
+            'Nincs kiosztott munka.',
+            'No assigned jobs.',
+            'Keine zugewiesenen Aufträge.',
+          )
+        : others.isEmpty
+            ? _l(
+                'Aktív munka részleteinek megnyitása.',
+                'Open the active job details.',
+                'Details des aktiven Auftrags öffnen.',
+              )
+            : _l(
+                '${others.length} további kiosztott munka vár rád.',
+                '${others.length} more assigned job(s) are waiting.',
+                '${others.length} weitere Aufträge warten.',
+              );
+
+    return _panel(
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            _l(
+              'KÖVETKEZŐ FELADAT / MUNKÁK',
+              'NEXT TASK / JOBS',
+              'NÄCHSTE AUFGABE / AUFTRÄGE',
+            ),
+            style: const TextStyle(
+              color: _blue,
+              fontSize: 11,
+              fontWeight: FontWeight.w900,
+              letterSpacing: .8,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            subtitle,
+            style: const TextStyle(color: Colors.white60, height: 1.35),
+          ),
+          const SizedBox(height: 10),
+          OutlinedButton.icon(
+            key: const Key('flow-next-jobs'),
+            onPressed: _jobs.isEmpty ? null : _showJobsBrowser,
+            icon: const Icon(Icons.format_list_bulleted_rounded),
+            label: Text(
+              _l('MUNKÁK MEGNYITÁSA', 'OPEN JOBS', 'AUFTRÄGE ÖFFNEN'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showJobsBrowser() async {
+    if (_jobs.isEmpty || !mounted) return;
+
+    final selected = await showModalBottomSheet<DriverJob>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF04101C),
+      builder: (sheetContext) => DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: .78,
+        minChildSize: .55,
+        maxChildSize: .94,
+        builder: (context, controller) => SafeArea(
+          child: ListView(
+            controller: controller,
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 24),
+            children: [
+              Center(
+                child: Container(
+                  width: 46,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.white24,
+                    borderRadius: BorderRadius.circular(99),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                _l('Következő feladatok', 'Assigned jobs', 'Zugewiesene Aufträge'),
+                style: const TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                _l(
+                  'Koppints egy munkára a pontos adatokhoz.',
+                  'Tap a job to see all exact details.',
+                  'Tippe auf einen Auftrag für alle Details.',
+                ),
+                style: const TextStyle(color: Colors.white54),
+              ),
+              const SizedBox(height: 14),
+              for (final job in _jobs)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 9),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(16),
+                    onTap: () => Navigator.pop(sheetContext, job),
+                    child: Ink(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF071725),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: job.id == _job?.id
+                              ? _green.withValues(alpha: .45)
+                              : const Color(0xFF173B54),
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  job.reference,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w900,
+                                    fontSize: 16,
+                                  ),
+                                ),
+                              ),
+                              Text(
+                                job.id == _job?.id
+                                    ? _l('AKTÍV', 'ACTIVE', 'AKTIV')
+                                    : _l('KÖVETKEZŐ', 'NEXT', 'NÄCHSTER'),
+                                style: TextStyle(
+                                  color: job.id == _job?.id ? _green : _blue,
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 7),
+                          Text(
+                            _jobRoute(job),
+                            style: const TextStyle(
+                              color: Colors.white70,
+                              height: 1.35,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            _l(
+                              '${job.stops.length} megálló',
+                              '${job.stops.length} stops',
+                              '${job.stops.length} Stopps',
+                            ),
+                            style: const TextStyle(
+                              color: Colors.white38,
+                              fontSize: 10,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (selected != null && mounted) {
+      await _showJobDetails(selected);
+    }
+  }
+
+  String _jobRoute(DriverJob job) {
+    if (job.stops.isEmpty) return '—';
+    final first = job.stops.first;
+    final last = job.stops.last;
+    final from = first.company.trim().isNotEmpty ? first.company : first.address;
+    final to = last.company.trim().isNotEmpty ? last.company : last.address;
+    return '$from → $to';
+  }
+
+  Future<void> _showJobDetails(DriverJob job) async {
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF04101C),
+      builder: (context) => DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: .86,
+        minChildSize: .60,
+        maxChildSize: .96,
+        builder: (context, controller) => SafeArea(
+          child: ListView(
+            controller: controller,
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
+            children: [
+              Text(
+                job.reference,
+                style: const TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                _jobRoute(job),
+                style: const TextStyle(color: _blue, fontWeight: FontWeight.w800),
+              ),
+              const SizedBox(height: 14),
+              for (final stop in job.stops)
+                Container(
+                  margin: const EdgeInsets.only(bottom: 10),
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF071725),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: const Color(0xFF173B54)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '${stop.order}. ${stop.type == 'delivery' ? _l('LERAKÓ', 'DELIVERY', 'ENTLADUNG') : _l('FELRAKÓ', 'PICKUP', 'BELADUNG')}',
+                        style: const TextStyle(
+                          color: _blue,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 5),
+                      if (stop.company.trim().isNotEmpty)
+                        Text(
+                          stop.company,
+                          style: const TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      if (stop.company.trim().isNotEmpty)
+                        const SizedBox(height: 4),
+                      SelectableText(
+                        stop.address,
+                        style: const TextStyle(color: Colors.white70, height: 1.35),
+                      ),
+                      if (stop.phone.trim().isNotEmpty) ...[
+                        const SizedBox(height: 5),
+                        SelectableText(
+                          stop.phone,
+                          style: const TextStyle(color: Colors.white54),
+                        ),
+                      ],
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: stop.address.trim().isEmpty
+                                  ? null
+                                  : () => unawaited(_openMapsForStop(stop)),
+                              icon: const Icon(Icons.navigation_rounded),
+                              label: Text(
+                                _l('NAVIGÁCIÓ', 'NAVIGATION', 'NAVIGATION'),
+                              ),
+                            ),
+                          ),
+                          if (stop.phone.trim().isNotEmpty) ...[
+                            const SizedBox(width: 8),
+                            IconButton.filledTonal(
+                              onPressed: () => unawaited(
+                                launchUrl(
+                                  Uri(scheme: 'tel', path: stop.phone.trim()),
+                                  mode: LaunchMode.externalApplication,
+                                ),
+                              ),
+                              icon: const Icon(Icons.call_rounded),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
   Widget _trip() {
     final job = _job;
@@ -1085,6 +1487,8 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
         style: const TextStyle(color: Colors.white54),
       ),
       const SizedBox(height: 14),
+      _jobsShortcut(),
+      const SizedBox(height: 12),
       if (job == null)
         _panel(
           Text(
@@ -1143,8 +1547,6 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
   }
 
   Widget _quickSignal() => _page([
-        _header(),
-        const SizedBox(height: 16),
         Text(
           _l('Gyors jelzés', 'Quick signal', 'Schnellmeldung'),
           style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w900),
@@ -1210,8 +1612,6 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
       ]);
 
   Widget _documents() => _page([
-        _header(),
-        const SizedBox(height: 16),
         Text(
           _l('Dokumentum', 'Documents', 'Dokumente'),
           style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w900),
