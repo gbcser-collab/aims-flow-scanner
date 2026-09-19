@@ -1,5 +1,6 @@
 enum AimsVoiceIntent {
   showJob,
+  showNextJobs,
   navigatePickup,
   navigateDelivery,
   arrivePickup,
@@ -74,7 +75,10 @@ class AimsVoiceCommandParser {
     bool has(String value) => s.contains(value);
     bool any(List<String> values) => values.any(has);
 
-    if (any(['mutasd a fuvarom', 'mutasd a fuvart', 'fuvarom'])) {
+    if (any(['kovetkezo feladat', 'kovetkezo munka', 'kovetkezo fuvar', 'mi a kovetkezo feladat'])) {
+      return AimsVoiceCommand(intent: AimsVoiceIntent.showNextJobs, rawText: raw);
+    }
+    if (any(['mutasd a fuvarom', 'mutasd a fuvart', 'fuvarom', 'aktualis fuvar', 'mostani fuvar'])) {
       return AimsVoiceCommand(intent: AimsVoiceIntent.showJob, rawText: raw);
     }
     if (any(['navigalj', 'navigacio', 'navi', 'utvonal']) && has('felrako')) {
@@ -95,7 +99,7 @@ class AimsVoiceCommandParser {
     if (any(['lerakas kesz', 'lerako kesz', 'lerakodtunk', 'lerakva'])) {
       return AimsVoiceCommand(intent: AimsVoiceIntent.deliveryComplete, rawText: raw);
     }
-    if (any(['kovetkezo cim', 'kovetkezo megallo', 'mi a kovetkezo cim'])) {
+    if (any(['kovetkezo cim', 'kovetkezo megallo', 'mi a kovetkezo cim', 'hova menjek', 'mi a kovetkezo'])) {
       return AimsVoiceCommand(intent: AimsVoiceIntent.nextAddress, rawText: raw);
     }
     if (any(['hivd a kapcsolattartot', 'kapcsolattarto hivasa', 'telefonalj a kapcsolattartonak'])) {
@@ -129,7 +133,10 @@ class AimsVoiceCommandParser {
     bool has(String value) => s.contains(value);
     bool any(List<String> values) => values.any(has);
 
-    if (any(['show my job', 'show the job', 'my job', 'job details'])) {
+    if (any(['next task', 'next job', 'next assigned job', 'what is my next job'])) {
+      return AimsVoiceCommand(intent: AimsVoiceIntent.showNextJobs, rawText: raw);
+    }
+    if (any(['show my job', 'show the job', 'my job', 'job details', 'current job'])) {
       return AimsVoiceCommand(intent: AimsVoiceIntent.showJob, rawText: raw);
     }
     if (any(['navigate', 'navigation', 'route', 'directions']) &&
@@ -186,7 +193,10 @@ class AimsVoiceCommandParser {
     bool has(String value) => s.contains(value);
     bool any(List<String> values) => values.any(has);
 
-    if (any(['zeige meinen auftrag', 'auftrag anzeigen', 'mein auftrag', 'auftragsdetails'])) {
+    if (any(['nachste aufgabe', 'nachster auftrag', 'nachster job', 'was ist der nachste auftrag'])) {
+      return AimsVoiceCommand(intent: AimsVoiceIntent.showNextJobs, rawText: raw);
+    }
+    if (any(['zeige meinen auftrag', 'auftrag anzeigen', 'mein auftrag', 'auftragsdetails', 'aktueller auftrag'])) {
       return AimsVoiceCommand(intent: AimsVoiceIntent.showJob, rawText: raw);
     }
     if (any(['navigiere', 'navigation', 'route']) &&
