@@ -86,10 +86,29 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
 
     expect(find.byType(AimsFlowLogo), findsOneWidget);
-    expect(find.text('DRIVER MODE'), findsOneWidget);
+    expect(find.text('AIMS FLOW'), findsOneWidget);
+    expect(find.byKey(const Key('flow-next-jobs')), findsOneWidget);
+    expect(find.byKey(const Key('aims-assistant-talk')), findsOneWidget);
     expect(find.text('KEZDŐLAP'), findsOneWidget);
     expect(find.text('FUVAROM'), findsOneWidget);
     expect(find.text('GYORS JELZÉS'), findsOneWidget);
     expect(find.text('DOKSI'), findsOneWidget);
   });
+  testWidgets('driver shell has no overflow on a narrow phone', (tester) async {
+    tester.view.physicalSize = const Size(360, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      const MaterialApp(home: DriverShellScreen()),
+    );
+    await tester.pump(const Duration(milliseconds: 500));
+
+    expect(tester.takeException(), isNull);
+    expect(find.byType(AimsFlowLogo), findsOneWidget);
+    expect(find.byKey(const Key('flow-next-jobs')), findsOneWidget);
+    expect(find.byKey(const Key('aims-assistant-talk')), findsOneWidget);
+  });
+
 }
