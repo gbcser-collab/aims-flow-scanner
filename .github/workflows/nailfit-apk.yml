@@ -1,0 +1,85 @@
+name: Build NAILFIT Android APK
+
+on:
+  push:
+    branches: [ nailfit-mobile ]
+    paths:
+      - 'nailfit/**'
+      - '.github/workflows/nailfit-apk.yml'
+  workflow_dispatch:
+
+jobs:
+  build-nailfit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Create clean Flutter shell
+        run: |
+          rm -rf /tmp/nailfit_app
+          flutter create --platforms=android --org hu.nailfit --project-name nailfit_app /tmp/nailfit_app
+          cp nailfit/pubspec.yaml /tmp/nailfit_app/pubspec.yaml
+          cp nailfit/lib/main.dart /tmp/nailfit_app/lib/main.dart
+          mkdir -p /tmp/nailfit_app/assets
+          cp nailfit/assets/index.html /tmp/nailfit_app/assets/index.html
+
+      - name: Apply NAILFIT launcher icon and Android permissions
+        run: |
+          mkdir -p /tmp/nailfit_app/android/app/src/main/res/drawable
+          cp nailfit/android/nailfit_launcher.xml /tmp/nailfit_app/android/app/src/main/res/drawable/nailfit_launcher.xml
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('/tmp/nailfit_app/android/app/src/main/AndroidManifest.xml')
+          s=p.read_text()
+          s=s.replace('<manifest xmlns:android="http://schemas.android.com/apk/res/android">',
+                      '<manifest xmlns:android="http://schemas.android.com/apk/res/android">\n'
+                      '    <uses-permission android:name="android.permission.CAMERA"/>\n'
+                      '    <uses-permission android:name="android.permission.INTERNET"/>\n'
+                      '    <uses-feature android:name="android.hardware.camera.any" android:required="false"/>')
+          s=s.replace('android:label="nailfit_app"', 'android:label="NAILFIT"')
+          s=s.replace('android:icon="@mipmap/ic_launcher"',
+                      'android:icon="@drawable/nailfit_launcher"\n'
+                      '        android:roundIcon="@drawable/nailfit_launcher"\n'
+                      '        android:usesCleartextTraffic="true"')
+          p.write_text(s)
+          PY
+
+      - name: Dependencies and analyze
+        working-directory: /tmp/nailfit_app
+        run: |
+          flutter pub get
+          flutter analyze
+
+      - name: Build installable APK
+        working-directory: /tmp/nailfit_app
+        run: flutter build apk --debug
+
+      - name: APK integrity check
+        run: |
+          test -s /tmp/nailfit_app/build/app/outputs/flutter-apk/app-debug.apk
+          unzip -t /tmp/nailfit_app/build/app/outputs/flutter-apk/app-debug.apk >/tmp/nailfit-apk-test.txt
+          tail -5 /tmp/nailfit-apk-test.txt
+          cp /tmp/nailfit_app/build/app/outputs/flutter-apk/app-debug.apk ./NAILFIT-v1.4.1-NF-MONOGRAM.apk
+          sha256sum ./NAILFIT-v1.4.1-NF-MONOGRAM.apk > ./NAILFIT-v1.4.1-NF-MONOGRAM.sha256
+
+      - name: Upload NAILFIT APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: NAILFIT-v1.4.1-NF-MONOGRAM-ANDROID
+          path: |
+            NAILFIT-v1.4.1-NF-MONOGRAM.apk
+            NAILFIT-v1.4.1-NF-MONOGRAM.sha256
+          if-no-files-found: error
