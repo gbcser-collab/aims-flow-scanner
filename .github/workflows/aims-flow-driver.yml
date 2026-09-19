@@ -132,6 +132,16 @@ jobs:
               'minSdk = flutter.minSdkVersion',
               'minSdk = 23',
           )
+          # ML Kit's text plugin references optional CJK/Devanagari classes
+          # that are not bundled because Flow uses Latin OCR. Keep release
+          # AOT optimization, but disable R8 shrinking so those optional
+          # references cannot break the installer build.
+          if 'isMinifyEnabled = false' not in text:
+              text=text.replace(
+                  'signingConfig = signingConfigs.getByName("debug")',
+                  'signingConfig = signingConfigs.getByName("debug")\n            isMinifyEnabled = false\n            isShrinkResources = false',
+                  1,
+              )
           if 'isCoreLibraryDesugaringEnabled = true' not in text:
               text=text.replace(
                   'compileOptions {',
