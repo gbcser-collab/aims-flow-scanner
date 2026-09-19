@@ -24,8 +24,12 @@ foreach ($j->fetchAll(PDO::FETCH_ASSOC) as $job) {
         $stops[]=[
             'id'=>(int)$row['id'],'type'=>$row['stop_type'],'order'=>(int)$row['stop_order'],
             'company'=>$row['company'] ?? '','address'=>$row['address'],
+            'phone'=>$row['contact_phone'] ?? '',
             'latitude'=>(float)$row['latitude'],'longitude'=>(float)$row['longitude'],
             'arrived'=>$row['arrival_notified_at'] !== null,
+            'completed'=>$row['completed_at'] !== null,
+            'arrivedAt'=>$row['arrival_notified_at'] ?? null,
+            'completedAt'=>$row['completed_at'] ?? null,
         ];
     }
     $jobs[]=[
