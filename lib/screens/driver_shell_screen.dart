@@ -925,7 +925,7 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
                     const SizedBox(height: 6),
                     Text(
                       hasUsefulAddress
-                          ? stop!.address.trim()
+                          ? stop.address.trim()
                           : _l(
                               'Pontos cím nincs megadva a fuvarban.',
                               'No exact address was provided for this job.',
