@@ -12,6 +12,7 @@ class NativeAuthResult {
     required this.forceCodeChange,
     required this.language,
     required this.adminPushRegistered,
+    required this.adminSessionToken,
   });
 
   final String role;
@@ -20,6 +21,7 @@ class NativeAuthResult {
   final bool forceCodeChange;
   final String language;
   final bool adminPushRegistered;
+  final String adminSessionToken;
 }
 
 class NativeRegistrationResult {
@@ -98,6 +100,7 @@ class NativeAuthService {
         forceCodeChange: body['forceCodeChange'] == true,
         language: body['language']?.toString() ?? 'hu',
         adminPushRegistered: body['adminPushRegistered'] == true,
+        adminSessionToken: body['adminSessionToken']?.toString() ?? '',
       );
     }
 
