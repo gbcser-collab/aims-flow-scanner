@@ -11,6 +11,7 @@ import '../services/aims_voice_service.dart';
 import '../services/driver_api_service.dart';
 import '../services/driver_push_service.dart';
 import '../services/vehicle_tracking_service.dart';
+import '../widgets/aims_flow_approved_logo.dart';
 import 'fuel_receipt_screen.dart';
 import 'scanner_screen.dart';
 
@@ -750,52 +751,60 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
           Row(
             children: [
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                child: Row(
                   children: [
-                    FittedBox(
-                      fit: BoxFit.scaleDown,
-                      alignment: Alignment.centerLeft,
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: const [
-                          Text(
-                            'AIMS',
-                            style: TextStyle(
-                              letterSpacing: 3.0,
-                              color: Colors.white,
-                              fontWeight: FontWeight.w900,
-                              fontSize: 21,
+                    const AimsFlowApprovedLogo(size: 40),
+                    const SizedBox(width: 10),
+                    Flexible(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          FittedBox(
+                            fit: BoxFit.scaleDown,
+                            alignment: Alignment.centerLeft,
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: const [
+                                Text(
+                                  'AIMS',
+                                  style: TextStyle(
+                                    letterSpacing: 2.7,
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w900,
+                                    fontSize: 19,
+                                  ),
+                                ),
+                                SizedBox(width: 7),
+                                Text(
+                                  'FLOW',
+                                  style: TextStyle(
+                                    letterSpacing: 2.0,
+                                    color: _blue,
+                                    fontWeight: FontWeight.w900,
+                                    fontSize: 19,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
-                          SizedBox(width: 8),
-                          Text(
-                            'FLOW',
+                          const SizedBox(height: 2),
+                          const Text(
+                            'DRIVER MODE',
+                            maxLines: 1,
                             style: TextStyle(
-                              letterSpacing: 2.3,
-                              color: _blue,
+                              color: Colors.white54,
+                              fontSize: 9,
+                              letterSpacing: 1.2,
                               fontWeight: FontWeight.w900,
-                              fontSize: 21,
                             ),
                           ),
                         ],
                       ),
                     ),
-                    const SizedBox(height: 2),
-                    const Text(
-                      'DRIVER MODE',
-                      maxLines: 1,
-                      style: TextStyle(
-                        color: Colors.white54,
-                        fontSize: 9,
-                        letterSpacing: 1.3,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
                   ],
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 10),
               _status(
                 _trackingStatus?.running == true
                     ? _l('GPS AKTÍV', 'GPS ACTIVE', 'GPS AKTIV')
