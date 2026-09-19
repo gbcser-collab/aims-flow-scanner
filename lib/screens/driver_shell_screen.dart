@@ -578,6 +578,33 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
                 'You have $count more assigned job(s). I opened the list.',
                 'Du hast $count weitere Aufträge. Ich habe die Liste geöffnet.',
               );
+      case AimsVoiceIntent.navigateNext:
+        if (current == null) return noStop;
+        await _openMapsForStop(current);
+        return _l(
+          'Indítom a navigációt a következő címre.',
+          'Starting navigation to the next address.',
+          'Ich starte die Navigation zur nächsten Adresse.',
+        );
+      case AimsVoiceIntent.assistantHelp:
+        return _l(
+          'Tudok fuvart és következő munkát mutatni, címet felolvasni, navigációt indítani, kapcsolattartót hívni, érkezést és rakodást rögzíteni, CMR-t vagy tankolási bizonylatot nyitni, valamint késést, várakozást, műszaki hibát és sürgős jelzést küldeni.',
+          'I can show the current and next jobs, read addresses, start navigation, call contacts, record arrivals and loading, open CMR or fuel receipt scanning, and send delay, waiting, technical or urgent alerts.',
+          'Ich kann aktuelle und nächste Aufträge zeigen, Adressen vorlesen, Navigation starten, Kontakte anrufen, Ankunft und Be-/Entladung erfassen, CMR oder Tankbelege öffnen und Meldungen senden.',
+        );
+      case AimsVoiceIntent.trackingStatus:
+        final running = _trackingStatus?.running == true;
+        return running
+            ? _l(
+                'A GPS követés aktív.',
+                'GPS tracking is active.',
+                'GPS-Tracking ist aktiv.',
+              )
+            : _l(
+                'A GPS követés jelenleg nem aktív.',
+                'GPS tracking is not active right now.',
+                'GPS-Tracking ist derzeit nicht aktiv.',
+              );
       case AimsVoiceIntent.navigatePickup:
         final stop = _nextStopOfType('pickup');
         if (stop == null) {
