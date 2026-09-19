@@ -85,10 +85,29 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
 
   Future<void> _initialize() async {
     final prefs = await SharedPreferences.getInstance();
+    final role = (prefs.getString('aims_user_role') ?? 'driver').trim();
     var plate = (prefs.getString(_prefsPlate) ?? '').trim().toUpperCase();
     final driverName = (prefs.getString(_prefsDriverName) ?? '').trim();
 
     final status = await _tracking.currentStatus();
+
+    // Admin phones must never inherit a stale driver plate or start driver GPS.
+    if (role == 'admin') {
+      if (!mounted) return;
+      setState(() {
+        _plate = '';
+        _driverName = 'AIMS Admin';
+        _trackingStatus = status;
+        _loading = false;
+        _message = _l(
+          'Admin push aktív. A jármű- és sofőrértesítések erre a telefonra érkeznek.',
+          'Admin push is active. Vehicle and driver alerts are delivered to this phone.',
+          'Admin-Push ist aktiv. Fahrzeug- und Fahrerwarnungen kommen auf dieses Telefon.',
+        );
+      });
+      return;
+    }
+
     if (plate.isEmpty && status.vehicleLabel.trim().isNotEmpty) {
       plate = status.vehicleLabel.trim().toUpperCase();
     }
@@ -761,7 +780,9 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  _plate.isEmpty ? '—' : _plate,
+                  _plate.isEmpty
+                      ? (_driverName.isEmpty ? '—' : _driverName)
+                      : _plate,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
