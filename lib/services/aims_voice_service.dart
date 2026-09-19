@@ -133,6 +133,14 @@ class AimsVoiceService {
     await _enterCommandMode();
   }
 
+  Future<void> executeText(String text) async {
+    final value = text.trim();
+    if (value.isEmpty) return;
+    final ok = await initialize();
+    if (!ok) return;
+    await _executeCommandText(value);
+  }
+
   Future<void> requestAndroidAssistantRole() async {
     await AimsHandsFreePlatform.requestAssistantRole();
   }
@@ -175,17 +183,19 @@ class AimsVoiceService {
 
     final options = SpeechListenOptions(
       listenMode: wakeOnly ? ListenMode.search : ListenMode.dictation,
-      onDevice: wakeOnly,
+      // Hungarian offline recognition is inconsistent across Android builds.
+      // Use the higher quality recognizer while Hands-Free is explicitly on.
+      onDevice: false,
       cancelOnError: false,
       partialResults: true,
       autoPunctuation: false,
       enableHapticFeedback: false,
       pauseFor: wakeOnly
-          ? const Duration(seconds: 2)
-          : const Duration(seconds: 4),
+          ? const Duration(milliseconds: 1400)
+          : const Duration(seconds: 3),
       listenFor: wakeOnly
-          ? const Duration(seconds: 10)
-          : const Duration(seconds: 12),
+          ? const Duration(seconds: 8)
+          : const Duration(seconds: 14),
       localeId: _localeId,
       contextualPhrases: switch (_locale.languageCode) {
         'en' => const [
@@ -299,14 +309,18 @@ class AimsVoiceService {
       'aims',
       'aimsz',
       'aimsz flow',
+      'aim',
       'ejms',
       'ejmsz',
       'ejms flow',
+      'ejm',
       'eims',
       'eimsz',
       'ems',
       'emsz',
       'ems flow',
+      'emz',
+      'emsz flow',
     ];
     for (final alias in aliases) {
       final index = normalized.indexOf(alias);
@@ -445,9 +459,13 @@ class AimsVoiceService {
 
     await _tts.setLanguage(_locale.ttsLocale);
     await _selectPreferredVoice();
-    await _tts.setSpeechRate(0.46);
+
+    // Do not fake a "male" voice by pitch-shifting an arbitrary Android voice.
+    // That was the main source of the metallic/robotic sound. Prefer a
+    // network/neural voice and keep its native pitch.
+    await _tts.setSpeechRate(0.50);
     await _tts.setVolume(1.0);
-    await _tts.setPitch(_maleVoiceMatched ? 0.92 : 0.78);
+    await _tts.setPitch(1.0);
     await _tts.awaitSpeakCompletion(true);
   }
 
@@ -480,22 +498,25 @@ class AimsVoiceService {
         ].where((v) => v != null).join(' ').toLowerCase();
 
         var score = 0;
-        if (locale == wantedLocale) score += 200;
-        if (_looksMaleVoice(haystack)) {
-          score += 1000;
-        }
+        if (locale == wantedLocale) score += 500;
+
+        // Natural/network voices are more important than synthetic pitch.
         if (haystack.contains('neural') ||
             haystack.contains('natural') ||
             haystack.contains('wavenet')) {
-          score += 180;
+          score += 1400;
         }
+        if (haystack.contains('network')) score += 900;
         if ((voice['network_required'] ?? '').toString() == 'true') {
-          score += 50;
+          score += 700;
+        }
+        if (_looksMaleVoice(haystack)) {
+          score += 250;
         }
 
         final quality =
             int.tryParse((voice['quality'] ?? '').toString()) ?? 0;
-        score += quality ~/ 10;
+        score += quality;
 
         if (score > bestScore) {
           bestScore = score;
