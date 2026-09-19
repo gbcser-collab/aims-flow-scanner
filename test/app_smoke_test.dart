@@ -104,7 +104,7 @@ void main() {
     expect(find.byKey(const Key('aims-assistant-talk')), findsOneWidget);
     expect(find.text('KEZDŐLAP'), findsOneWidget);
     expect(find.text('FUVAROM'), findsOneWidget);
-    expect(find.text('GYORS JELZÉS'), findsOneWidget);
+    expect(find.text('JELZÉS'), findsOneWidget);
     expect(find.text('DOKSI'), findsOneWidget);
   });
   testWidgets('driver shell has no overflow on a narrow phone', (tester) async {
