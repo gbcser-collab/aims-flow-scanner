@@ -58,7 +58,6 @@ class AimsVoiceService {
   bool _commandMode = false;
   bool _speaking = false;
   bool _handlingResult = false;
-  bool _maleVoiceMatched = false;
   String _localeId = 'hu_HU';
   String _lastHeard = '';
 
@@ -470,8 +469,6 @@ class AimsVoiceService {
   }
 
   Future<void> _selectPreferredVoice() async {
-    _maleVoiceMatched = false;
-
     try {
       final raw = await _tts.getVoices;
       if (raw is! List) return;
@@ -532,14 +529,8 @@ class AimsVoiceService {
 
       await _tts.setVoice({'name': name, 'locale': locale});
 
-      final voiceText = [
-        name,
-        best['gender'],
-        best['features'],
-      ].where((v) => v != null).join(' ').toLowerCase();
-      _maleVoiceMatched = _looksMaleVoice(voiceText);
     } catch (_) {
-      _maleVoiceMatched = false;
+      return;
     }
   }
 
