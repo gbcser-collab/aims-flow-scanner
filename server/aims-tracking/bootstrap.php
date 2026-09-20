@@ -1,3 +1,5 @@
+[Reading 401 lines from start (total: 401 lines, 0 remaining)]
+
 <?php
 declare(strict_types=1);
 
@@ -281,6 +283,12 @@ function aims_db(): PDO {
     if (!isset($jobColumns['partial_load'])) {
         $pdo->exec('ALTER TABLE jobs ADD COLUMN partial_load INTEGER NOT NULL DEFAULT 0');
     }
+    if (!isset($jobColumns['source_order_id'])) {
+        $pdo->exec('ALTER TABLE jobs ADD COLUMN source_order_id TEXT');
+    }
+    if (!isset($jobColumns['order_payload_json'])) {
+        $pdo->exec('ALTER TABLE jobs ADD COLUMN order_payload_json TEXT');
+    }
 
     $stopColumns = [];
     foreach ($pdo->query('PRAGMA table_info(job_stops)')->fetchAll(PDO::FETCH_ASSOC) as $column) {
@@ -393,3 +401,5 @@ function aims_vehicle_for_point(PDO $pdo, string $deviceId, string $vehicleLabel
     }
     return $vehicle;
 }
+
+[executed on device: GABOR-PC (4f5060cc-3a10-4200-947d-55b7a0fc1e22)]
