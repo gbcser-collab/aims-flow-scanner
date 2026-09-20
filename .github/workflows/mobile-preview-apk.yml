@@ -35,10 +35,10 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Generate Android platform
+      - name: Generate isolated Android preview platform
         run: |
           rm -rf /tmp/aims_preview_template
-          flutter create --platforms=android --org hu.logisticaims --project-name aims_flow_scanner /tmp/aims_preview_template
+          flutter create --platforms=android --org hu.logisticaims.preview --project-name aims_flow_r88_preview /tmp/aims_preview_template
           cp -R /tmp/aims_preview_template/android ./android
           python3 - <<'PY'
           from pathlib import Path
@@ -46,7 +46,7 @@ jobs:
           manifest = Path('android/app/src/main/AndroidManifest.xml')
           text = manifest.read_text()
           text = text.replace(
-              'android:label="aims_flow_scanner"',
+              'android:label="aims_flow_r88_preview"',
               'android:label="AIMS Flow R88 Preview"',
           )
           if 'android.permission.INTERNET' not in text:
@@ -59,6 +59,9 @@ jobs:
 
           gradle = Path('android/app/build.gradle.kts')
           g = gradle.read_text()
+          expected = 'applicationId = "hu.logisticaims.preview.aims_flow_r88_preview"'
+          if expected not in g:
+              raise SystemExit('Preview applicationId was not generated as expected')
           g = g.replace(
               'minSdk = flutter.minSdkVersion',
               'minSdk = 23',
@@ -79,6 +82,7 @@ jobs:
               else:
                   g += '\n\ndependencies {\n    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")\n}\n'
           gradle.write_text(g)
+          print(expected)
           PY
 
       - name: Dependencies
