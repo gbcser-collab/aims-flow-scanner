@@ -370,22 +370,52 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
                   Positioned(
                     left: 0,
                     right: 0,
-                    bottom: 22,
+                    bottom: 14,
                     child: Center(
-                      child: Semantics(
-                        button: true,
-                        label: _l('CMR fényképezése és feldolgozása', 'Photograph and process CMR', 'CMR fotografieren und verarbeiten'),
-                        child: GestureDetector(
-                          key: const ValueKey('capture-and-process'),
-                          onTap: _processing ? null : _captureAndProcess,
-                          child: Container(
-                            width: 82,
-                            height: 82,
-                            decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: Colors.white, width: 5), color: Colors.white.withValues(alpha: .18)),
-                            alignment: Alignment.center,
-                            child: Container(width: 60, height: 60, decoration: const BoxDecoration(shape: BoxShape.circle, color: Colors.white)),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Semantics(
+                            button: true,
+                            label: _l(
+                              'CMR fényképezése és feldolgozása',
+                              'Photograph and process CMR',
+                              'CMR fotografieren und verarbeiten',
+                            ),
+                            child: GestureDetector(
+                              key: const ValueKey('capture-and-process'),
+                              onTap: _processing ? null : _captureAndProcess,
+                              child: Container(
+                                width: 86,
+                                height: 86,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  border: Border.all(color: Colors.white, width: 5),
+                                  color: Colors.white.withValues(alpha: .18),
+                                ),
+                                alignment: Alignment.center,
+                                child: Container(
+                                  width: 62,
+                                  height: 62,
+                                  decoration: const BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ),
+                            ),
                           ),
-                        ),
+                          const SizedBox(height: 6),
+                          Text(
+                            _l('FOTÓZÁS', 'TAKE PHOTO', 'FOTO'),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 1.2,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ),
