@@ -8,6 +8,9 @@ import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'country_code_service.dart';
+import 'roaming_resilience.dart';
+
 class VehicleTrackingStatus {
   const VehicleTrackingStatus({
     required this.enabled,
@@ -46,6 +49,12 @@ class VehicleTrackingService {
   final _statusController = StreamController<VehicleTrackingStatus>.broadcast();
   StreamSubscription<Position>? _subscription;
   Timer? _heartbeatTimer;
+  Timer? _retryTimer;
+  Future<void> _queueIoTail = Future<void>.value();
+  Future<void> _positionTail = Future<void>.value();
+  bool _flushRunning = false;
+  bool _flushAgain = false;
+  int _flushFailures = 0;
   Position? _lastPosition;
   DateTime? _lastSentAt;
   String? _lastError;
@@ -100,6 +109,8 @@ class VehicleTrackingService {
     _subscription = null;
     _heartbeatTimer?.cancel();
     _heartbeatTimer = null;
+    _retryTimer?.cancel();
+    _retryTimer = null;
     _emit();
   }
 
@@ -157,12 +168,7 @@ class VehicleTrackingService {
     );
 
     _subscription = Geolocator.getPositionStream(locationSettings: settings).listen(
-      (position) async {
-        _lastPosition = position;
-        _lastError = null;
-        _emit();
-        await _queueAndFlush(position, source: 'stream');
-      },
+      _enqueuePosition,
       onError: (Object error) {
         _lastError = error.toString();
         _emit();
@@ -174,7 +180,20 @@ class VehicleTrackingService {
     _heartbeatTimer = Timer.periodic(const Duration(minutes: 1), (_) {
       unawaited(_sendHeartbeat());
     });
+    unawaited(_requestFlush());
     _emit();
+  }
+
+  void _enqueuePosition(Position position) {
+    _lastPosition = position;
+    _lastError = null;
+    _emit();
+    _positionTail = _positionTail.then(
+      (_) => _queueAndFlush(position, source: 'stream'),
+    ).catchError((Object error) {
+      _lastError = 'GPS feldolgozási hiba: $error';
+      _emit();
+    });
   }
 
   Future<void> _sendHeartbeat() async {
@@ -209,54 +228,176 @@ class VehicleTrackingService {
     return file;
   }
 
+  Future<File> _quarantineFile() async {
+    final dir = await getApplicationDocumentsDirectory();
+    return File('${dir.path}/aims_tracking_queue_corrupt.jsonl');
+  }
+
+  Future<T> _withQueueLock<T>(Future<T> Function() action) {
+    final completer = Completer<T>();
+    _queueIoTail = _queueIoTail.then((_) async {
+      try {
+        completer.complete(await action());
+      } catch (error, stackTrace) {
+        completer.completeError(error, stackTrace);
+      }
+    });
+    return completer.future;
+  }
+
+  Future<List<String>> _queueSnapshot({int maxLines = 25}) {
+    return _withQueueLock(() async {
+      final file = await _queueFile();
+      final lines = (await file.readAsLines())
+          .where((line) => line.trim().isNotEmpty)
+          .toList();
+      return lines.take(maxLines).toList();
+    });
+  }
+
+  Future<bool> _removeQueuePrefix(List<String> consumed) {
+    return _withQueueLock(() async {
+      if (consumed.isEmpty) return true;
+      final file = await _queueFile();
+      final current = (await file.readAsLines())
+          .where((line) => line.trim().isNotEmpty)
+          .toList();
+      if (current.length < consumed.length) return false;
+      for (var i = 0; i < consumed.length; i++) {
+        if (current[i] != consumed[i]) return false;
+      }
+      final remaining = current.sublist(consumed.length);
+      await file.writeAsString(
+        remaining.isEmpty ? '' : '${remaining.join('\n')}\n',
+        flush: true,
+      );
+      return true;
+    });
+  }
+
+  Future<void> _quarantineLine(String line, String reason) {
+    return _withQueueLock(() async {
+      final file = await _quarantineFile();
+      final record = jsonEncode({
+        'quarantinedAt': DateTime.now().toUtc().toIso8601String(),
+        'reason': reason,
+        'raw': line,
+      });
+      await file.writeAsString(
+        '$record\n',
+        mode: FileMode.append,
+        flush: true,
+      );
+    });
+  }
+
   Future<void> _queueAndFlush(Position position, {required String source}) async {
+    if (!RoamingResilience.validCoordinates(
+      position.latitude,
+      position.longitude,
+    )) {
+      _lastError = 'Érvénytelen GPS pozíciót nem küldtem el.';
+      _emit();
+      return;
+    }
+
+    final countryCode = await CountryCodeService.instance.resolve(position);
+
     final point = <String, dynamic>{
+      'pointId': RoamingResilience.pointId(
+        deviceId: _deviceId,
+        timestamp: position.timestamp,
+        latitude: position.latitude,
+        longitude: position.longitude,
+      ),
       'deviceId': _deviceId,
       'vehicleLabel': _vehicleLabel,
+      'countryCode': countryCode,
       'timestamp': position.timestamp.toUtc().toIso8601String(),
       'latitude': position.latitude,
       'longitude': position.longitude,
-      'accuracy': position.accuracy,
-      'speedMps': max(0, position.speed),
-      'heading': position.heading,
-      'altitude': position.altitude,
+      'accuracy': RoamingResilience.finiteOrZero(position.accuracy),
+      'speedMps': max(0, RoamingResilience.finiteOrZero(position.speed)),
+      'heading': RoamingResilience.finiteOrZero(position.heading),
+      'altitude': RoamingResilience.finiteOrZero(position.altitude),
       'source': source,
     };
 
-    final file = await _queueFile();
-    await file.writeAsString('${jsonEncode(point)}\n', mode: FileMode.append, flush: true);
-    await _flushQueue();
+    await _withQueueLock(() async {
+      final file = await _queueFile();
+      await file.writeAsString(
+        '${jsonEncode(point)}\n',
+        mode: FileMode.append,
+        flush: true,
+      );
+    });
+    unawaited(_requestFlush());
   }
 
-  Future<void> _flushQueue() async {
+  Future<void> _requestFlush() async {
+    if (_flushRunning) {
+      _flushAgain = true;
+      return;
+    }
+    _flushRunning = true;
+    try {
+      do {
+        _flushAgain = false;
+        await _flushQueuePass();
+      } while (_flushAgain);
+    } finally {
+      _flushRunning = false;
+    }
+  }
+
+  void _scheduleRetry(String message) {
+    _flushFailures++;
+    _lastError = message;
+    _retryTimer?.cancel();
+    final delay = RoamingResilience.retryDelay(_flushFailures);
+    _retryTimer = Timer(delay, () => unawaited(_requestFlush()));
+    _emit();
+  }
+
+  Future<void> _flushQueuePass() async {
     if (_endpoint.trim().isEmpty || _token.trim().isEmpty) {
       _lastError = 'A nyomkövető szerver kulcsa még nincs beállítva.';
       _emit();
       return;
     }
 
-    final file = await _queueFile();
-    final lines = (await file.readAsLines()).where((line) => line.trim().isNotEmpty).toList();
-    if (lines.isEmpty) return;
+    final lines = await _queueSnapshot();
+    if (lines.isEmpty) {
+      _flushFailures = 0;
+      return;
+    }
 
-    final remaining = <String>[];
-    for (var i = 0; i < lines.length; i++) {
-      final line = lines[i];
+    final consumed = <String>[];
+    var networkFailed = false;
+
+    for (final line in lines) {
+      Map<String, dynamic>? payload;
       try {
-        var outbound = line;
-        try {
-          final decoded = jsonDecode(line);
-          if (decoded is Map) {
-            final payload = Map<String, dynamic>.from(decoded);
-            final captured = DateTime.tryParse(payload['timestamp']?.toString() ?? '');
-            final now = DateTime.now().toUtc();
-            payload['sentAt'] = now.toIso8601String();
-            payload['delayed'] = captured != null &&
-                now.difference(captured.toUtc()) > const Duration(minutes: 2);
-            outbound = jsonEncode(payload);
-          }
-        } catch (_) {}
+        final decoded = jsonDecode(line);
+        if (decoded is Map) {
+          payload = Map<String, dynamic>.from(decoded);
+        }
+      } catch (_) {}
 
+      if (payload == null) {
+        await _quarantineLine(line, 'invalid_json');
+        consumed.add(line);
+        continue;
+      }
+
+      final captured =
+          DateTime.tryParse(payload['timestamp']?.toString() ?? '');
+      final now = DateTime.now().toUtc();
+      payload['sentAt'] = now.toIso8601String();
+      payload['delayed'] =
+          captured != null && RoamingResilience.isDelayed(captured, now);
+
+      try {
         final response = await http
             .post(
               Uri.parse(_endpoint),
@@ -264,28 +405,54 @@ class VehicleTrackingService {
                 'Content-Type': 'application/json',
                 'Authorization': 'Bearer $_token',
               },
-              body: outbound,
+              body: jsonEncode(payload),
             )
             .timeout(const Duration(seconds: 8));
-        if (response.statusCode < 200 || response.statusCode >= 300) {
-          remaining.addAll(lines.sublist(i));
-          _lastError = 'Szerverhiba: HTTP ${response.statusCode}';
-          break;
+
+        if (response.statusCode >= 200 && response.statusCode < 300) {
+          consumed.add(line);
+          _lastSentAt = DateTime.now();
+          _lastError = null;
+          continue;
         }
-        _lastSentAt = DateTime.now();
-        _lastError = null;
+
+        if (response.statusCode == 400 || response.statusCode == 422) {
+          await _quarantineLine(
+            line,
+            'server_rejected_${response.statusCode}',
+          );
+          consumed.add(line);
+          continue;
+        }
+
+        networkFailed = true;
+        _scheduleRetry('Szerverhiba: HTTP ${response.statusCode}');
+        break;
       } catch (_) {
-        remaining.addAll(lines.sublist(i));
-        _lastError = 'Nincs kapcsolat, a pozíció helyben sorban áll.';
+        networkFailed = true;
+        _scheduleRetry(
+          'Nincs kapcsolat, a pozíció biztonságosan helyben sorban áll.',
+        );
         break;
       }
     }
 
-    await file.writeAsString(
-      remaining.isEmpty ? '' : '${remaining.join('\n')}\n',
-      flush: true,
-    );
-    _emit();
+    if (consumed.isNotEmpty) {
+      final removed = await _removeQueuePrefix(consumed);
+      if (!removed) {
+        _flushAgain = true;
+      }
+    }
+
+    if (!networkFailed) {
+      _flushFailures = 0;
+      _retryTimer?.cancel();
+      _retryTimer = null;
+      if (lines.length >= 25) {
+        _flushAgain = true;
+      }
+      _emit();
+    }
   }
 
   VehicleTrackingStatus get _status => VehicleTrackingStatus(
