@@ -76,7 +76,6 @@ class DriverPushService {
         description: 'Új fuvar és részrakomány értesítések',
         importance: Importance.max,
         playSound: true,
-        sound: const RawResourceAndroidNotificationSound('notification'),
         enableVibration: true,
       ),
     );
@@ -277,7 +276,6 @@ class DriverPushService {
         description: 'Új fuvar és részrakomány értesítések',
         importance: Importance.max,
         playSound: true,
-        sound: const RawResourceAndroidNotificationSound('notification'),
         enableVibration: true,
       ),
     );
@@ -300,7 +298,6 @@ class DriverPushService {
       importance: Importance.max,
       priority: Priority.max,
       playSound: true,
-      sound: const RawResourceAndroidNotificationSound('notification'),
       enableVibration: true,
       category: AndroidNotificationCategory.message,
       visibility: NotificationVisibility.public,
