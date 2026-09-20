@@ -60,6 +60,8 @@ class AimsVoiceService {
   bool _handlingResult = false;
   String _localeId = 'hu_HU';
   String _lastHeard = '';
+  String _commandBuffer = '';
+  Timer? _commandTimeout;
 
   Stream<AimsVoiceState> get states => _states.stream;
   bool get enabled => _enabled;
@@ -109,6 +111,8 @@ class AimsVoiceService {
   Future<void> disableHandsFree() async {
     _enabled = false;
     _commandMode = false;
+    _commandBuffer = '';
+    _commandTimeout?.cancel();
     _restartTimer?.cancel();
     await _speech.cancel();
     await _tts.stop();
@@ -157,6 +161,18 @@ class AimsVoiceService {
   Future<void> _startCommandListening() async {
     if (!_enabled || _speaking || _handlingResult) return;
     _commandMode = true;
+    _commandBuffer = '';
+    _commandTimeout?.cancel();
+    _commandTimeout = Timer(const Duration(seconds: 10), () {
+      if (_enabled && _commandMode && !_handlingResult) {
+        final buffered = _commandBuffer.trim();
+        if (buffered.isNotEmpty) {
+          unawaited(_executeCommandText(buffered));
+        } else {
+          unawaited(_retryCommand());
+        }
+      }
+    });
     await _startListening(
       mode: AimsVoiceMode.command,
       message: _assistantGreeting(),
@@ -276,6 +292,7 @@ class AimsVoiceService {
     _lastHeard = heard;
 
     if (_commandMode) {
+      _commandBuffer = heard;
       _emit(
         AimsVoiceState(
           enabled: _enabled,
@@ -294,6 +311,10 @@ class AimsVoiceService {
     final wake = _wakeMatch(normalized);
     if (wake == null || _handlingResult) return;
 
+    // A wake-word hit is user feedback-worthy immediately. Stop the current
+    // recognition session so Android cannot swallow the following command
+    // while the assistant is switching modes.
+    unawaited(_speech.stop());
     final suffix = normalized.substring(wake.$2).trim();
     if (suffix.isNotEmpty) {
       unawaited(_executeCommandText(suffix));
@@ -349,8 +370,25 @@ class AimsVoiceService {
     await _startCommandListening();
   }
 
+  Future<void> _retryCommand() async {
+    if (_handlingResult) return;
+    _commandTimeout?.cancel();
+    _commandBuffer = '';
+    _handlingResult = true;
+    try {
+      await _speech.stop();
+      await _speak('Nem hallottam jól. Mondd még egyszer.');
+      _commandMode = true;
+    } finally {
+      _handlingResult = false;
+    }
+    await _startCommandListening();
+  }
+
   Future<void> _executeCommandText(String text) async {
     if (_handlingResult) return;
+    _commandTimeout?.cancel();
+    _commandBuffer = '';
     _handlingResult = true;
     _commandMode = false;
 
@@ -392,7 +430,15 @@ class AimsVoiceService {
     try {
       await _speech.stop();
       await _tts.stop();
-      await _tts.speak(text);
+      final result = await _tts.speak(text);
+      if (result != 1) {
+        _emit(AimsVoiceState(
+          enabled: _enabled,
+          mode: AimsVoiceMode.error,
+          message: _locale.t('command_failed'),
+          lastHeard: _lastHeard,
+        ));
+      }
     } finally {
       _speaking = false;
     }
@@ -403,17 +449,26 @@ class AimsVoiceService {
     if (!_enabled || _speaking || _handlingResult) return;
     if (s.contains('done') || s.contains('notlistening')) {
       _restartTimer?.cancel();
+      if (_commandMode && _commandBuffer.trim().isNotEmpty) {
+        final buffered = _commandBuffer.trim();
+        _restartTimer = Timer(const Duration(milliseconds: 250), () {
+          if (_enabled && !_speaking && !_handlingResult && _commandMode) {
+            unawaited(_executeCommandText(buffered));
+          }
+        });
+        return;
+      }
       _restartTimer = Timer(
         _commandMode
             ? const Duration(milliseconds: 350)
             : const Duration(milliseconds: 1200),
         () {
-        if (!_enabled || _speaking || _handlingResult) return;
-        if (_commandMode) {
-          unawaited(_startCommandListening());
-        } else {
-          unawaited(_startWakeListening());
-        }
+          if (!_enabled || _speaking || _handlingResult) return;
+          if (_commandMode) {
+            unawaited(_startCommandListening());
+          } else {
+            unawaited(_startWakeListening());
+          }
         },
       );
     }
