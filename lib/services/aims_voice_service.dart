@@ -144,6 +144,20 @@ class AimsVoiceService {
     await _executeCommandText(value);
   }
 
+  /// Driver-flow announcement using the same preferred natural/male TTS voice
+  /// as the hands-free assistant. This works even when wake-word listening is off.
+  Future<void> announce(String text) async {
+    final value = text.trim();
+    if (value.isEmpty) return;
+    final ok = await initialize();
+    if (!ok) return;
+    final resumeWakeWord = _enabled;
+    await _speak(value);
+    if (resumeWakeWord && _enabled && !_handlingResult) {
+      await _startWakeListening();
+    }
+  }
+
   Future<void> requestAndroidAssistantRole() async {
     await AimsHandsFreePlatform.requestAssistantRole();
   }
