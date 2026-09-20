@@ -1,3 +1,5 @@
+[Reading 249 lines from start (total: 249 lines, 0 remaining)]
+
 <?php
 declare(strict_types=1);
 require __DIR__ . '/bootstrap.php';
@@ -23,6 +25,9 @@ if (!$vehicle) aims_json(['ok' => false, 'error' => 'vehicle_not_registered'], 4
 
 $reference = trim((string)($job['reference'] ?? ''));
 $partialLoad = (($job['partialLoad'] ?? $job['partial'] ?? false) === true) ? 1 : 0;
+$sourceOrderId = trim((string)($job['sourceOrderId'] ?? ''));
+$orderData = $job['orderData'] ?? [];
+if (!is_array($orderData)) $orderData = [];
 if ($reference === '') aims_json(['ok' => false, 'error' => 'missing_reference'], 422);
 
 function aims_http_get_json(string $url, array $headers): ?array {
@@ -118,6 +123,7 @@ foreach (['pickups' => 'pickup', 'deliveries' => 'delivery'] as $key => $type) {
             'order' => count($rawStops) + 1,
             'company' => trim((string)($stop['company'] ?? '')),
             'address' => $address,
+            'phone' => trim((string)($stop['phone'] ?? $stop['contactPhone'] ?? '')),
             'latitude' => isset($stop['latitude']) ? (float)$stop['latitude'] : null,
             'longitude' => isset($stop['longitude']) ? (float)$stop['longitude'] : null,
             'radius' => isset($stop['radiusMeters']) ? max(80.0, min(500.0, (float)$stop['radiusMeters'])) : 180.0,
@@ -153,35 +159,51 @@ if ($errors) aims_json(['ok' => false, 'error' => 'stop_geocode_failed', 'stops'
 $now = gmdate(DateTimeInterface::ATOM);
 $pdo->beginTransaction();
 try {
-    $existing = $pdo->prepare('SELECT id FROM jobs WHERE reference = :reference AND vehicle_id = :vehicle');
-    $existing->execute([':reference' => $reference, ':vehicle' => $vehicle['id']]);
+    if ($sourceOrderId !== '') {
+        $existing = $pdo->prepare('SELECT id FROM jobs WHERE source_order_id = :sourceOrder AND vehicle_id = :vehicle ORDER BY id DESC LIMIT 1');
+        $existing->execute([':sourceOrder' => $sourceOrderId, ':vehicle' => $vehicle['id']]);
+    } else {
+        $existing = $pdo->prepare('SELECT id FROM jobs WHERE reference = :reference AND vehicle_id = :vehicle ORDER BY id DESC LIMIT 1');
+        $existing->execute([':reference' => $reference, ':vehicle' => $vehicle['id']]);
+    }
     $jobId = $existing->fetchColumn();
+    $orderJson = $orderData ? json_encode($orderData, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) : null;
 
     if ($jobId === false) {
-        $insert = $pdo->prepare('INSERT INTO jobs (reference, vehicle_id, status, created_at, updated_at, partial_load)
-                                 VALUES (:reference, :vehicle, "active", :created, :updated, :partial)');
+        $insert = $pdo->prepare('INSERT INTO jobs (reference, vehicle_id, status, created_at, updated_at, partial_load, source_order_id, order_payload_json)
+                                 VALUES (:reference, :vehicle, "active", :created, :updated, :partial, :sourceOrder, :orderJson)');
         $insert->execute([
             ':reference' => $reference,
             ':vehicle' => $vehicle['id'],
             ':created' => $now,
             ':updated' => $now,
             ':partial' => $partialLoad,
+            ':sourceOrder' => $sourceOrderId !== '' ? $sourceOrderId : null,
+            ':orderJson' => $orderJson,
         ]);
         $jobId = (int)$pdo->lastInsertId();
     } else {
         $jobId = (int)$jobId;
         $reset = $pdo->prepare('UPDATE jobs
-            SET status = "active", updated_at = :updated, partial_load = :partial,
+            SET status = "active", reference = :reference, updated_at = :updated, partial_load = :partial,
+                source_order_id = :sourceOrder, order_payload_json = :orderJson,
                 driver_seen_at = NULL, driver_accepted_at = NULL, driver_push_last_at = NULL
             WHERE id = :id');
-        $reset->execute([':updated' => $now, ':partial' => $partialLoad, ':id' => $jobId]);
+        $reset->execute([
+            ':reference' => $reference,
+            ':updated' => $now,
+            ':partial' => $partialLoad,
+            ':sourceOrder' => $sourceOrderId !== '' ? $sourceOrderId : null,
+            ':orderJson' => $orderJson,
+            ':id' => $jobId,
+        ]);
         $delete = $pdo->prepare('DELETE FROM job_stops WHERE job_id = :job');
         $delete->execute([':job' => $jobId]);
     }
 
     $insertStop = $pdo->prepare('INSERT INTO job_stops
-        (job_id, stop_type, stop_order, company, address, latitude, longitude, radius_m, created_at)
-        VALUES (:job, :type, :ord, :company, :address, :lat, :lng, :radius, :created)');
+        (job_id, stop_type, stop_order, company, address, contact_phone, latitude, longitude, radius_m, created_at)
+        VALUES (:job, :type, :ord, :company, :address, :phone, :lat, :lng, :radius, :created)');
     foreach ($resolved as $stop) {
         $insertStop->execute([
             ':job' => $jobId,
@@ -189,6 +211,7 @@ try {
             ':ord' => $stop['order'],
             ':company' => $stop['company'],
             ':address' => $stop['address'],
+            ':phone' => $stop['phone'],
             ':lat' => $stop['latitude'],
             ':lng' => $stop['longitude'],
             ':radius' => $stop['radius'],
@@ -226,3 +249,5 @@ aims_json([
     'stops' => $resolved,
     'driverPush' => $driverPush,
 ]);
+
+[executed on device: GABOR-PC (4f5060cc-3a10-4200-947d-55b7a0fc1e22)]
