@@ -150,6 +150,13 @@ jobs:
           echo $! > /tmp/aims-r90-php.pid
           sleep 2
           curl --fail --silent http://127.0.0.1:18080/ingest.php -o /dev/null || true
+      - name: Driver stop action end-to-end test
+        env:
+          AIMS_TRACKING_TOKEN: ci-test-token
+          AIMS_CI_BASE_URL: http://127.0.0.1:18080
+          AIMS_CI_DB_PATH: /tmp/aims-flow-r90-load/tracking.sqlite
+        run: python3 ci/r90_stop_action_test.py
+
       - name: Tracking HTTP 10000 request load test
         env:
           AIMS_TRACKING_TOKEN: ci-test-token

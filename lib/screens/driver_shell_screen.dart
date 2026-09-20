@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
@@ -16,6 +17,43 @@ import '../widgets/aims_flow_logo.dart';
 import 'fuel_receipt_screen.dart';
 import 'scanner_screen.dart';
 
+class _PendingStopAction {
+  const _PendingStopAction({
+    required this.action,
+    required this.source,
+    required this.occurredAt,
+  });
+
+  final String action;
+  final String source;
+  final DateTime occurredAt;
+
+  Map<String, dynamic> toJson() => {
+        'action': action,
+        'source': source,
+        'occurredAt': occurredAt.toUtc().toIso8601String(),
+      };
+
+  static _PendingStopAction? fromJson(Object? value) {
+    if (value is! Map) return null;
+    final action = value['action']?.toString() ?? '';
+    final source = value['source']?.toString() ?? '';
+    final occurredAt = DateTime.tryParse(
+      value['occurredAt']?.toString() ?? '',
+    );
+    if (!const {'arrived', 'completed'}.contains(action) ||
+        !const {'voice', 'manual', 'touch'}.contains(source) ||
+        occurredAt == null) {
+      return null;
+    }
+    return _PendingStopAction(
+      action: action,
+      source: source,
+      occurredAt: occurredAt.toUtc(),
+    );
+  }
+}
+
 class DriverShellScreen extends StatefulWidget {
   const DriverShellScreen({super.key});
 
@@ -23,13 +61,17 @@ class DriverShellScreen extends StatefulWidget {
   State<DriverShellScreen> createState() => _DriverShellScreenState();
 }
 
-class _DriverShellScreenState extends State<DriverShellScreen> {
+class _DriverShellScreenState extends State<DriverShellScreen>
+    with WidgetsBindingObserver {
   static const _blue = Color(0xFF1CB8FF);
   static const _green = Color(0xFF4DE3A4);
   static const _panelColor = Color(0xFF071725);
   static const _prefsPlate = 'aims_driver_plate';
   static const _prefsDriverName = 'aims_driver_name';
   static const _prefsHandsFree = 'aims_hands_free';
+  static const _prefsPendingStopPrefix = 'aims_pending_stop_actions_v1_';
+  static const _prefsJobsCachePrefix = 'aims_driver_jobs_cache_v1_';
+  static const _prefsJobsCacheAtPrefix = 'aims_driver_jobs_cache_at_v1_';
 
   final _api = const DriverApiService();
   final _tracking = VehicleTrackingService.instance;
@@ -55,16 +97,51 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
     message: 'AIMS Hands-Free kikapcsolva.',
   );
   bool _handsFreeBusy = false;
+  int _refreshGeneration = 0;
+  DateTime? _lastResumeRefreshAt;
+  final Map<int, List<_PendingStopAction>> _pendingStopActions = {};
+  bool _pendingStopFlushBusy = false;
+  Timer? _pendingStopRetryTimer;
+
+  bool _isStopCompleted(DriverStop stop) =>
+      stop.completed ||
+      (_pendingStopActions[stop.id]?.any(
+            (item) => item.action == 'completed',
+          ) ??
+          false);
+
+  bool _isStopArrived(DriverStop stop) =>
+      stop.arrived || (_pendingStopActions[stop.id]?.isNotEmpty ?? false);
+
+  bool _hasOpenStop(DriverJob job) {
+    for (final stop in job.stops) {
+      if (!_isStopCompleted(stop)) return true;
+    }
+    return false;
+  }
 
   DriverJob? get _job {
     if (_jobs.isEmpty) return null;
     for (final job in _jobs) {
+      if (job.acceptedAt != null && _hasOpenStop(job)) return job;
+    }
+    for (final job in _jobs) {
       if (job.acceptedAt != null) return job;
+    }
+    for (final job in _jobs) {
+      if (_hasOpenStop(job)) return job;
     }
     return _jobs.first;
   }
 
-  DriverStop? get _stop => _job?.currentStop;
+  DriverStop? get _stop {
+    final job = _job;
+    if (job == null) return null;
+    for (final stop in job.stops) {
+      if (!_isStopCompleted(stop)) return stop;
+    }
+    return null;
+  }
 
   List<DriverJob> get _otherJobs {
     final current = _job;
@@ -76,6 +153,291 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
     final compact = value.trim().toUpperCase().replaceAll(RegExp(r'[^A-Z0-9]'), '');
     if (compact.length == 6) return '${compact.substring(0, 3)}-${compact.substring(3)}';
     return value.trim().toUpperCase();
+  }
+
+  String _normalizedPlateKey([String? plate]) => (plate ?? _plate)
+      .trim()
+      .toUpperCase()
+      .replaceAll(RegExp(r'[^A-Z0-9]'), '');
+
+  String _pendingStopPrefsKey([String? plate]) =>
+      '$_prefsPendingStopPrefix${_normalizedPlateKey(plate)}';
+
+  String _jobsCachePrefsKey([String? plate]) =>
+      '$_prefsJobsCachePrefix${_normalizedPlateKey(plate)}';
+
+  String _jobsCacheAtPrefsKey([String? plate]) =>
+      '$_prefsJobsCacheAtPrefix${_normalizedPlateKey(plate)}';
+
+  Future<List<DriverJob>> _loadCachedJobs(
+    SharedPreferences prefs,
+    String plate,
+  ) async {
+    if (plate.trim().isEmpty) return const [];
+    final raw = prefs.getString(_jobsCachePrefsKey(plate));
+    final savedAtRaw = prefs.getString(_jobsCacheAtPrefsKey(plate));
+    final savedAt = DateTime.tryParse(savedAtRaw ?? '');
+    if (raw == null || savedAt == null) return const [];
+    if (DateTime.now().toUtc().difference(savedAt.toUtc()) >
+        const Duration(days: 7)) {
+      await prefs.remove(_jobsCachePrefsKey(plate));
+      await prefs.remove(_jobsCacheAtPrefsKey(plate));
+      return const [];
+    }
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) return const [];
+      return decoded
+          .whereType<Map>()
+          .map(
+            (item) => DriverJob.fromJson(
+              Map<String, dynamic>.from(item),
+            ),
+          )
+          .toList();
+    } catch (_) {
+      await prefs.remove(_jobsCachePrefsKey(plate));
+      await prefs.remove(_jobsCacheAtPrefsKey(plate));
+      return const [];
+    }
+  }
+
+  Future<void> _saveJobsCache(List<DriverJob> jobs) async {
+    if (_plate.isEmpty) return;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      _jobsCachePrefsKey(),
+      jsonEncode([for (final job in jobs) job.toJson()]),
+    );
+    await prefs.setString(
+      _jobsCacheAtPrefsKey(),
+      DateTime.now().toUtc().toIso8601String(),
+    );
+  }
+
+  Future<void> _loadPendingStopActions(
+    SharedPreferences prefs,
+    String plate,
+  ) async {
+    _pendingStopActions.clear();
+    final raw = prefs.getString(_pendingStopPrefsKey(plate));
+    if (raw == null || raw.trim().isEmpty) return;
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return;
+      for (final entry in decoded.entries) {
+        final id = int.tryParse(entry.key.toString());
+        if (id == null || id <= 0) continue;
+        final actions = <_PendingStopAction>[];
+        if (entry.value is List) {
+          for (final item in entry.value as List) {
+            final action = _PendingStopAction.fromJson(item);
+            if (action != null) actions.add(action);
+          }
+        } else {
+          final legacy = _PendingStopAction.fromJson(entry.value);
+          if (legacy != null) actions.add(legacy);
+        }
+        if (actions.isNotEmpty) {
+          actions.sort((a, b) => a.occurredAt.compareTo(b.occurredAt));
+          _pendingStopActions[id] = actions;
+        }
+      }
+    } catch (_) {
+      await prefs.remove(_pendingStopPrefsKey(plate));
+    }
+  }
+
+  Future<void> _savePendingStopActions() async {
+    if (_plate.isEmpty) return;
+    final prefs = await SharedPreferences.getInstance();
+    final key = _pendingStopPrefsKey();
+    if (_pendingStopActions.isEmpty) {
+      await prefs.remove(key);
+      return;
+    }
+    final encoded = <String, dynamic>{
+      for (final entry in _pendingStopActions.entries)
+        entry.key.toString(): [
+          for (final action in entry.value) action.toJson(),
+        ],
+    };
+    await prefs.setString(key, jsonEncode(encoded));
+  }
+
+  Future<void> _queuePendingStopAction(
+    DriverStop stop,
+    String action,
+    String source,
+    DateTime occurredAt,
+  ) async {
+    final normalizedAction =
+        action == 'completed' ? 'completed' : 'arrived';
+    final current = List<_PendingStopAction>.from(
+      _pendingStopActions[stop.id] ?? const <_PendingStopAction>[],
+    );
+    if (current.any((item) => item.action == normalizedAction)) return;
+    if (normalizedAction == 'arrived' &&
+        current.any((item) => item.action == 'completed')) {
+      return;
+    }
+    current.add(
+      _PendingStopAction(
+        action: normalizedAction,
+        source: source,
+        occurredAt: occurredAt.toUtc(),
+      ),
+    );
+    current.sort((a, b) => a.occurredAt.compareTo(b.occurredAt));
+    if (mounted) {
+      setState(() => _pendingStopActions[stop.id] = current);
+    } else {
+      _pendingStopActions[stop.id] = current;
+    }
+    await _savePendingStopActions();
+    _schedulePendingStopFlush();
+  }
+
+  void _schedulePendingStopFlush({
+    Duration delay = const Duration(seconds: 30),
+  }) {
+    if (_pendingStopActions.isEmpty || _pendingStopFlushBusy) return;
+    if (_pendingStopRetryTimer?.isActive == true) return;
+    _pendingStopRetryTimer = Timer(delay, () {
+      _pendingStopRetryTimer = null;
+      unawaited(_flushPendingStopActions());
+    });
+  }
+
+  bool _isTerminalPendingStopError(Object error) {
+    if (error is DriverApiException) {
+      if (const {400, 404, 409, 422}.contains(error.statusCode)) {
+        return true;
+      }
+      if (error.retryable ||
+          error.statusCode == 401 ||
+          error.statusCode == 403) {
+        return false;
+      }
+    }
+    final value = error.toString().toLowerCase();
+    return value.contains('stop_not_found') ||
+        value.contains('job_not_active') ||
+        value.contains('invalid_payload');
+  }
+
+  Future<void> _flushPendingStopActions({bool refreshAfter = true}) async {
+    if (_pendingStopFlushBusy ||
+        _pendingStopActions.isEmpty ||
+        _plate.isEmpty) {
+      return;
+    }
+
+    _pendingStopFlushBusy = true;
+    _pendingStopRetryTimer?.cancel();
+    _pendingStopRetryTimer = null;
+
+    final queue = <({int stopId, _PendingStopAction action})>[];
+    for (final entry in _pendingStopActions.entries) {
+      for (final action in entry.value) {
+        queue.add((stopId: entry.key, action: action));
+      }
+    }
+    queue.sort(
+      (a, b) => a.action.occurredAt.compareTo(b.action.occurredAt),
+    );
+
+    final delivered = <({int stopId, String action})>[];
+    var retryNeeded = false;
+
+    try {
+      for (final item in queue) {
+        try {
+          await _api.updateStop(
+            plate: _plate,
+            stopId: item.stopId,
+            action: item.action.action,
+            source: item.action.source,
+            occurredAt: item.action.occurredAt,
+          );
+          delivered.add(
+            (stopId: item.stopId, action: item.action.action),
+          );
+        } on DriverApiException catch (error) {
+          if (_isTerminalPendingStopError(error)) {
+            delivered.add(
+              (stopId: item.stopId, action: item.action.action),
+            );
+            continue;
+          }
+          retryNeeded = true;
+          break;
+        } on StateError {
+          retryNeeded = true;
+          break;
+        } catch (_) {
+          retryNeeded = true;
+          break;
+        }
+      }
+
+      if (delivered.isNotEmpty) {
+        if (mounted) {
+          setState(() {
+            for (final item in delivered) {
+              final actions = _pendingStopActions[item.stopId];
+              if (actions == null) continue;
+              actions.removeWhere(
+                (action) => action.action == item.action,
+              );
+              if (actions.isEmpty) {
+                _pendingStopActions.remove(item.stopId);
+              }
+            }
+          });
+        } else {
+          for (final item in delivered) {
+            final actions = _pendingStopActions[item.stopId];
+            if (actions == null) continue;
+            actions.removeWhere(
+              (action) => action.action == item.action,
+            );
+            if (actions.isEmpty) {
+              _pendingStopActions.remove(item.stopId);
+            }
+          }
+        }
+        await _savePendingStopActions();
+        if (refreshAfter) {
+          await _refreshJobs(showLoading: false);
+        }
+      }
+    } finally {
+      _pendingStopFlushBusy = false;
+      if (_pendingStopActions.isNotEmpty) {
+        _schedulePendingStopFlush(
+          delay: Duration(seconds: retryNeeded ? 60 : 20),
+        );
+      }
+    }
+  }
+
+  int get _pendingStopEventCount {
+    var count = 0;
+    for (final actions in _pendingStopActions.values) {
+      count += actions.length;
+    }
+    return count;
+  }
+
+  String? _pendingStopNotice() {
+    final count = _pendingStopEventCount;
+    if (count == 0) return null;
+    return _l(
+      '$count stop-esemény offline elmentve. Automatikus szinkron folyamatban.',
+      '$count stop event(s) saved offline. Automatic sync is in progress.',
+      '$count Stopp-Ereignis(se) offline gespeichert. Automatische Synchronisierung läuft.',
+    );
   }
 
   bool get _trackingQueuedOffline {
@@ -116,6 +478,7 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _voice = AimsVoiceService(
       onCommand: _handleVoiceCommand,
       driverNameProvider: () => _driverName,
@@ -159,11 +522,16 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
       plate = status.vehicleLabel.trim().toUpperCase();
     }
 
+    final cachedJobs = await _loadCachedJobs(prefs, plate);
+    await _loadPendingStopActions(prefs, plate);
+
     if (!mounted) return;
     setState(() {
       _plate = plate;
       _driverName = driverName;
       _trackingStatus = status;
+      _jobs = cachedJobs;
+      _loading = cachedJobs.isEmpty;
     });
 
     if (_plate.isEmpty) {
@@ -220,6 +588,9 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
       trackingError = e.toString().replaceFirst('Bad state: ', '');
     }
 
+    if (_pendingStopActions.isNotEmpty) {
+      await _flushPendingStopActions(refreshAfter: false);
+    }
     await _refreshJobs();
 
     if (!mounted) return;
@@ -232,25 +603,37 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
     }
   }
 
-  Future<void> _refreshJobs() async {
+  Future<void> _refreshJobs({bool showLoading = true}) async {
     if (_plate.isEmpty) {
       if (mounted) setState(() => _loading = false);
       return;
     }
-    if (mounted) setState(() => _loading = true);
+    final generation = ++_refreshGeneration;
+    if (mounted && showLoading) setState(() => _loading = true);
     try {
       final jobs = await _api.fetchJobs(_plate);
-      if (!mounted) return;
+      if (!mounted || generation != _refreshGeneration) return;
       setState(() {
         _jobs = jobs;
         _loading = false;
         _message = null;
       });
+      unawaited(_saveJobsCache(jobs));
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || generation != _refreshGeneration) return;
       setState(() {
         _loading = false;
-        _message = _l('Fuvaradatok nem frissültek: $e', 'Job data could not be refreshed: $e', 'Auftragsdaten konnten nicht aktualisiert werden: $e');
+        _message = _jobs.isNotEmpty
+            ? _l(
+                'Nincs stabil kapcsolat. A legutóbbi mentett fuvaradatot mutatom.',
+                'No stable connection. Showing the latest saved job data.',
+                'Keine stabile Verbindung. Die zuletzt gespeicherten Auftragsdaten werden angezeigt.',
+              )
+            : _l(
+                'Fuvaradatok nem frissültek: $e',
+                'Job data could not be refreshed: $e',
+                'Auftragsdaten konnten nicht aktualisiert werden: $e',
+              );
       });
     }
   }
@@ -494,9 +877,34 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
     final job = _job;
     if (job == null) return null;
     for (final stop in job.stops) {
-      if (!stop.completed && stop.type == type) return stop;
+      if (!_isStopCompleted(stop) && stop.type == type) return stop;
     }
     return null;
+  }
+
+  Future<String> _queueStopForLater(
+    DriverStop stop,
+    String action,
+    String source,
+    DateTime occurredAt,
+  ) async {
+    await _queuePendingStopAction(
+      stop,
+      action,
+      source,
+      occurredAt,
+    );
+    return action == 'arrived'
+        ? _l(
+            'Nincs stabil kapcsolat. A megérkezést elmentettem a telefonon, és automatikusan elküldöm.',
+            'No stable connection. Arrival was saved on the phone and will upload automatically.',
+            'Keine stabile Verbindung. Die Ankunft wurde auf dem Telefon gespeichert und wird automatisch gesendet.',
+          )
+        : _l(
+            'Nincs stabil kapcsolat. A kész állapotot elmentettem, továbbléphetsz; automatikusan szinkronizálom.',
+            'No stable connection. Completion was saved locally; you can continue and it will sync automatically.',
+            'Keine stabile Verbindung. Der Abschluss wurde lokal gespeichert; du kannst weiterfahren, die Synchronisierung erfolgt automatisch.',
+          );
   }
 
   Future<String> _markStop(
@@ -518,12 +926,26 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
               'Der nächste Stopp ist keine Zustellung.',
             );
     }
+    final occurredAt = DateTime.now().toUtc();
+
+    if (_pendingStopActions[stop.id]?.isNotEmpty == true) {
+      final message = await _queueStopForLater(
+        stop,
+        action,
+        source,
+        occurredAt,
+      );
+      unawaited(_flushPendingStopActions());
+      return message;
+    }
+
     try {
       await _api.updateStop(
         plate: _plate,
         stopId: stop.id,
         action: action,
         source: source,
+        occurredAt: occurredAt,
       );
       await _refreshJobs();
       if (action == 'arrived') {
@@ -550,11 +972,33 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
               'Delivery complete. Recorded.',
               'Entladung fertig. Gespeichert.',
             );
+    } on DriverApiException catch (error) {
+      if (_isTerminalPendingStopError(error)) {
+        return _l(
+          'A stop állapotát a szerver elutasította. Frissítsd a fuvart vagy szólj az adminnak.',
+          'The server rejected the stop update. Refresh the job or contact the administrator.',
+          'Der Server hat die Stopp-Aktualisierung abgelehnt. Auftrag aktualisieren oder Administration kontaktieren.',
+        );
+      }
+      return _queueStopForLater(
+        stop,
+        action,
+        source,
+        occurredAt,
+      );
+    } on StateError {
+      return _queueStopForLater(
+        stop,
+        action,
+        source,
+        occurredAt,
+      );
     } catch (_) {
-      return _l(
-        'A stop állapotát nem sikerült rögzíteni.',
-        'The stop status could not be saved.',
-        'Der Stoppstatus konnte nicht gespeichert werden.',
+      return _queueStopForLater(
+        stop,
+        action,
+        source,
+        occurredAt,
       );
     }
   }
@@ -563,7 +1007,7 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
     final stop = _stop;
     if (stop == null || _actionBusy) return;
 
-    if (stop.arrived) {
+    if (_isStopArrived(stop)) {
       final confirmed = await showDialog<bool>(
         context: context,
         builder: (dialogContext) => AlertDialog(
@@ -607,7 +1051,7 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
 
     setState(() => _actionBusy = true);
     try {
-      final action = stop.arrived ? 'completed' : 'arrived';
+      final action = _isStopArrived(stop) ? 'completed' : 'arrived';
       final message = await _markStop(
         stop,
         action,
@@ -870,7 +1314,39 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed || !mounted || _plate.isEmpty) {
+      return;
+    }
+    final now = DateTime.now();
+    final previous = _lastResumeRefreshAt;
+    if (previous != null &&
+        now.difference(previous) < const Duration(seconds: 10)) {
+      return;
+    }
+    _lastResumeRefreshAt = now;
+    unawaited(_refreshAfterResume());
+  }
+
+  Future<void> _refreshAfterResume() async {
+    try {
+      final status = await _tracking.currentStatus();
+      if (mounted) setState(() => _trackingStatus = status);
+    } catch (_) {
+      // Job refresh must still run even if the tracking status is unavailable.
+    }
+    if (_pendingStopActions.isNotEmpty) {
+      await _flushPendingStopActions(refreshAfter: false);
+    }
+    await _refreshJobs(showLoading: false);
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _refreshGeneration++;
+    _pendingStopRetryTimer?.cancel();
+    _pendingStopRetryTimer = null;
     _pushSub?.cancel();
     _trackingSub?.cancel();
     _voiceSub?.cancel();
@@ -1027,6 +1503,7 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
     final job = _job;
     final stop = _stop;
     final trackingNotice = _driverTrackingNotice();
+    final pendingStopNotice = _pendingStopNotice();
     final currentCompany = stop?.company.trim().isNotEmpty == true
         ? stop!.company
         : job == null
@@ -1104,7 +1581,7 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
                       stop.type == 'delivery'
                           ? _l('LERAKÓ', 'DELIVERY', 'ENTLADUNG')
                           : _l('FELRAKÓ', 'PICKUP', 'BELADUNG'),
-                      stop.arrived ? _green : _blue,
+                      _isStopArrived(stop) ? _green : _blue,
                     ),
                     const Spacer(),
                     Text(
@@ -1128,7 +1605,7 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
                 ),
                 const SizedBox(height: 5),
                 Text(
-                  stop.arrived
+                  _isStopArrived(stop)
                       ? (stop.type == 'delivery'
                           ? _l(
                               'Lerakás befejezése',
@@ -1219,12 +1696,12 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
                       ? null
                       : () => unawaited(_runPrimaryStopAction()),
                   icon: Icon(
-                    stop.arrived
+                    _isStopArrived(stop)
                         ? Icons.task_alt_rounded
                         : Icons.location_on_rounded,
                   ),
                   label: Text(
-                    stop.arrived
+                    _isStopArrived(stop)
                         ? (stop.type == 'delivery'
                             ? _l(
                                 'LERAKÁS KÉSZ',
@@ -1244,8 +1721,8 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
                   ),
                   style: FilledButton.styleFrom(
                     minimumSize: const Size.fromHeight(60),
-                    backgroundColor: stop.arrived ? _green : const Color(0xFF0F3852),
-                    foregroundColor: stop.arrived
+                    backgroundColor: _isStopArrived(stop) ? _green : const Color(0xFF0F3852),
+                    foregroundColor: _isStopArrived(stop)
                         ? const Color(0xFF001B12)
                         : Colors.white,
                     textStyle: const TextStyle(
@@ -1280,6 +1757,10 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
             ],
           ),
         ),
+      if (pendingStopNotice != null) ...[
+        const SizedBox(height: 10),
+        _info(pendingStopNotice),
+      ],
       if (trackingNotice != null) ...[
         const SizedBox(height: 10),
         _info(trackingNotice),
@@ -1774,9 +2255,15 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
                         children: [
                           Expanded(
                             child: OutlinedButton.icon(
-                              onPressed: stop.address.trim().isEmpty
-                                  ? null
-                                  : () => unawaited(_openMapsForStop(stop)),
+                              onPressed:
+                                  stop.address.trim().isEmpty &&
+                                          !RoamingResilience.validCoordinates(
+                                            stop.latitude,
+                                            stop.longitude,
+                                          )
+                                      ? null
+                                      : () =>
+                                          unawaited(_openMapsForStop(stop)),
                               icon: const Icon(Icons.navigation_rounded),
                               label: Text(
                                 _l('NAVIGÁCIÓ', 'NAVIGATION', 'NAVIGATION'),
@@ -2066,7 +2553,7 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
           border: Border.all(
             color: stop.id == _stop?.id
                 ? _blue
-                : stop.arrived
+                : _isStopArrived(stop)
                     ? _green.withValues(alpha: .45)
                     : const Color(0xFF173B54),
             width: stop.id == _stop?.id ? 2 : 1,
@@ -2077,13 +2564,13 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
           children: [
             CircleAvatar(
               radius: 17,
-              backgroundColor: stop.arrived
+              backgroundColor: _isStopArrived(stop)
                   ? _green.withValues(alpha: .13)
                   : _blue.withValues(alpha: .13),
               child: Text(
                 '${stop.order}',
                 style: TextStyle(
-                  color: stop.arrived ? _green : _blue,
+                  color: _isStopArrived(stop) ? _green : _blue,
                   fontWeight: FontWeight.w900,
                 ),
               ),
@@ -2104,9 +2591,9 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    stop.completed
+                    _isStopCompleted(stop)
                         ? _l('KÉSZ', 'DONE', 'FERTIG')
-                        : stop.arrived
+                        : _isStopArrived(stop)
                             ? _l('MEGÉRKEZETT', 'ARRIVED', 'ANGEKOMMEN')
                             : stop.id == _stop?.id
                                 ? (stop.type == 'delivery'
@@ -2124,7 +2611,7 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
                                     ? _l('LERAKÓ', 'DELIVERY', 'ENTLADUNG')
                                     : _l('FELRAKÓ', 'PICKUP', 'BELADUNG')),
                     style: TextStyle(
-                      color: stop.completed || stop.arrived ? _green : _blue,
+                      color: _isStopCompleted(stop) || _isStopArrived(stop) ? _green : _blue,
                       fontSize: 9,
                       fontWeight: FontWeight.w900,
                     ),

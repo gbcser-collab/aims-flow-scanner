@@ -2,6 +2,19 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+class DriverApiException implements Exception {
+  const DriverApiException(this.statusCode, this.code);
+
+  final int statusCode;
+  final String code;
+
+  bool get retryable =>
+      statusCode == 408 || statusCode == 429 || statusCode >= 500;
+
+  @override
+  String toString() => code;
+}
+
 class DriverStop {
   const DriverStop({
     required this.id,
@@ -30,6 +43,21 @@ class DriverStop {
   final bool completed;
   final String? arrivedAt;
   final String? completedAt;
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'type': type,
+        'order': order,
+        'company': company,
+        'address': address,
+        'phone': phone,
+        'latitude': latitude,
+        'longitude': longitude,
+        'arrived': arrived,
+        'completed': completed,
+        'arrivedAt': arrivedAt,
+        'completedAt': completedAt,
+      };
 
   factory DriverStop.fromJson(Map<String, dynamic> json) => DriverStop(
         id: (json['id'] as num?)?.toInt() ?? 0,
@@ -71,16 +99,33 @@ class DriverJob {
     return null;
   }
 
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'reference': reference,
+        'status': status,
+        'seenAt': seenAt,
+        'acceptedAt': acceptedAt,
+        'stops': [for (final stop in stops) stop.toJson()],
+      };
+
   factory DriverJob.fromJson(Map<String, dynamic> json) => DriverJob(
         id: (json['id'] as num?)?.toInt() ?? 0,
         reference: json['reference']?.toString() ?? '',
         status: json['status']?.toString() ?? '',
         seenAt: json['seenAt']?.toString(),
         acceptedAt: json['acceptedAt']?.toString(),
-        stops: (json['stops'] as List? ?? const [])
-            .whereType<Map>()
-            .map((item) => DriverStop.fromJson(Map<String, dynamic>.from(item)))
-            .toList(),
+        stops: ((json['stops'] as List? ?? const [])
+              .whereType<Map>()
+              .map(
+                (item) => DriverStop.fromJson(
+                  Map<String, dynamic>.from(item),
+                ),
+              )
+              .toList()
+            ..sort((a, b) {
+              final byOrder = a.order.compareTo(b.order);
+              return byOrder != 0 ? byOrder : a.id.compareTo(b.id);
+            })),
       );
 }
 
@@ -175,6 +220,7 @@ class DriverApiService {
     required int stopId,
     required String action,
     String source = 'manual',
+    DateTime? occurredAt,
   }) async {
     _ensureConfigured();
     final response = await http
@@ -186,12 +232,16 @@ class DriverApiService {
             'stopId': stopId,
             'action': action,
             'source': source,
+            'occurredAt': occurredAt?.toUtc().toIso8601String(),
           }),
         )
         .timeout(const Duration(seconds: 12));
     final body = _decode(response);
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw StateError(body['error']?.toString() ?? 'HTTP ${response.statusCode}');
+      throw DriverApiException(
+        response.statusCode,
+        body['error']?.toString() ?? 'HTTP ${response.statusCode}',
+      );
     }
   }
 

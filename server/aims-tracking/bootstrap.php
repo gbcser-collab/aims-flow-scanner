@@ -282,6 +282,23 @@ function aims_db(): PDO {
         $pdo->exec('ALTER TABLE jobs ADD COLUMN partial_load INTEGER NOT NULL DEFAULT 0');
     }
 
+    $stopColumns = [];
+    foreach ($pdo->query('PRAGMA table_info(job_stops)')->fetchAll(PDO::FETCH_ASSOC) as $column) {
+        $stopColumns[(string)$column['name']] = true;
+    }
+    if (!isset($stopColumns['contact_phone'])) {
+        $pdo->exec('ALTER TABLE job_stops ADD COLUMN contact_phone TEXT');
+    }
+    if (!isset($stopColumns['arrival_source'])) {
+        $pdo->exec('ALTER TABLE job_stops ADD COLUMN arrival_source TEXT');
+    }
+    if (!isset($stopColumns['completed_at'])) {
+        $pdo->exec('ALTER TABLE job_stops ADD COLUMN completed_at TEXT');
+    }
+    if (!isset($stopColumns['completion_source'])) {
+        $pdo->exec('ALTER TABLE job_stops ADD COLUMN completion_source TEXT');
+    }
+
     $pdo->exec('CREATE TABLE IF NOT EXISTS driver_push_devices (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         vehicle_id INTEGER NOT NULL,
