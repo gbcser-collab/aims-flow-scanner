@@ -172,7 +172,9 @@ class _FlowRegisterScreenState extends State<FlowRegisterScreen> {
 
   InputDecoration _decoration(String label, IconData icon) => InputDecoration(
         labelText: label,
-        prefixIcon: Icon(icon, color: const Color(0xFF9EDBFF)),
+        prefixIcon: Icon(icon, color: const Color(0xFF9EDBFF), size: 24),
+        prefixIconConstraints: const BoxConstraints(minWidth: 54, minHeight: 58),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
         filled: true,
         fillColor: const Color(0xFF0A2236),
         labelStyle: const TextStyle(color: Colors.white54),
@@ -470,8 +472,16 @@ class _FlowRegisterScreenState extends State<FlowRegisterScreen> {
                           textCapitalization: TextCapitalization.characters,
                           textInputAction: TextInputAction.next,
                           inputFormatters: [
+                            FilteringTextInputFormatter.allow(
+                              RegExp(r'[A-Za-z0-9 -]'),
+                            ),
                             LengthLimitingTextInputFormatter(12),
                           ],
+                          style: const TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: .6,
+                          ),
                           decoration: _decoration(
                             t('plate'),
                             Icons.local_shipping_outlined,
@@ -656,7 +666,7 @@ class _FlowRegisterScreenState extends State<FlowRegisterScreen> {
                             t(_busy ? 'sending' : 'send_registration'),
                           ),
                           style: FilledButton.styleFrom(
-                            minimumSize: const Size.fromHeight(58),
+                            minimumSize: const Size.fromHeight(64),
                             backgroundColor: _blue,
                             foregroundColor: const Color(0xFF00131F),
                             textStyle: const TextStyle(
