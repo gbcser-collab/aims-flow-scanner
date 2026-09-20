@@ -1,3 +1,5 @@
+[Reading 322 lines from start (total: 322 lines, 0 remaining)]
+
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
@@ -83,6 +85,7 @@ class DriverJob {
     required this.stops,
     this.seenAt,
     this.acceptedAt,
+    this.orderData = const <String, dynamic>{},
   });
 
   final int id;
@@ -91,6 +94,7 @@ class DriverJob {
   final List<DriverStop> stops;
   final String? seenAt;
   final String? acceptedAt;
+  final Map<String, dynamic> orderData;
 
   DriverStop? get currentStop {
     for (final stop in stops) {
@@ -105,6 +109,7 @@ class DriverJob {
         'status': status,
         'seenAt': seenAt,
         'acceptedAt': acceptedAt,
+        'orderData': orderData,
         'stops': [for (final stop in stops) stop.toJson()],
       };
 
@@ -114,6 +119,9 @@ class DriverJob {
         status: json['status']?.toString() ?? '',
         seenAt: json['seenAt']?.toString(),
         acceptedAt: json['acceptedAt']?.toString(),
+        orderData: json['orderData'] is Map
+            ? Map<String, dynamic>.from(json['orderData'] as Map)
+            : const <String, dynamic>{},
         stops: ((json['stops'] as List? ?? const [])
               .whereType<Map>()
               .map(
@@ -276,6 +284,8 @@ class DriverApiService {
     double? latitude,
     double? longitude,
     bool urgent = false,
+    String? eventId,
+    DateTime? occurredAt,
   }) async {
     _ensureConfigured();
     final response = await http
@@ -289,12 +299,17 @@ class DriverApiService {
             'urgent': urgent,
             'latitude': latitude,
             'longitude': longitude,
+            'eventId': eventId,
+            'occurredAt': occurredAt?.toUtc().toIso8601String(),
           }),
         )
         .timeout(const Duration(seconds: 12));
     final body = _decode(response);
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw StateError(body['error']?.toString() ?? 'HTTP ${response.statusCode}');
+      throw DriverApiException(
+        response.statusCode,
+        body['error']?.toString() ?? 'HTTP ${response.statusCode}',
+      );
     }
   }
 
@@ -307,3 +322,5 @@ class DriverApiService {
     return <String, dynamic>{};
   }
 }
+
+[executed on device: GABOR-PC (4f5060cc-3a10-4200-947d-55b7a0fc1e22)]
