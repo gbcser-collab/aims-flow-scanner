@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
@@ -7,9 +9,26 @@ import 'services/driver_push_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await AimsLocaleController.instance.initialize();
-  await DriverPushService.instance.initialize();
+
+  // Only the minimum required local state is allowed to block first paint.
+  // Push / Firebase / notification failures must never replace the login UI
+  // with Flutter's red error screen.
+  try {
+    await AimsLocaleController.instance.initialize();
+  } catch (_) {
+    // The app remains usable with the controller's default locale.
+  }
+
   runApp(const AimsFlowApp());
+  unawaited(_initializeOptionalRuntime());
+}
+
+Future<void> _initializeOptionalRuntime() async {
+  try {
+    await DriverPushService.instance.initialize();
+  } catch (_) {
+    // DriverShell retries push registration later. Startup must stay alive.
+  }
 }
 
 class AimsFlowApp extends StatelessWidget {
