@@ -1,5 +1,3 @@
-[Reading 53 lines from start (total: 53 lines, 0 remaining)]
-
 import 'package:flutter_test/flutter_test.dart';
 import 'package:aims_flow_scanner/services/invoice_parser.dart';
 
@@ -53,5 +51,3 @@ GESAMT 428,90 EUR
     expect(result.totalAmount, closeTo(428.9, 0.01));
   });
 }
-
-[executed on device: GABOR-PC (4f5060cc-3a10-4200-947d-55b7a0fc1e22)]
