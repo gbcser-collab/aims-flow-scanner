@@ -6,12 +6,15 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../models/scan_models.dart';
 import '../services/aims_locale.dart';
 import '../services/aims_voice_command.dart';
 import '../services/aims_voice_service.dart';
 import '../services/driver_api_service.dart';
 import '../services/driver_push_service.dart';
 import '../services/roaming_resilience.dart';
+import '../services/scan_repository.dart';
+import '../services/sync_coordinator.dart';
 import '../services/vehicle_tracking_service.dart';
 import '../widgets/aims_flow_logo.dart';
 import 'fuel_receipt_screen.dart';
@@ -72,10 +75,13 @@ class _DriverShellScreenState extends State<DriverShellScreen>
   static const _prefsPendingStopPrefix = 'aims_pending_stop_actions_v1_';
   static const _prefsJobsCachePrefix = 'aims_driver_jobs_cache_v1_';
   static const _prefsJobsCacheAtPrefix = 'aims_driver_jobs_cache_at_v1_';
+  static const _prefsJobCmrPrefix = 'aims_job_cmr_v1_';
 
   final _api = const DriverApiService();
   final _tracking = VehicleTrackingService.instance;
   final _push = DriverPushService.instance;
+  final _sync = SyncCoordinator.instance;
+  static const _scanRepository = ScanRepository();
   final ScrollController _homeScrollController = ScrollController();
   late final AimsVoiceService _voice;
 
@@ -100,7 +106,11 @@ class _DriverShellScreenState extends State<DriverShellScreen>
   int _refreshGeneration = 0;
   DateTime? _lastResumeRefreshAt;
   final Map<int, List<_PendingStopAction>> _pendingStopActions = {};
+  final Map<int, String> _jobCmrIds = {};
+  final Map<int, CmrSyncState> _jobCmrStates = {};
   bool _pendingStopFlushBusy = false;
+  bool _documentRefreshBusy = false;
+  bool _networkOnline = true;
   Timer? _pendingStopRetryTimer;
 
   bool _isStopCompleted(DriverStop stop) =>
@@ -126,10 +136,17 @@ class _DriverShellScreenState extends State<DriverShellScreen>
       if (job.acceptedAt != null && _hasOpenStop(job)) return job;
     }
     for (final job in _jobs) {
-      if (job.acceptedAt != null) return job;
+      if (job.acceptedAt != null &&
+          !_hasOpenStop(job) &&
+          !_hasJobCmr(job)) {
+        return job;
+      }
     }
     for (final job in _jobs) {
       if (_hasOpenStop(job)) return job;
+    }
+    for (final job in _jobs) {
+      if (job.acceptedAt != null) return job;
     }
     return _jobs.first;
   }
@@ -168,6 +185,184 @@ class _DriverShellScreenState extends State<DriverShellScreen>
 
   String _jobsCacheAtPrefsKey([String? plate]) =>
       '$_prefsJobsCacheAtPrefix${_normalizedPlateKey(plate)}';
+
+  String _jobCmrPrefsKey([String? plate]) =>
+      '$_prefsJobCmrPrefix${_normalizedPlateKey(plate)}';
+
+  bool _hasJobCmr(DriverJob job) => _jobCmrIds.containsKey(job.id);
+
+  bool _isQueuedCmrState(CmrSyncState? state) =>
+      state == CmrSyncState.pending || state == CmrSyncState.failed;
+
+  bool get _documentGateActive {
+    final job = _job;
+    return job != null &&
+        job.acceptedAt != null &&
+        !_hasOpenStop(job) &&
+        !_hasJobCmr(job);
+  }
+
+  bool get _hasQueuedJobCmr =>
+      _jobCmrStates.values.any(_isQueuedCmrState);
+
+  Future<void> _loadJobCmrLinks(
+    SharedPreferences prefs,
+    String plate,
+  ) async {
+    _jobCmrIds.clear();
+    final raw = prefs.getString(_jobCmrPrefsKey(plate));
+    if (raw != null && raw.trim().isNotEmpty) {
+      try {
+        final decoded = jsonDecode(raw);
+        if (decoded is Map) {
+          for (final entry in decoded.entries) {
+            final jobId = int.tryParse(entry.key.toString());
+            final documentId = entry.value?.toString() ?? '';
+            if (jobId != null && jobId > 0 && documentId.isNotEmpty) {
+              _jobCmrIds[jobId] = documentId;
+            }
+          }
+        }
+      } catch (_) {
+        await prefs.remove(_jobCmrPrefsKey(plate));
+      }
+    }
+    await _refreshJobCmrStates();
+  }
+
+  Future<void> _saveJobCmrLinks() async {
+    if (_plate.isEmpty) return;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      _jobCmrPrefsKey(),
+      jsonEncode({
+        for (final entry in _jobCmrIds.entries)
+          entry.key.toString(): entry.value,
+      }),
+    );
+  }
+
+  Future<void> _refreshJobCmrStates() async {
+    if (_documentRefreshBusy) return;
+    _documentRefreshBusy = true;
+    try {
+      final documents = await _scanRepository.loadAll();
+      final byId = {for (final document in documents) document.id: document};
+      final next = <int, CmrSyncState>{};
+      final missing = <int>[];
+      for (final entry in _jobCmrIds.entries) {
+        final document = byId[entry.value];
+        if (document == null) {
+          missing.add(entry.key);
+        } else {
+          next[entry.key] = document.syncState;
+        }
+      }
+      for (final jobId in missing) {
+        _jobCmrIds.remove(jobId);
+      }
+      if (missing.isNotEmpty) await _saveJobCmrLinks();
+      if (!mounted) {
+        _jobCmrStates
+          ..clear()
+          ..addAll(next);
+        return;
+      }
+      setState(() {
+        _jobCmrStates
+          ..clear()
+          ..addAll(next);
+      });
+    } finally {
+      _documentRefreshBusy = false;
+    }
+  }
+
+  void _documentSyncChanged() {
+    unawaited(_refreshJobCmrStates());
+  }
+
+  bool _isFinalOpenStop(DriverStop stop) {
+    final job = _job;
+    if (job == null) return false;
+    final open = job.stops.where((item) => !_isStopCompleted(item)).toList();
+    return open.length == 1 && open.first.id == stop.id;
+  }
+
+  Future<void> _activateDocumentGate() async {
+    await _refreshJobCmrStates();
+    if (!mounted || !_documentGateActive) return;
+    setState(() => _index = 3);
+  }
+
+  Future<void> _linkNewestCmrToJob(
+    DriverJob job,
+    DateTime scanStartedAt,
+  ) async {
+    final documents = await _scanRepository.loadAll();
+    final threshold = scanStartedAt.subtract(const Duration(seconds: 30));
+    final candidates = documents
+        .where((document) => !document.createdAt.isBefore(threshold))
+        .toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    if (candidates.isEmpty) {
+      await _refreshJobCmrStates();
+      return;
+    }
+
+    final document = candidates.first;
+    _jobCmrIds[job.id] = document.id;
+    _jobCmrStates[job.id] = document.syncState;
+    await _saveJobCmrLinks();
+    await _sync.refreshPendingCount();
+    unawaited(_sync.syncNow());
+
+    if (!mounted) return;
+    setState(() {
+      _index = 0;
+    });
+
+    final queued = _isQueuedCmrState(document.syncState);
+    unawaited(
+      _voice.announce(
+        queued
+            ? _l(
+                'A CMR elmentve. Nincs stabil kapcsolat, ezért feltöltési sorban marad. Kapcsolat esetén automatikusan elküldöm.',
+                'CMR saved. There is no stable connection, so it remains queued and will upload automatically.',
+                'CMR gespeichert. Keine stabile Verbindung. Das Dokument bleibt in der Warteschlange und wird automatisch hochgeladen.',
+              )
+            : _l(
+                'A CMR elmentve és továbbítva.',
+                'CMR saved and sent.',
+                'CMR gespeichert und gesendet.',
+              ),
+      ),
+    );
+  }
+
+  String _nextStepAnnouncement({bool accepted = false}) {
+    final stop = _stop;
+    if (stop == null) {
+      return accepted
+          ? _l(
+              'Fuvar elfogadva.',
+              'Job accepted.',
+              'Auftrag angenommen.',
+            )
+          : '';
+    }
+    final type = stop.type == 'delivery'
+        ? _l('lerakó', 'delivery', 'Entladestelle')
+        : _l('felrakó', 'pickup', 'Ladestelle');
+    final prefix = accepted
+        ? _l(
+            'Fuvar elfogadva. ',
+            'Job accepted. ',
+            'Auftrag angenommen. ',
+          )
+        : '';
+    return '$prefix${_l('Következő feladat', 'Next task', 'Nächste Aufgabe')}: $type. ${stop.address}';
+  }
 
   Future<List<DriverJob>> _loadCachedJobs(
     SharedPreferences prefs,
@@ -487,6 +682,8 @@ class _DriverShellScreenState extends State<DriverShellScreen>
       if (mounted) setState(() => _voiceState = state);
     });
     _pushSub = _push.events.listen(_handlePush);
+    _sync.addListener(_documentSyncChanged);
+    unawaited(_sync.initialize());
     _trackingSub = _tracking.statusStream.listen((status) {
       if (mounted) setState(() => _trackingStatus = status);
     });
@@ -524,6 +721,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
 
     final cachedJobs = await _loadCachedJobs(prefs, plate);
     await _loadPendingStopActions(prefs, plate);
+    await _loadJobCmrLinks(prefs, plate);
 
     if (!mounted) return;
     setState(() {
@@ -616,13 +814,16 @@ class _DriverShellScreenState extends State<DriverShellScreen>
       setState(() {
         _jobs = jobs;
         _loading = false;
+        _networkOnline = true;
         _message = null;
       });
+      await _refreshJobCmrStates();
       unawaited(_saveJobsCache(jobs));
     } catch (e) {
       if (!mounted || generation != _refreshGeneration) return;
       setState(() {
         _loading = false;
+        _networkOnline = false;
         _message = _jobs.isNotEmpty
             ? _l(
                 'Nincs stabil kapcsolat. A legutóbbi mentett fuvaradatot mutatom.',
@@ -641,6 +842,15 @@ class _DriverShellScreenState extends State<DriverShellScreen>
   Future<void> _handlePush(DriverPushEvent event) async {
     if (!mounted) return;
     if (event.data['type']?.toString() != 'driver_job') return;
+    unawaited(
+      _voice.announce(
+        _l(
+          'Új munka érkezett.',
+          'A new job has arrived.',
+          'Ein neuer Auftrag ist eingegangen.',
+        ),
+      ),
+    );
     await _refreshJobs();
     if (!mounted) return;
 
@@ -732,6 +942,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
       await _refreshJobs();
       if (mounted && action == 'accepted') {
         setState(() => _index = 0);
+        unawaited(_voice.announce(_nextStepAnnouncement(accepted: true)));
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (_homeScrollController.hasClients) {
             _homeScrollController.animateTo(
@@ -760,6 +971,15 @@ class _DriverShellScreenState extends State<DriverShellScreen>
       _snack(_l('Nincs megnyitható következő cím.', 'There is no next address to open.', 'Es gibt keine nächste Adresse zum Öffnen.'));
       return;
     }
+    unawaited(
+      _voice.announce(
+        _l(
+          'Navigáció indítása. Következő cím: ${stop.address}.',
+          'Starting navigation. Next address: ${stop.address}.',
+          'Navigation wird gestartet. Nächste Adresse: ${stop.address}.',
+        ),
+      ),
+    );
     await _openMapsForStop(stop);
   }
 
@@ -816,6 +1036,8 @@ class _DriverShellScreenState extends State<DriverShellScreen>
   }
 
   Future<void> _openCmrScanner() async {
+    final jobAtOpen = _job;
+    final scanStartedAt = DateTime.now();
     try {
       final camera = await _backCamera();
       if (!mounted) return;
@@ -826,6 +1048,11 @@ class _DriverShellScreenState extends State<DriverShellScreen>
       await Navigator.of(context).push(
         MaterialPageRoute(builder: (_) => ScannerScreen(camera: camera)),
       );
+      if (jobAtOpen != null) {
+        await _linkNewestCmrToJob(jobAtOpen, scanStartedAt);
+      } else {
+        await _refreshJobCmrStates();
+      }
     } catch (e) {
       _snack('A scanner nem indult el: $e');
     }
@@ -927,6 +1154,8 @@ class _DriverShellScreenState extends State<DriverShellScreen>
             );
     }
     final occurredAt = DateTime.now().toUtc();
+    final finalCompletion =
+        action == 'completed' && _isFinalOpenStop(stop);
 
     if (_pendingStopActions[stop.id]?.isNotEmpty == true) {
       final message = await _queueStopForLater(
@@ -936,6 +1165,14 @@ class _DriverShellScreenState extends State<DriverShellScreen>
         occurredAt,
       );
       unawaited(_flushPendingStopActions());
+      if (finalCompletion) {
+        await _activateDocumentGate();
+        return _l(
+          'A fuvar befejeződött. Kérlek, scanneld be a CMR-t.',
+          'The job is complete. Please scan the CMR.',
+          'Der Auftrag ist abgeschlossen. Bitte den CMR scannen.',
+        );
+      }
       return message;
     }
 
@@ -948,6 +1185,20 @@ class _DriverShellScreenState extends State<DriverShellScreen>
         occurredAt: occurredAt,
       );
       await _refreshJobs();
+      if (finalCompletion) {
+        await _activateDocumentGate();
+        return _documentGateActive
+            ? _l(
+                'A fuvar befejeződött. Kérlek, scanneld be a CMR-t.',
+                'The job is complete. Please scan the CMR.',
+                'Der Auftrag ist abgeschlossen. Bitte den CMR scannen.',
+              )
+            : _l(
+                'A fuvar befejeződött.',
+                'The job is complete.',
+                'Der Auftrag ist abgeschlossen.',
+              );
+      }
       if (action == 'arrived') {
         return expectedType == 'pickup'
             ? _l(
@@ -980,26 +1231,53 @@ class _DriverShellScreenState extends State<DriverShellScreen>
           'Der Server hat die Stopp-Aktualisierung abgelehnt. Auftrag aktualisieren oder Administration kontaktieren.',
         );
       }
-      return _queueStopForLater(
+      final queuedMessage = await _queueStopForLater(
         stop,
         action,
         source,
         occurredAt,
       );
+      if (finalCompletion) {
+        await _activateDocumentGate();
+        return _l(
+          'A fuvar befejeződött. A stop offline sorban áll. Kérlek, scanneld be a CMR-t.',
+          'The job is complete. The stop is queued offline. Please scan the CMR.',
+          'Der Auftrag ist abgeschlossen. Der Stopp wartet offline. Bitte den CMR scannen.',
+        );
+      }
+      return queuedMessage;
     } on StateError {
-      return _queueStopForLater(
+      final queuedMessage = await _queueStopForLater(
         stop,
         action,
         source,
         occurredAt,
       );
+      if (finalCompletion) {
+        await _activateDocumentGate();
+        return _l(
+          'A fuvar befejeződött. A stop offline sorban áll. Kérlek, scanneld be a CMR-t.',
+          'The job is complete. The stop is queued offline. Please scan the CMR.',
+          'Der Auftrag ist abgeschlossen. Der Stopp wartet offline. Bitte den CMR scannen.',
+        );
+      }
+      return queuedMessage;
     } catch (_) {
-      return _queueStopForLater(
+      final queuedMessage = await _queueStopForLater(
         stop,
         action,
         source,
         occurredAt,
       );
+      if (finalCompletion) {
+        await _activateDocumentGate();
+        return _l(
+          'A fuvar befejeződött. A stop offline sorban áll. Kérlek, scanneld be a CMR-t.',
+          'The job is complete. The stop is queued offline. Please scan the CMR.',
+          'Der Auftrag ist abgeschlossen. Der Stopp wartet offline. Bitte den CMR scannen.',
+        );
+      }
+      return queuedMessage;
     }
   }
 
@@ -1060,7 +1338,8 @@ class _DriverShellScreenState extends State<DriverShellScreen>
       );
       if (!mounted) return;
       _snack(message);
-      setState(() => _index = 0);
+      unawaited(_voice.announce(message));
+      setState(() => _index = _documentGateActive ? 3 : 0);
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (_homeScrollController.hasClients) {
           _homeScrollController.animateTo(
@@ -1339,6 +1618,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
       await _flushPendingStopActions(refreshAfter: false);
     }
     await _refreshJobs(showLoading: false);
+    await _refreshJobCmrStates();
   }
 
   @override
@@ -1350,6 +1630,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
     _pushSub?.cancel();
     _trackingSub?.cancel();
     _voiceSub?.cancel();
+    _sync.removeListener(_documentSyncChanged);
     _homeScrollController.dispose();
     unawaited(_voice.dispose());
     super.dispose();
@@ -1372,6 +1653,25 @@ class _DriverShellScreenState extends State<DriverShellScreen>
               ),
             ),
           ),
+          if (_hasQueuedJobCmr)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+              color: const Color(0xFF5A3A00),
+              child: Text(
+                _l(
+                  'A dokumentumok még nem érkeztek fel a központba. Kapcsolat esetén automatikusan feltöltjük.',
+                  'The documents have not reached the office yet. They will upload automatically when a connection is available.',
+                  'Die Dokumente sind noch nicht in der Zentrale angekommen. Bei Verbindung werden sie automatisch hochgeladen.',
+                ),
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Color(0xFFFFD27A),
+                  fontSize: 11,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
           Expanded(
             child: IndexedStack(
               index: _index,
@@ -1388,7 +1688,20 @@ class _DriverShellScreenState extends State<DriverShellScreen>
       bottomNavigationBar: NavigationBar(
         height: 72,
         selectedIndex: _index,
-        onDestinationSelected: (value) => setState(() => _index = value),
+        onDestinationSelected: (value) {
+          if (_documentGateActive && value != 3) {
+            setState(() => _index = 3);
+            _snack(
+              _l(
+                'A fuvar lezárásához előbb scanneld be a CMR-t.',
+                'Scan the CMR before leaving the completed job.',
+                'Bitte zuerst den CMR scannen, bevor du den Auftrag verlässt.',
+              ),
+            );
+            return;
+          }
+          setState(() => _index = value);
+        },
         backgroundColor: const Color(0xFF030D16),
         indicatorColor: _blue.withValues(alpha: .18),
         destinations: [
@@ -1499,11 +1812,72 @@ class _DriverShellScreenState extends State<DriverShellScreen>
         ],
       );
 
+  Widget _noJobsHome() => _page([
+        SizedBox(height: MediaQuery.of(context).size.height * .14),
+        Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 360),
+            child: _panel(
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Icon(
+                    Icons.work_outline_rounded,
+                    color: _blue,
+                    size: 44,
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    _l('MUNKÁK', 'JOBS', 'AUFTRÄGE'),
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 28,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 7),
+                  Text(
+                    _l(
+                      'Jelenleg nincs kiosztott munkád.',
+                      'You currently have no assigned jobs.',
+                      'Derzeit sind keine Aufträge zugewiesen.',
+                    ),
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Colors.white54,
+                      height: 1.35,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  FilledButton.icon(
+                    onPressed: _loading
+                        ? null
+                        : () => unawaited(_refreshJobs()),
+                    icon: const Icon(Icons.refresh_rounded),
+                    label: Text(
+                      _l(
+                        'MUNKÁK FRISSÍTÉSE',
+                        'REFRESH JOBS',
+                        'AUFTRÄGE AKTUALISIEREN',
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ], controller: _homeScrollController);
+
   Widget _home() {
     final job = _job;
     final stop = _stop;
     final trackingNotice = _driverTrackingNotice();
     final pendingStopNotice = _pendingStopNotice();
+    if (!_loading && job == null) {
+      return _noJobsHome();
+    }
+
     final currentCompany = stop?.company.trim().isNotEmpty == true
         ? stop!.company
         : job == null
@@ -2471,6 +2845,38 @@ class _DriverShellScreenState extends State<DriverShellScreen>
           style: const TextStyle(color: Colors.white54),
         ),
         const SizedBox(height: 14),
+        if (_documentGateActive) ...[
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: const Color(0xFF3A1717),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: const Color(0xFFFF6B6B)),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(Icons.warning_amber_rounded, color: Color(0xFFFF8C8C)),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    _l(
+                      'CMR HIÁNYZIK. A fuvar lezárásához scanneld be a CMR-t.',
+                      'CMR MISSING. Scan the CMR to finish this job.',
+                      'CMR FEHLT. Bitte den CMR scannen, um den Auftrag abzuschließen.',
+                    ),
+                    style: const TextStyle(
+                      color: Color(0xFFFFB0B0),
+                      fontWeight: FontWeight.w900,
+                      height: 1.35,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+        ],
         _panel(
           Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
