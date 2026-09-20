@@ -1,6 +1,7 @@
 import 'package:geolocator/geolocator.dart';
 
 import '../models/tracking_models.dart';
+import 'roaming_resilience.dart';
 
 class LocationCaptureService {
   const LocationCaptureService();
@@ -16,21 +17,35 @@ class LocationCaptureService {
       return null;
     }
 
+    Position? position;
     try {
-      final position = await Geolocator.getCurrentPosition(
+      position = await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(
           accuracy: LocationAccuracy.high,
           timeLimit: Duration(seconds: 12),
         ),
       );
-      return LocationStamp(
-        latitude: position.latitude,
-        longitude: position.longitude,
-        accuracy: position.accuracy,
-        capturedAt: position.timestamp,
-      );
     } catch (_) {
+      position = await Geolocator.getLastKnownPosition();
+    }
+
+    if (position == null ||
+        !RoamingResilience.validCoordinates(
+          position.latitude,
+          position.longitude,
+        ) ||
+        !RoamingResilience.isFresh(
+          position.timestamp,
+          DateTime.now(),
+        )) {
       return null;
     }
+
+    return LocationStamp(
+      latitude: position.latitude,
+      longitude: position.longitude,
+      accuracy: RoamingResilience.finiteOrZero(position.accuracy),
+      capturedAt: position.timestamp,
+    );
   }
 }
