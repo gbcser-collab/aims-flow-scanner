@@ -1,3 +1,5 @@
+[Reading 49 lines from start (total: 49 lines, 0 remaining)]
+
 <?php
 declare(strict_types=1);
 require __DIR__ . '/bootstrap.php';
@@ -32,11 +34,20 @@ foreach ($j->fetchAll(PDO::FETCH_ASSOC) as $job) {
             'completedAt'=>$row['completed_at'] ?? null,
         ];
     }
+    $orderData=[];
+    if (!empty($job['order_payload_json'])) {
+        $decoded=json_decode((string)$job['order_payload_json'],true);
+        if (is_array($decoded)) $orderData=$decoded;
+    }
     $jobs[]=[
         'id'=>(int)$job['id'],'reference'=>$job['reference'],'status'=>$job['status'],
         'partial'=>(int)($job['partial_load'] ?? 0)===1,
+        'sourceOrderId'=>$job['source_order_id'] ?? null,
+        'orderData'=>$orderData,
         'seenAt'=>$job['driver_seen_at'] ?? null,'acceptedAt'=>$job['driver_accepted_at'] ?? null,
         'stops'=>$stops,
     ];
 }
 aims_json(['ok'=>true,'plate'=>$plate,'jobs'=>$jobs]);
+
+[executed on device: GABOR-PC (4f5060cc-3a10-4200-947d-55b7a0fc1e22)]
