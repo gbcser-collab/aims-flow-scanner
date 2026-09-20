@@ -113,16 +113,38 @@ class DriverApiService {
     final uri = Uri.parse(
       '${_base()}/driver_jobs.php?plate=${Uri.encodeQueryComponent(normalized)}',
     );
-    final response =
-        await http.get(uri, headers: _headers).timeout(const Duration(seconds: 12));
-    final body = _decode(response);
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw StateError(body['error']?.toString() ?? 'HTTP ${response.statusCode}');
+
+    Object? lastError;
+    for (var attempt = 0; attempt < 3; attempt++) {
+      try {
+        final response = await http
+            .get(uri, headers: _headers)
+            .timeout(const Duration(seconds: 12));
+        final body = _decode(response);
+        if (response.statusCode >= 200 && response.statusCode < 300) {
+          return (body['jobs'] as List? ?? const [])
+              .whereType<Map>()
+              .map((item) =>
+                  DriverJob.fromJson(Map<String, dynamic>.from(item)))
+              .toList();
+        }
+
+        final transient = response.statusCode == 408 ||
+            response.statusCode == 429 ||
+            response.statusCode >= 500;
+        if (!transient || attempt == 2) {
+          throw StateError(
+            body['error']?.toString() ?? 'HTTP ${response.statusCode}',
+          );
+        }
+        lastError = StateError('HTTP ${response.statusCode}');
+      } catch (error) {
+        lastError = error;
+        if (attempt == 2 || error is StateError) rethrow;
+      }
+      await Future<void>.delayed(Duration(milliseconds: 350 * (attempt + 1)));
     }
-    return (body['jobs'] as List? ?? const [])
-        .whereType<Map>()
-        .map((item) => DriverJob.fromJson(Map<String, dynamic>.from(item)))
-        .toList();
+    throw StateError(lastError?.toString() ?? 'Hálózati hiba');
   }
 
   Future<void> acknowledge({
@@ -228,8 +250,10 @@ class DriverApiService {
 
   Map<String, dynamic> _decode(http.Response response) {
     if (response.body.trim().isEmpty) return <String, dynamic>{};
-    final parsed = jsonDecode(response.body);
-    if (parsed is Map) return Map<String, dynamic>.from(parsed);
+    try {
+      final parsed = jsonDecode(response.body);
+      if (parsed is Map) return Map<String, dynamic>.from(parsed);
+    } catch (_) {}
     return <String, dynamic>{};
   }
 }
