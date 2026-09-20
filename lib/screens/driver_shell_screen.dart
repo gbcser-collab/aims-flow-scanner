@@ -960,7 +960,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
             TextButton.icon(
               onPressed: () {
                 Navigator.of(context).pop();
-                Future.microtask(() => _showOrderDetails(job));
+                Future.microtask(() => _showOrderDetails(job!));
               },
               icon: const Icon(Icons.description_outlined),
               label: Text(_l('FUVARMEGBÍZÁS', 'TRANSPORT ORDER', 'TRANSPORTAUFTRAG')),
