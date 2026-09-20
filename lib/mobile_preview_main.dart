@@ -23,13 +23,14 @@ const mobilePatch = r'''
 .aimsSysActions button{flex:1;border:1px solid #28566f;background:#092034;color:#dff6ff;border-radius:11px;padding:9px 7px;font-size:9px;font-weight:900}
 :root{--aims-system-bottom:env(safe-area-inset-bottom,0px)}
 .phone{padding-bottom:calc(92px + var(--aims-system-bottom))!important}
-.nav{position:fixed!important;left:50%!important;transform:translateX(-50%)!important;bottom:var(--aims-system-bottom)!important;width:min(430px,100%)!important;height:74px!important;padding:7px 10px 8px!important;display:grid!important;grid-template-columns:repeat(4,minmax(0,1fr))!important;gap:7px!important;background:#020b12f7!important;border-top:1px solid #17384c!important;box-shadow:none!important;z-index:999!important}
+.nav{position:fixed!important;left:50%!important;transform:translateX(-50%)!important;bottom:var(--aims-system-bottom)!important;width:min(430px,100%)!important;height:74px!important;padding:7px 10px 8px!important;grid-template-columns:repeat(4,minmax(0,1fr))!important;gap:7px!important;background:#020b12f7!important;border-top:1px solid #17384c!important;box-shadow:none!important;z-index:999!important}
 .nav button{position:relative!important;min-width:0!important;height:58px!important;padding:6px 2px 5px!important;border-radius:12px!important;border:1px solid #12384d!important;background:#06131d!important;display:flex!important;flex-direction:column!important;align-items:center!important;justify-content:center!important;gap:3px!important;color:#7894a6!important;font-size:9px!important;line-height:1!important;font-weight:900!important;letter-spacing:.2px!important;box-shadow:none!important;overflow:hidden!important}
 .nav button .ni{width:24px!important;height:24px!important;display:grid!important;place-items:center!important;margin:0!important;line-height:1!important}
 .nav button .ni svg{width:22px!important;height:22px!important;max-width:22px!important;max-height:22px!important;stroke:currentColor!important;stroke-width:2.15!important;fill:none!important;filter:none!important;box-shadow:none!important}
 .nav button.on{color:#eefcff!important;background:#0a2739!important;border-color:#2a7595!important;box-shadow:none!important}
 .nav button.on:before{content:""!important;position:absolute!important;top:0!important;left:33%!important;right:33%!important;height:2px!important;background:#42d3ff!important;border-radius:0 0 2px 2px!important;box-shadow:none!important}
 .nav button.locked{opacity:.36!important}
+.nav[style*="display:none"]{display:none!important}
 @media(max-width:380px){.nav{gap:5px!important;padding-left:7px!important;padding-right:7px!important}.nav button{font-size:8.5px!important}}
 </style>
 <script>
