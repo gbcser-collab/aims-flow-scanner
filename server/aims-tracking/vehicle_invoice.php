@@ -1,5 +1,3 @@
-[Reading 71 lines from start (total: 71 lines, 0 remaining)]
-
 <?php
 declare(strict_types=1);
 require __DIR__.'/bootstrap.php';
@@ -71,5 +69,3 @@ if(!empty($data['createVignette'])&&$category==='toll_vignette'){
 $pdo=aims_db();$trackingVehicle=aims_vehicle_for_point($pdo,$deviceId,$plate);
 if($trackingVehicle){aims_notify($pdo,(int)$trackingVehicle['admin_user_id'],(int)$trackingVehicle['id'],'vehicle_invoice','success',$plate.' számla érkezett',trim($invoiceDate.' • '.$vendor.' • '.$category),'vehicle_invoice:'.$invoiceId,['invoiceId'=>$invoiceId,'category'=>$category]);aims_try_push($pdo,8);}
 aims_json(['ok'=>true,'invoiceId'=>$invoiceId,'vignetteId'=>$vignetteId]);
-
-[executed on device: GABOR-PC (4f5060cc-3a10-4200-947d-55b7a0fc1e22)]
