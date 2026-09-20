@@ -98,13 +98,23 @@ class AimsVoiceService {
   }
 
   Future<bool> enableHandsFree() async {
+    // Continuous wake-word listening is intentionally disabled.
+    // The driver explicitly starts one recognition session with the talk button.
     final ok = await initialize();
     if (!ok) return false;
-
-    _enabled = true;
-    await AimsHandsFreePlatform.start();
+    _enabled = false;
     _commandMode = false;
-    await _startWakeListening();
+    _restartTimer?.cancel();
+    _commandTimeout?.cancel();
+    await _speech.cancel();
+    await AimsHandsFreePlatform.stop();
+    _emit(
+      AimsVoiceState(
+        enabled: false,
+        mode: AimsVoiceMode.off,
+        message: _locale.t('hands_free_off'),
+      ),
+    );
     return true;
   }
 
@@ -129,10 +139,14 @@ class AimsVoiceService {
   Future<void> triggerAssistant() async {
     final ok = await initialize();
     if (!ok) return;
-    if (!_enabled) {
-      _enabled = true;
-      await AimsHandsFreePlatform.start();
-    }
+
+    // Push-to-talk: one explicit tap opens one bounded recognition window.
+    // It never starts the background wake-word service.
+    _restartTimer?.cancel();
+    _commandTimeout?.cancel();
+    await _speech.cancel();
+    _enabled = true;
+    _commandMode = true;
     await _enterCommandMode();
   }
 
@@ -151,10 +165,15 @@ class AimsVoiceService {
     if (value.isEmpty) return;
     final ok = await initialize();
     if (!ok) return;
-    final resumeWakeWord = _enabled;
     await _speak(value);
-    if (resumeWakeWord && _enabled && !_handlingResult) {
-      await _startWakeListening();
+    if (!_commandMode && !_handlingResult) {
+      _emit(
+        AimsVoiceState(
+          enabled: false,
+          mode: AimsVoiceMode.off,
+          message: _locale.t('hands_free_off'),
+        ),
+      );
     }
   }
 
@@ -177,13 +196,13 @@ class AimsVoiceService {
     _commandMode = true;
     _commandBuffer = '';
     _commandTimeout?.cancel();
-    _commandTimeout = Timer(const Duration(seconds: 10), () {
+    _commandTimeout = Timer(const Duration(seconds: 8), () {
       if (_enabled && _commandMode && !_handlingResult) {
         final buffered = _commandBuffer.trim();
         if (buffered.isNotEmpty) {
           unawaited(_executeCommandText(buffered));
         } else {
-          unawaited(_retryCommand());
+          unawaited(_finishOneShotNoSpeech());
         }
       }
     });
@@ -384,6 +403,23 @@ class AimsVoiceService {
     await _startCommandListening();
   }
 
+  Future<void> _finishOneShotNoSpeech() async {
+    _commandTimeout?.cancel();
+    _restartTimer?.cancel();
+    _commandBuffer = '';
+    _commandMode = false;
+    _enabled = false;
+    await _speech.cancel();
+    _emit(
+      AimsVoiceState(
+        enabled: false,
+        mode: AimsVoiceMode.error,
+        message: _locale.t('not_understood'),
+        lastHeard: _lastHeard,
+      ),
+    );
+  }
+
   Future<void> _retryCommand() async {
     if (_handlingResult) return;
     _commandTimeout?.cancel();
@@ -426,9 +462,19 @@ class AimsVoiceService {
       _handlingResult = false;
     }
 
-    if (_enabled) {
-      await _startWakeListening();
-    }
+    // Every explicit talk session ends here. Never resume background listening.
+    _enabled = false;
+    _commandMode = false;
+    _restartTimer?.cancel();
+    _commandTimeout?.cancel();
+    _emit(
+      AimsVoiceState(
+        enabled: false,
+        mode: AimsVoiceMode.off,
+        message: _locale.t('hands_free_off'),
+        lastHeard: _lastHeard,
+      ),
+    );
   }
 
   Future<void> _speak(String text) async {
@@ -461,55 +507,43 @@ class AimsVoiceService {
   void _onStatus(String status) {
     final s = status.toLowerCase();
     if (!_enabled || _speaking || _handlingResult) return;
-    if (s.contains('done') || s.contains('notlistening')) {
-      _restartTimer?.cancel();
-      if (_commandMode && _commandBuffer.trim().isNotEmpty) {
-        final buffered = _commandBuffer.trim();
-        _restartTimer = Timer(const Duration(milliseconds: 250), () {
-          if (_enabled && !_speaking && !_handlingResult && _commandMode) {
-            unawaited(_executeCommandText(buffered));
-          }
-        });
-        return;
-      }
-      _restartTimer = Timer(
-        _commandMode
-            ? const Duration(milliseconds: 350)
-            : const Duration(milliseconds: 1200),
-        () {
-          if (!_enabled || _speaking || _handlingResult) return;
-          if (_commandMode) {
-            unawaited(_startCommandListening());
-          } else {
-            unawaited(_startWakeListening());
-          }
-        },
-      );
+    if (!s.contains('done') && !s.contains('notlistening')) return;
+
+    _restartTimer?.cancel();
+    if (_commandMode && _commandBuffer.trim().isNotEmpty) {
+      final buffered = _commandBuffer.trim();
+      _restartTimer = Timer(const Duration(milliseconds: 180), () {
+        if (_enabled && !_speaking && !_handlingResult && _commandMode) {
+          unawaited(_executeCommandText(buffered));
+        }
+      });
+      return;
     }
+
+    // No automatic restart: silence closes the one-shot microphone session.
+    _restartTimer = Timer(const Duration(milliseconds: 180), () {
+      if (_enabled && !_speaking && !_handlingResult && _commandMode) {
+        unawaited(_finishOneShotNoSpeech());
+      }
+    });
   }
 
   void _onError(SpeechRecognitionError error) {
     if (!_enabled) return;
-
+    _restartTimer?.cancel();
+    _commandTimeout?.cancel();
+    _enabled = false;
+    _commandMode = false;
     _emit(
       AimsVoiceState(
-        enabled: true,
+        enabled: false,
         mode: AimsVoiceMode.error,
         message: error.permanent
             ? _locale.t('speech_permission_error')
-            : _locale.t('speech_restarting'),
+            : _locale.t('not_understood'),
         lastHeard: _lastHeard,
       ),
     );
-
-    if (!error.permanent) {
-      _restartTimer?.cancel();
-      _restartTimer = Timer(const Duration(seconds: 1), () {
-        if (_enabled && !_speaking && !_handlingResult) {
-          unawaited(_startWakeListening());
-        }
-      });
-    }
   }
 
   Future<void> _applyLanguage() async {
@@ -625,9 +659,7 @@ class AimsVoiceService {
     await _speech.cancel();
     await _tts.stop();
     await _applyLanguage();
-    if (_enabled && !_speaking && !_handlingResult) {
-      await _startWakeListening();
-    }
+    // Language changes never restart microphone capture automatically.
   }
 
   void _emit(AimsVoiceState value) {
