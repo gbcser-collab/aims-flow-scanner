@@ -116,6 +116,11 @@ class _FlowChangeCodeScreenState extends State<FlowChangeCodeScreen> {
               textCapitalization: TextCapitalization.characters,
               maxLength: 6,
               obscureText: true,
+              style: const TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 3,
+              ),
               inputFormatters: [
                 FilteringTextInputFormatter.allow(RegExp(r'[A-Za-z0-9]')),
               ],
@@ -130,6 +135,11 @@ class _FlowChangeCodeScreenState extends State<FlowChangeCodeScreen> {
               textCapitalization: TextCapitalization.characters,
               maxLength: 6,
               obscureText: true,
+              style: const TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 3,
+              ),
               inputFormatters: [
                 FilteringTextInputFormatter.allow(RegExp(r'[A-Za-z0-9]')),
               ],
@@ -154,6 +164,9 @@ class _FlowChangeCodeScreenState extends State<FlowChangeCodeScreen> {
               onPressed: _busy ? null : _save,
               icon: const Icon(Icons.password_rounded),
               label: Text(_busy ? t('sending') : t('save_code')),
+              style: FilledButton.styleFrom(
+                minimumSize: const Size.fromHeight(64),
+              ),
             ),
           ],
         ),
