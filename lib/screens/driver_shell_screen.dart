@@ -102,7 +102,6 @@ class _DriverShellScreenState extends State<DriverShellScreen>
     mode: AimsVoiceMode.off,
     message: 'AIMS Hands-Free kikapcsolva.',
   );
-  bool _handsFreeBusy = false;
   int _refreshGeneration = 0;
   DateTime? _lastResumeRefreshAt;
   final Map<int, List<_PendingStopAction>> _pendingStopActions = {};
@@ -1694,27 +1693,6 @@ class _DriverShellScreenState extends State<DriverShellScreen>
     }
   }
 
-  Future<void> _setHandsFree(bool enabled) async {
-    if (_handsFreeBusy) return;
-    setState(() => _handsFreeBusy = true);
-    final prefs = await SharedPreferences.getInstance();
-
-    try {
-      if (enabled) {
-        final ok = await _voice.enableHandsFree();
-        await prefs.setBool(_prefsHandsFree, ok);
-        if (!ok && mounted) {
-          _snack(_l('A hangfelismerés nem indítható. Ellenőrizd a mikrofon engedélyt.', 'Speech recognition could not start. Check microphone permission.', 'Spracherkennung konnte nicht gestartet werden. Mikrofonberechtigung prüfen.'));
-        }
-      } else {
-        await _voice.disableHandsFree();
-        await prefs.setBool(_prefsHandsFree, false);
-      }
-    } finally {
-      if (mounted) setState(() => _handsFreeBusy = false);
-    }
-  }
-
   void _snack(String value) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(value)));
@@ -2576,9 +2554,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
             const SizedBox(height: 12),
             FilledButton.icon(
               key: const Key('aims-assistant-talk'),
-              onPressed: _handsFreeBusy
-                  ? null
-                  : () => unawaited(_voice.triggerAssistant()),
+              onPressed: () => unawaited(_voice.triggerAssistant()),
               icon: const Icon(Icons.record_voice_over_rounded, size: 26),
               label: Text(
                 _l(
