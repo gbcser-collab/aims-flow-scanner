@@ -220,7 +220,9 @@ class _FlowLoginScreenState extends State<FlowLoginScreen> {
 
   InputDecoration _decoration(String hint, IconData icon) => InputDecoration(
         hintText: hint,
-        prefixIcon: Icon(icon, color: const Color(0xFF9EDBFF)),
+        prefixIcon: Icon(icon, color: const Color(0xFF9EDBFF), size: 25),
+        prefixIconConstraints: const BoxConstraints(minWidth: 54, minHeight: 58),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
         filled: true,
         fillColor: const Color(0xFF0A2236),
         hintStyle: const TextStyle(color: Colors.white38),
@@ -268,7 +270,7 @@ class _FlowLoginScreenState extends State<FlowLoginScreen> {
                           child: AimsLanguageSelector(),
                         ),
                         const SizedBox(height: 12),
-                        Image.memory(_logo, width: 118, height: 118),
+                        Image.memory(_logo, width: 96, height: 96),
                         const SizedBox(height: 14),
                         const Text(
                           'AIMS FLOW',
@@ -291,10 +293,10 @@ class _FlowLoginScreenState extends State<FlowLoginScreen> {
                         ),
                         const SizedBox(height: 28),
                         Container(
-                          padding: const EdgeInsets.all(20),
+                          padding: const EdgeInsets.all(18),
                           decoration: BoxDecoration(
                             color: const Color(0xDD071725),
-                            borderRadius: BorderRadius.circular(24),
+                            borderRadius: BorderRadius.circular(18),
                             border: Border.all(
                               color: _blue.withValues(alpha: .5),
                             ),
@@ -336,8 +338,16 @@ class _FlowLoginScreenState extends State<FlowLoginScreen> {
                                       TextCapitalization.characters,
                                   textInputAction: TextInputAction.next,
                                   inputFormatters: [
+                                    FilteringTextInputFormatter.allow(
+                                      RegExp(r'[A-Za-z0-9 -]'),
+                                    ),
                                     LengthLimitingTextInputFormatter(12),
                                   ],
+                                  style: const TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w800,
+                                    letterSpacing: .8,
+                                  ),
                                   decoration: _decoration(
                                     t('plate'),
                                     Icons.local_shipping_outlined,
@@ -360,6 +370,11 @@ class _FlowLoginScreenState extends State<FlowLoginScreen> {
                                     ),
                                   ],
                                   onSubmitted: (_) => _submit(),
+                                  style: const TextStyle(
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.w900,
+                                    letterSpacing: 3,
+                                  ),
                                   decoration: _decoration(
                                     t('driver_code'),
                                     Icons.key_rounded,
@@ -521,7 +536,7 @@ class _FlowLoginScreenState extends State<FlowLoginScreen> {
                                   t(_busy ? 'signing_in' : 'sign_in'),
                                 ),
                                 style: FilledButton.styleFrom(
-                                  minimumSize: const Size.fromHeight(58),
+                                  minimumSize: const Size.fromHeight(64),
                                   backgroundColor: _blue,
                                   foregroundColor: const Color(0xFF00131F),
                                   textStyle: const TextStyle(
@@ -548,7 +563,7 @@ class _FlowLoginScreenState extends State<FlowLoginScreen> {
                                     const Icon(Icons.person_add_alt_1_rounded),
                                 label: Text(t('register')),
                                 style: OutlinedButton.styleFrom(
-                                  minimumSize: const Size.fromHeight(54),
+                                  minimumSize: const Size.fromHeight(58),
                                   foregroundColor: Colors.white,
                                   side: const BorderSide(color: _blue),
                                   textStyle: const TextStyle(
