@@ -1,5 +1,3 @@
-[Reading 115 lines from start (total: 115 lines, 0 remaining)]
-
 import 'dart:io';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
@@ -115,5 +113,3 @@ class _InvoiceScannerScreenState extends State<InvoiceScannerScreen> with Widget
   InputDecoration _deco(String label)=>InputDecoration(labelText:label,labelStyle:const TextStyle(color:Colors.white54),filled:true,fillColor:const Color(0xFF171A1F),border:OutlineInputBorder(borderRadius:BorderRadius.circular(12),borderSide:BorderSide.none));
   Widget _field(String label,TextEditingController c,{bool number=false,bool caps=false})=>Padding(padding:const EdgeInsets.only(bottom:10),child:TextField(controller:c,keyboardType:number?const TextInputType.numberWithOptions(decimal:true):null,textCapitalization:caps?TextCapitalization.characters:TextCapitalization.sentences,style:const TextStyle(color:Colors.white,fontWeight:FontWeight.w700),decoration:_deco(label)));
 }
-
-[executed on device: GABOR-PC (4f5060cc-3a10-4200-947d-55b7a0fc1e22)]
