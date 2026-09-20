@@ -956,11 +956,11 @@ class _DriverShellScreenState extends State<DriverShellScreen>
           ],
         ),
         actions: [
-          if (job!.orderData.isNotEmpty)
+          if (job.orderData.isNotEmpty)
             TextButton.icon(
               onPressed: () {
                 Navigator.of(context).pop();
-                Future.microtask(() => _showOrderDetails(job!));
+                Future.microtask(() => _showOrderDetails(job));
               },
               icon: const Icon(Icons.description_outlined),
               label: Text(_l('FUVARMEGBÍZÁS', 'TRANSPORT ORDER', 'TRANSPORTAUFTRAG')),
