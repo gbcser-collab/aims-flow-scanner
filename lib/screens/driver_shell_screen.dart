@@ -10,6 +10,7 @@ import '../services/aims_voice_command.dart';
 import '../services/aims_voice_service.dart';
 import '../services/driver_api_service.dart';
 import '../services/driver_push_service.dart';
+import '../services/roaming_resilience.dart';
 import '../services/vehicle_tracking_service.dart';
 import '../widgets/aims_flow_logo.dart';
 import 'fuel_receipt_screen.dart';
@@ -75,6 +76,33 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
     final compact = value.trim().toUpperCase().replaceAll(RegExp(r'[^A-Z0-9]'), '');
     if (compact.length == 6) return '${compact.substring(0, 3)}-${compact.substring(3)}';
     return value.trim().toUpperCase();
+  }
+
+  bool get _trackingQueuedOffline {
+    final error = (_trackingStatus?.lastError ?? '').toLowerCase();
+    return error.contains('nincs kapcsolat') ||
+        error.contains('helyben sorban áll') ||
+        error.contains('biztonságosan helyben');
+  }
+
+  String? _driverTrackingNotice() {
+    final error = (_trackingStatus?.lastError ?? '').trim();
+    if (error.isEmpty) return null;
+    if (_trackingQueuedOffline) {
+      return _l(
+        'Nincs mobilnet. A GPS-pontok biztonságosan a telefonon sorban állnak, és kapcsolatkor automatikusan elküldjük őket.',
+        'No mobile data. GPS points are safely queued on the phone and will upload automatically when the connection returns.',
+        'Keine mobile Datenverbindung. GPS-Punkte werden sicher auf dem Telefon gespeichert und bei Verbindung automatisch gesendet.',
+      );
+    }
+    if (error.toLowerCase().contains('szerverkulcs')) {
+      return _l(
+        'A GPS-kapcsolat beállítási hibát jelez. A nyomkövetés fut, de szólj az adminnak.',
+        'GPS reports a configuration issue. Tracking is running, but contact the administrator.',
+        'GPS meldet ein Konfigurationsproblem. Tracking läuft, bitte die Administration informieren.',
+      );
+    }
+    return error;
   }
 
   String _l(String hu, String en, String de) => switch (
@@ -148,7 +176,13 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
       await _activateDriverServices();
     }
 
-    final handsFree = prefs.getBool(_prefsHandsFree) ?? false;
+    // Driver-first default: voice control is ON unless the driver explicitly
+    // switched it off earlier. No need to hunt for the microphone every trip.
+    final savedHandsFree = prefs.getBool(_prefsHandsFree);
+    final handsFree = savedHandsFree ?? true;
+    if (savedHandsFree == null) {
+      await prefs.setBool(_prefsHandsFree, true);
+    }
     if (handsFree && mounted) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         unawaited(_setHandsFree(true));
@@ -347,16 +381,47 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
   }
 
   Future<void> _openMapsForStop(DriverStop stop) async {
-    if (stop.address.trim().isEmpty) {
+    final address = stop.address.trim();
+    final hasCoordinates = RoamingResilience.validCoordinates(
+      stop.latitude,
+      stop.longitude,
+    );
+    if (address.isEmpty && !hasCoordinates) {
       _snack(_l('Nincs megnyitható cím.', 'There is no address to open.', 'Es gibt keine Adresse zum Öffnen.'));
       return;
     }
-    final uri = Uri.parse(
-      'https://www.google.com/maps/dir/?api=1&destination=${Uri.encodeQueryComponent(stop.address)}&travelmode=driving',
+
+    final destination = hasCoordinates
+        ? '${stop.latitude},${stop.longitude}'
+        : address;
+    final nativeUri = hasCoordinates
+        ? Uri.parse('geo:$destination?q=$destination')
+        : Uri(
+            scheme: 'geo',
+            path: '0,0',
+            queryParameters: {'q': address},
+          );
+
+    try {
+      if (await launchUrl(nativeUri, mode: LaunchMode.externalApplication)) {
+        return;
+      }
+    } catch (_) {}
+
+    final webUri = Uri.parse(
+      'https://www.google.com/maps/dir/?api=1&destination=${Uri.encodeQueryComponent(destination)}&travelmode=driving',
     );
-    if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
-      _snack(_l('A Google Maps nem nyitható meg.', 'Google Maps could not be opened.', 'Google Maps konnte nicht geöffnet werden.'));
-    }
+    try {
+      if (await launchUrl(webUri, mode: LaunchMode.externalApplication)) {
+        return;
+      }
+    } catch (_) {}
+
+    _snack(_l(
+      'A navigációs alkalmazás nem nyitható meg.',
+      'The navigation app could not be opened.',
+      'Die Navigations-App konnte nicht geöffnet werden.',
+    ));
   }
 
   Future<CameraDescription?> _backCamera() async {
@@ -438,6 +503,7 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
     DriverStop stop,
     String action, {
     required String expectedType,
+    String source = 'voice',
   }) async {
     if (stop.type != expectedType) {
       return expectedType == 'pickup'
@@ -457,7 +523,7 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
         plate: _plate,
         stopId: stop.id,
         action: action,
-        source: 'voice',
+        source: source,
       );
       await _refreshJobs();
       if (action == 'arrived') {
@@ -491,6 +557,84 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
         'Der Stoppstatus konnte nicht gespeichert werden.',
       );
     }
+  }
+
+  Future<void> _runPrimaryStopAction() async {
+    final stop = _stop;
+    if (stop == null || _actionBusy) return;
+
+    if (stop.arrived) {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          backgroundColor: const Color(0xFF071522),
+          title: Text(
+            stop.type == 'delivery'
+                ? _l(
+                    'Lerakás befejezése?',
+                    'Finish delivery?',
+                    'Entladung abschließen?',
+                  )
+                : _l(
+                    'Felrakás befejezése?',
+                    'Finish pickup?',
+                    'Beladung abschließen?',
+                  ),
+            style: const TextStyle(fontWeight: FontWeight.w900),
+          ),
+          content: Text(
+            _l(
+              'Csak akkor jelöld késznek, ha a rakodás valóban befejeződött.',
+              'Mark it complete only when loading/unloading is really finished.',
+              'Nur als fertig markieren, wenn die Be-/Entladung wirklich abgeschlossen ist.',
+            ),
+            style: const TextStyle(color: Colors.white70, height: 1.4),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: Text(_l('MÉGSE', 'CANCEL', 'ABBRECHEN')),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: Text(_l('IGEN, KÉSZ', 'YES, COMPLETE', 'JA, FERTIG')),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true || !mounted) return;
+    }
+
+    setState(() => _actionBusy = true);
+    try {
+      final action = stop.arrived ? 'completed' : 'arrived';
+      final message = await _markStop(
+        stop,
+        action,
+        expectedType: stop.type,
+        source: 'touch',
+      );
+      if (!mounted) return;
+      _snack(message);
+      setState(() => _index = 0);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_homeScrollController.hasClients) {
+          _homeScrollController.animateTo(
+            0,
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeOutCubic,
+          );
+        }
+      });
+    } finally {
+      if (mounted) setState(() => _actionBusy = false);
+    }
+  }
+
+  Future<void> _callCurrentContactTouch() async {
+    if (_actionBusy) return;
+    final message = await _callCurrentContact();
+    if (mounted) _snack(message);
   }
 
   Future<String> _callCurrentContact() async {
@@ -766,6 +910,7 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
         ],
       ),
       bottomNavigationBar: NavigationBar(
+        height: 72,
         selectedIndex: _index,
         onDestinationSelected: (value) => setState(() => _index = value),
         backgroundColor: const Color(0xFF030D16),
@@ -871,12 +1016,9 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
                     : 'GPS',
                 _trackingStatus?.running == true ? _green : Colors.white38,
               ),
+              const SizedBox(width: 6),
+              const AimsLanguageSelector(compact: true),
             ],
-          ),
-          const SizedBox(height: 7),
-          const Align(
-            alignment: Alignment.centerRight,
-            child: AimsLanguageSelector(compact: true),
           ),
         ],
       );
@@ -884,6 +1026,7 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
   Widget _home() {
     final job = _job;
     final stop = _stop;
+    final trackingNotice = _driverTrackingNotice();
     final currentCompany = stop?.company.trim().isNotEmpty == true
         ? stop!.company
         : job == null
@@ -942,7 +1085,38 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
                   ),
                   style: const TextStyle(color: Colors.white54, height: 1.35),
                 ),
+              ] else if (stop == null) ...[
+                Text(
+                  _l(
+                    'A fuvar minden megállója kész.',
+                    'All stops on this job are complete.',
+                    'Alle Stopps dieses Auftrags sind abgeschlossen.',
+                  ),
+                  style: const TextStyle(
+                    fontSize: 23,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
               ] else ...[
+                Row(
+                  children: [
+                    _status(
+                      stop.type == 'delivery'
+                          ? _l('LERAKÓ', 'DELIVERY', 'ENTLADUNG')
+                          : _l('FELRAKÓ', 'PICKUP', 'BELADUNG'),
+                      stop.arrived ? _green : _blue,
+                    ),
+                    const Spacer(),
+                    Text(
+                      '#${stop.order}',
+                      style: const TextStyle(
+                        color: Colors.white38,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
                 Text(
                   _l('KÖVETKEZŐ LÉPÉS', 'NEXT STEP', 'NÄCHSTER SCHRITT'),
                   style: const TextStyle(
@@ -954,33 +1128,129 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
                 ),
                 const SizedBox(height: 5),
                 Text(
-                  stop?.type == 'delivery'
-                      ? _l(
-                          'Indulás a lerakóra',
-                          'Go to delivery',
-                          'Zur Entladestelle fahren',
-                        )
-                      : _l(
-                          'Indulás a felrakóra',
-                          'Go to pickup',
-                          'Zur Ladestelle fahren',
-                        ),
-                  style: const TextStyle(fontSize: 27, fontWeight: FontWeight.w900),
+                  stop.arrived
+                      ? (stop.type == 'delivery'
+                          ? _l(
+                              'Lerakás befejezése',
+                              'Finish delivery',
+                              'Entladung abschließen',
+                            )
+                          : _l(
+                              'Felrakás befejezése',
+                              'Finish pickup',
+                              'Beladung abschließen',
+                            ))
+                      : (stop.type == 'delivery'
+                          ? _l(
+                              'Indulás a lerakóra',
+                              'Go to delivery',
+                              'Zur Entladestelle fahren',
+                            )
+                          : _l(
+                              'Indulás a felrakóra',
+                              'Go to pickup',
+                              'Zur Ladestelle fahren',
+                            )),
+                  style: const TextStyle(
+                    fontSize: 28,
+                    fontWeight: FontWeight.w900,
+                    height: 1.08,
+                  ),
                 ),
-                const SizedBox(height: 7),
-                Text(
-                  stop?.address ?? '—',
-                  style: const TextStyle(color: Colors.white60, height: 1.35),
+                const SizedBox(height: 9),
+                SelectableText(
+                  stop.address,
+                  style: const TextStyle(
+                    color: Colors.white70,
+                    fontSize: 16,
+                    height: 1.4,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
                 const SizedBox(height: 16),
                 FilledButton.icon(
-                  onPressed: _openMaps,
-                  icon: const Icon(Icons.navigation_rounded),
+                  key: const Key('flow-primary-navigation'),
+                  onPressed: _actionBusy ? null : _openMaps,
+                  icon: const Icon(Icons.navigation_rounded, size: 26),
                   label: Text(
                     _l(
                       'NAVIGÁCIÓ INDÍTÁSA',
                       'START NAVIGATION',
                       'NAVIGATION STARTEN',
+                    ),
+                  ),
+                  style: FilledButton.styleFrom(
+                    minimumSize: const Size.fromHeight(64),
+                    backgroundColor: _blue,
+                    foregroundColor: const Color(0xFF00131F),
+                    textStyle: const TextStyle(
+                      fontWeight: FontWeight.w900,
+                      fontSize: 15,
+                      letterSpacing: .3,
+                    ),
+                  ),
+                ),
+                if (stop.phone.trim().isNotEmpty) ...[
+                  const SizedBox(height: 9),
+                  OutlinedButton.icon(
+                    key: const Key('flow-primary-call'),
+                    onPressed: _actionBusy
+                        ? null
+                        : () => unawaited(_callCurrentContactTouch()),
+                    icon: const Icon(Icons.call_rounded),
+                    label: Text(
+                      _l(
+                        'KAPCSOLATTARTÓ HÍVÁSA',
+                        'CALL CONTACT',
+                        'KONTAKT ANRUFEN',
+                      ),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      minimumSize: const Size.fromHeight(56),
+                      foregroundColor: Colors.white,
+                      side: const BorderSide(color: Color(0xFF24557D)),
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 9),
+                FilledButton.icon(
+                  key: const Key('flow-primary-stop-action'),
+                  onPressed: _actionBusy
+                      ? null
+                      : () => unawaited(_runPrimaryStopAction()),
+                  icon: Icon(
+                    stop.arrived
+                        ? Icons.task_alt_rounded
+                        : Icons.location_on_rounded,
+                  ),
+                  label: Text(
+                    stop.arrived
+                        ? (stop.type == 'delivery'
+                            ? _l(
+                                'LERAKÁS KÉSZ',
+                                'DELIVERY COMPLETE',
+                                'ENTLADUNG FERTIG',
+                              )
+                            : _l(
+                                'FELRAKÁS KÉSZ',
+                                'PICKUP COMPLETE',
+                                'BELADUNG FERTIG',
+                              ))
+                        : _l(
+                            'MEGÉRKEZTEM',
+                            'I HAVE ARRIVED',
+                            'ANGEKOMMEN',
+                          ),
+                  ),
+                  style: FilledButton.styleFrom(
+                    minimumSize: const Size.fromHeight(60),
+                    backgroundColor: stop.arrived ? _green : const Color(0xFF0F3852),
+                    foregroundColor: stop.arrived
+                        ? const Color(0xFF001B12)
+                        : Colors.white,
+                    textStyle: const TextStyle(
+                      fontWeight: FontWeight.w900,
+                      fontSize: 15,
                     ),
                   ),
                 ),
@@ -997,10 +1267,12 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: _metric(
-                      _l('KÖVETÉS', 'TRACKING', 'TRACKING'),
-                      _trackingStatus?.running == true
-                          ? _l('AKTÍV', 'ACTIVE', 'AKTIV')
-                          : _l('INDÍTÁS', 'START', 'STARTEN'),
+                      'GPS',
+                      _trackingQueuedOffline
+                          ? _l('OFFLINE', 'OFFLINE', 'OFFLINE')
+                          : _trackingStatus?.running == true
+                              ? _l('AKTÍV', 'ACTIVE', 'AKTIV')
+                              : _l('INDÍTÁS', 'START', 'STARTEN'),
                     ),
                   ),
                 ],
@@ -1008,6 +1280,10 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
             ],
           ),
         ),
+      if (trackingNotice != null) ...[
+        const SizedBox(height: 10),
+        _info(trackingNotice),
+      ],
       const SizedBox(height: 12),
       _jobsShortcut(),
       if (_message != null) ...[
@@ -1082,35 +1358,43 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
                       const SizedBox(height: 3),
                       Text(
                         switch (_voiceState.mode) {
-                          AimsVoiceMode.command => _l(
-                              'Parancsot várok…',
-                              'Waiting for your command…',
-                              'Ich warte auf deinen Befehl…',
-                            ),
-                          AimsVoiceMode.speaking => _l(
-                              'Válaszolok…',
-                              'Speaking…',
-                              'Ich antworte…',
-                            ),
-                          AimsVoiceMode.wakeWord => _l(
-                              'Figyelek az „AIMS” ébresztőszóra',
-                              'Listening for “AIMS”',
-                              'Ich höre auf „AIMS“',
-                            ),
-                          AimsVoiceMode.error => _l(
-                              'Hangfelismerési hiba',
-                              'Voice recognition error',
-                              'Spracherkennungsfehler',
-                            ),
-                          _ => _l(
+                          AimsVoiceMode.command => _voiceState.lastHeard.trim().isEmpty
+                              ? _l(
+                                  'HALLGATLAK — mondd természetesen.',
+                                  'LISTENING — speak naturally.',
+                                  'ICH HÖRE — sprich ganz natürlich.',
+                                )
+                              : _l(
+                                  'ÉRTETTEM: ${_voiceState.lastHeard}',
+                                  'GOT IT: ${_voiceState.lastHeard}',
+                                  'VERSTANDEN: ${_voiceState.lastHeard}',
+                                ),
+                          /* legacy wording kept below unreachable by design */
+                          AimsVoiceMode.off => _l(
                               'Érintsd meg és mondd, mit szeretnél.',
                               'Tap and tell me what you need.',
                               'Tippe und sage, was du brauchst.',
                             ),
+                          AimsVoiceMode.speaking => _l(
+                              'VÁLASZOLOK…',
+                              'RESPONDING…',
+                              'ICH ANTWORTE…',
+                            ),
+                          AimsVoiceMode.wakeWord => _l(
+                              'KÉSZEN ÁLLOK — mondd: „AIMS”',
+                              'READY — say “AIMS”',
+                              'BEREIT — sage „AIMS“',
+                            ),
+                          AimsVoiceMode.error => _l(
+                              'NEM HALLOTTALAK — érintsd meg a mikrofont',
+                              'I COULD NOT HEAR YOU — tap the microphone',
+                              'NICHT VERSTANDEN — tippe auf das Mikrofon',
+                            ),
                         },
                         style: const TextStyle(
-                          color: Colors.white54,
-                          fontSize: 11,
+                          color: Colors.white,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w800,
                           height: 1.3,
                         ),
                       ),
@@ -1619,8 +1903,18 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
           physics: const NeverScrollableScrollPhysics(),
           mainAxisSpacing: 9,
           crossAxisSpacing: 9,
-          childAspectRatio: 1.18,
+          childAspectRatio: 1.02,
           children: [
+            _signal(
+              Icons.schedule_rounded,
+              _l('Késés', 'Delay', 'Verspätung'),
+              _l(
+                'Forgalom / csúszás',
+                'Traffic / delay',
+                'Verkehr / Verzögerung',
+              ),
+              () => _sendSignal('Késés'),
+            ),
             _signal(
               Icons.timer_outlined,
               _l('Várakozás', 'Waiting', 'Warten'),
@@ -1652,6 +1946,7 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
                 'Unfall / sofortige Aufmerksamkeit',
               ),
               () => _sendSignal('Baleset / sürgős', urgent: true),
+              danger: true,
             ),
             _signal(
               Icons.more_horiz_rounded,
@@ -1680,12 +1975,22 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
         const SizedBox(height: 14),
         _panel(
           Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               FilledButton.icon(
                 onPressed: _openCmrScanner,
-                icon: const Icon(Icons.document_scanner_rounded),
+                icon: const Icon(Icons.document_scanner_rounded, size: 26),
                 label: Text(
                   _l('CMR / DOKUMENTUM', 'CMR / DOCUMENT', 'CMR / DOKUMENT'),
+                ),
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size.fromHeight(62),
+                  backgroundColor: _blue,
+                  foregroundColor: const Color(0xFF00131F),
+                  textStyle: const TextStyle(
+                    fontWeight: FontWeight.w900,
+                    fontSize: 15,
+                  ),
                 ),
               ),
               const SizedBox(height: 10),
@@ -1700,7 +2005,7 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
                   ),
                 ),
                 style: OutlinedButton.styleFrom(
-                  minimumSize: const Size.fromHeight(54),
+                  minimumSize: const Size.fromHeight(60),
                   foregroundColor: Colors.white,
                   side: const BorderSide(color: _blue),
                 ),
@@ -1807,8 +2112,9 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
     IconData icon,
     String title,
     String detail,
-    VoidCallback onTap,
-  ) =>
+    VoidCallback onTap, {
+    bool danger = false,
+  }) =>
       InkWell(
         onTap: _actionBusy ? null : onTap,
         borderRadius: BorderRadius.circular(16),
@@ -1822,7 +2128,7 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(icon, color: title == 'Sürgős' ? Colors.redAccent : _blue),
+              Icon(icon, color: danger ? Colors.redAccent : _blue, size: 30),
               const Spacer(),
               Text(title, style: const TextStyle(fontWeight: FontWeight.w900)),
               const SizedBox(height: 3),
