@@ -10,7 +10,6 @@ class CountryCodeService {
 
   static final CountryCodeService instance = CountryCodeService._();
 
-  final Geocoding _geocoding = Geocoding();
   Future<String?>? _inFlight;
   DateTime? _lastLookupAt;
   DateTime? _lastResolvedAt;
@@ -58,19 +57,20 @@ class CountryCodeService {
     _lastLongitude = position.longitude;
 
     try {
-      final places = await _geocoding
-          .placemarkFromCoordinates(position.latitude, position.longitude)
-          .timeout(const Duration(seconds: 6));
-      if (places.isEmpty) return _networkOrCache(now);
+      final places = await placemarkFromCoordinates(
+        position.latitude,
+        position.longitude,
+      ).timeout(const Duration(seconds: 6));
+      if (places.isEmpty) return await _networkOrCache(now);
       final code = (places.first.isoCountryCode ?? '').trim().toUpperCase();
       if (!RegExp(r'^[A-Z]{2}$').hasMatch(code)) {
-        return _networkOrCache(now);
+        return await _networkOrCache(now);
       }
       _lastCountryCode = code;
       _lastResolvedAt = now;
       return code;
     } catch (_) {
-      return _networkOrCache(now);
+      return await _networkOrCache(now);
     }
   }
 
