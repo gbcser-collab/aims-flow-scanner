@@ -1,5 +1,3 @@
-[Reading 249 lines from start (total: 249 lines, 0 remaining)]
-
 <?php
 declare(strict_types=1);
 require __DIR__ . '/bootstrap.php';
@@ -249,5 +247,3 @@ aims_json([
     'stops' => $resolved,
     'driverPush' => $driverPush,
 ]);
-
-[executed on device: GABOR-PC (4f5060cc-3a10-4200-947d-55b7a0fc1e22)]
