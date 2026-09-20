@@ -82,7 +82,15 @@ class _FlowForgotCodeScreenState extends State<FlowForgotCodeScreen> {
             TextField(
               controller: _plate,
               textCapitalization: TextCapitalization.characters,
-              inputFormatters: [LengthLimitingTextInputFormatter(12)],
+              inputFormatters: [
+                FilteringTextInputFormatter.allow(RegExp(r'[A-Za-z0-9 -]')),
+                LengthLimitingTextInputFormatter(12),
+              ],
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+                letterSpacing: .8,
+              ),
               decoration: InputDecoration(
                 labelText: t('plate'),
                 hintText: t('plate_hint'),
@@ -114,6 +122,9 @@ class _FlowForgotCodeScreenState extends State<FlowForgotCodeScreen> {
               onPressed: _busy ? null : _submit,
               icon: const Icon(Icons.mark_email_read_outlined),
               label: Text(_busy ? t('sending') : t('request_reset')),
+              style: FilledButton.styleFrom(
+                minimumSize: const Size.fromHeight(64),
+              ),
             ),
           ],
         ),
