@@ -2,7 +2,7 @@ name: Build and deep-test Android APK
 
 on:
   push:
-    branches: [ main, v0.8-dev, v1.0-real-gps ]
+    branches: [ main, v0.8-dev, v1.0-real-gps, aims-flow-driver-v1-r91-invoice-scanner ]
   workflow_dispatch:
 
 jobs:
