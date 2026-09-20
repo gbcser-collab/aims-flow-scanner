@@ -58,6 +58,26 @@ jobs:
           text = text.replace('<application', permissions + '\n    <application', 1)
           text = text.replace('android:label="aims_flow_scanner"', 'android:label="AIMS Flow Smart Scanner"')
           manifest.write_text(text)
+
+          gradle = Path('android/app/build.gradle.kts')
+          g = gradle.read_text()
+          g = g.replace('minSdk = flutter.minSdkVersion', 'minSdk = 23')
+          if 'isCoreLibraryDesugaringEnabled = true' not in g:
+              g = g.replace(
+                  'compileOptions {',
+                  'compileOptions {\n        isCoreLibraryDesugaringEnabled = true',
+                  1,
+              )
+          if 'coreLibraryDesugaring(' not in g:
+              if 'dependencies {' in g:
+                  g = g.replace(
+                      'dependencies {',
+                      'dependencies {\n    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")',
+                      1,
+                  )
+              else:
+                  g += '\n\ndependencies {\n    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")\n}\n'
+          gradle.write_text(g)
           PY
           cat android/app/src/main/AndroidManifest.xml
 
