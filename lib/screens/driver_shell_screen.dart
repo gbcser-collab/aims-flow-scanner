@@ -1409,13 +1409,16 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
               onPressed: _handsFreeBusy
                   ? null
                   : () => unawaited(_voice.triggerAssistant()),
-              icon: const Icon(Icons.record_voice_over_rounded),
+              icon: const Icon(Icons.record_voice_over_rounded, size: 26),
               label: Text(
                 _l(
                   'BESZÉLJ AZ AIMS-HEZ',
                   'TALK TO AIMS',
                   'MIT AIMS SPRECHEN',
                 ),
+              ),
+              style: FilledButton.styleFrom(
+                minimumSize: const Size.fromHeight(60),
               ),
             ),
             const SizedBox(height: 10),
@@ -1778,6 +1781,9 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
                               label: Text(
                                 _l('NAVIGÁCIÓ', 'NAVIGATION', 'NAVIGATION'),
                               ),
+                              style: OutlinedButton.styleFrom(
+                                minimumSize: const Size.fromHeight(56),
+                              ),
                             ),
                           ),
                           if (stop.phone.trim().isNotEmpty) ...[
@@ -1790,6 +1796,11 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
                                 ),
                               ),
                               icon: const Icon(Icons.call_rounded),
+                              iconSize: 24,
+                              constraints: const BoxConstraints.tightFor(
+                                width: 56,
+                                height: 56,
+                              ),
                             ),
                           ],
                         ],
@@ -2053,7 +2064,12 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
           color: _panelColor,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: stop.arrived ? _green.withValues(alpha: .45) : const Color(0xFF173B54),
+            color: stop.id == _stop?.id
+                ? _blue
+                : stop.arrived
+                    ? _green.withValues(alpha: .45)
+                    : const Color(0xFF173B54),
+            width: stop.id == _stop?.id ? 2 : 1,
           ),
         ),
         child: Row(
@@ -2092,9 +2108,21 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
                         ? _l('KÉSZ', 'DONE', 'FERTIG')
                         : stop.arrived
                             ? _l('MEGÉRKEZETT', 'ARRIVED', 'ANGEKOMMEN')
-                            : (stop.type == 'delivery'
-                                ? _l('LERAKÓ', 'DELIVERY', 'ENTLADUNG')
-                                : _l('FELRAKÓ', 'PICKUP', 'BELADUNG')),
+                            : stop.id == _stop?.id
+                                ? (stop.type == 'delivery'
+                                    ? _l(
+                                        'KÖVETKEZŐ • LERAKÓ',
+                                        'NEXT • DELIVERY',
+                                        'NÄCHSTER • ENTLADUNG',
+                                      )
+                                    : _l(
+                                        'KÖVETKEZŐ • FELRAKÓ',
+                                        'NEXT • PICKUP',
+                                        'NÄCHSTER • BELADUNG',
+                                      ))
+                                : (stop.type == 'delivery'
+                                    ? _l('LERAKÓ', 'DELIVERY', 'ENTLADUNG')
+                                    : _l('FELRAKÓ', 'PICKUP', 'BELADUNG')),
                     style: TextStyle(
                       color: stop.completed || stop.arrived ? _green : _blue,
                       fontSize: 9,
@@ -2121,9 +2149,16 @@ class _DriverShellScreenState extends State<DriverShellScreen> {
         child: Ink(
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
-            color: _panelColor,
+            color: danger
+                ? Colors.redAccent.withValues(alpha: .08)
+                : _panelColor,
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: const Color(0xFF173B54)),
+            border: Border.all(
+              color: danger
+                  ? Colors.redAccent.withValues(alpha: .65)
+                  : const Color(0xFF173B54),
+              width: danger ? 2 : 1,
+            ),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
