@@ -1,5 +1,3 @@
-[Reading 49 lines from start (total: 49 lines, 0 remaining)]
-
 <?php
 declare(strict_types=1);
 require __DIR__ . '/bootstrap.php';
@@ -49,5 +47,3 @@ foreach ($j->fetchAll(PDO::FETCH_ASSOC) as $job) {
     ];
 }
 aims_json(['ok'=>true,'plate'=>$plate,'jobs'=>$jobs]);
-
-[executed on device: GABOR-PC (4f5060cc-3a10-4200-947d-55b7a0fc1e22)]
