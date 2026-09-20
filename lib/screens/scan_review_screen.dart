@@ -349,7 +349,7 @@ class _ScanReviewScreenState extends State<ScanReviewScreen> {
                   ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
                   : Icon(_savedDocument == null ? Icons.save_rounded : Icons.check_circle_rounded),
               label: Text(_saving ? _l('Mentés…', 'Saving…', 'Speichern…') : (_savedDocument == null ? _l('Mentés + GPS + automatikus szinkron', 'Save + GPS + automatic sync', 'Speichern + GPS + automatische Synchronisierung') : _l('Módosítások mentése', 'Save changes', 'Änderungen speichern'))),
-              style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(56), backgroundColor: const Color(0xFFE6B85C), foregroundColor: Colors.black, textStyle: const TextStyle(fontWeight: FontWeight.w900)),
+              style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(64), backgroundColor: const Color(0xFFE6B85C), foregroundColor: Colors.black, textStyle: const TextStyle(fontWeight: FontWeight.w900, fontSize: 15)),
             ),
             const SizedBox(height: 10),
             OutlinedButton.icon(
@@ -357,14 +357,14 @@ class _ScanReviewScreenState extends State<ScanReviewScreen> {
               onPressed: (_sharing || _saving) ? null : _share,
               icon: _sharing ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.share_rounded),
               label: Text(_l('E-mail • Viber • Megosztás', 'Email • Viber • Share', 'E-Mail • Viber • Teilen')),
-              style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(54), foregroundColor: Colors.white, side: const BorderSide(color: Color(0xFFE6B85C))),
+              style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(58), foregroundColor: Colors.white, side: const BorderSide(color: Color(0xFFE6B85C))),
             ),
             const SizedBox(height: 10),
             OutlinedButton.icon(
               onPressed: () => Navigator.of(context).popUntil((route) => route.isFirst),
               icon: const Icon(Icons.document_scanner_rounded),
               label: Text(_l('Új CMR fotózása', 'Photograph new CMR', 'Neuen CMR fotografieren')),
-              style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(52), foregroundColor: Colors.white, side: const BorderSide(color: Colors.white24)),
+              style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(58), foregroundColor: Colors.white, side: const BorderSide(color: Colors.white24)),
             ),
           ],
         ),
