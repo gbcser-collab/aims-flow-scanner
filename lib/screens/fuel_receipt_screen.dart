@@ -365,7 +365,7 @@ class _FuelReceiptScreenState extends State<FuelReceiptScreen> with WidgetsBindi
               : const Icon(Icons.cloud_upload_rounded),
           label: Text(_sending ? _l('Küldés…', 'Sending…', 'Senden…') : _l('Küldés a főnökségi appba', 'Send to office app', 'An Dispositions-App senden')),
           style: FilledButton.styleFrom(
-            minimumSize: const Size.fromHeight(56),
+            minimumSize: const Size.fromHeight(64),
             backgroundColor: const Color(0xFFE6B85C),
             foregroundColor: Colors.black,
           ),
@@ -375,7 +375,10 @@ class _FuelReceiptScreenState extends State<FuelReceiptScreen> with WidgetsBindi
           onPressed: _sending ? null : _retake,
           icon: const Icon(Icons.refresh_rounded),
           label: Text(_l('Újrafotózás', 'Retake photo', 'Neu fotografieren')),
-          style: OutlinedButton.styleFrom(foregroundColor: Colors.white),
+          style: OutlinedButton.styleFrom(
+            minimumSize: const Size.fromHeight(56),
+            foregroundColor: Colors.white,
+          ),
         ),
         ExpansionTile(
           collapsedIconColor: Colors.white54,
@@ -405,6 +408,7 @@ class _FuelReceiptScreenState extends State<FuelReceiptScreen> with WidgetsBindi
           labelStyle: const TextStyle(color: Colors.white54),
           filled: true,
           fillColor: const Color(0xFF171A1F),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 17),
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
         ),
       ),
