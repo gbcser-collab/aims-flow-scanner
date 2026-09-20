@@ -129,6 +129,34 @@ class DriverJob {
       );
 }
 
+class DriverChatMessage {
+  const DriverChatMessage({
+    required this.id,
+    required this.sender,
+    required this.body,
+    required this.createdAt,
+    this.readAt,
+  });
+
+  final int id;
+  final String sender;
+  final String body;
+  final DateTime createdAt;
+  final DateTime? readAt;
+
+  bool get fromDriver => sender == 'driver';
+
+  factory DriverChatMessage.fromJson(Map<String, dynamic> json) {
+    return DriverChatMessage(
+      id: (json['id'] as num?)?.toInt() ?? 0,
+      sender: json['sender']?.toString() ?? '',
+      body: json['body']?.toString() ?? '',
+      createdAt: DateTime.tryParse(json['createdAt']?.toString() ?? '')?.toLocal() ??
+          DateTime.fromMillisecondsSinceEpoch(0),
+      readAt: DateTime.tryParse(json['readAt']?.toString() ?? '')?.toLocal(),
+    );
+  }
+}
 class DriverApiService {
   const DriverApiService();
 
@@ -298,6 +326,59 @@ class DriverApiService {
     }
   }
 
+  Future<List<DriverChatMessage>> fetchMessages(
+    String plate, {
+    int after = 0,
+  }) async {
+    _ensureConfigured();
+    final normalized = plate.trim().toUpperCase();
+    final uri = Uri.parse(
+      '${_base()}/driver_messages.php?plate=${Uri.encodeQueryComponent(normalized)}&after=$after',
+    );
+
+    final response = await http
+        .get(uri, headers: _headers)
+        .timeout(const Duration(seconds: 12));
+    final body = _decode(response);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw StateError(body['error']?.toString() ?? 'HTTP ${response.statusCode}');
+    }
+    return (body['messages'] as List? ?? const [])
+        .whereType<Map>()
+        .map(
+          (item) => DriverChatMessage.fromJson(
+            Map<String, dynamic>.from(item),
+          ),
+        )
+        .toList();
+  }
+
+  Future<DriverChatMessage> sendMessage({
+    required String plate,
+    required String message,
+  }) async {
+    _ensureConfigured();
+    final text = message.trim();
+    if (text.isEmpty) throw StateError('Az üzenet üres.');
+
+    final response = await http
+        .post(
+          Uri.parse('${_base()}/driver_messages.php'),
+          headers: _headers,
+          body: jsonEncode({
+            'plate': plate.trim().toUpperCase(),
+            'message': text,
+          }),
+        )
+        .timeout(const Duration(seconds: 12));
+    final body = _decode(response);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw StateError(body['error']?.toString() ?? 'HTTP ${response.statusCode}');
+    }
+    final raw = body['message'];
+    if (raw is! Map) throw StateError('invalid_message_response');
+    return DriverChatMessage.fromJson(Map<String, dynamic>.from(raw));
+  }
   Map<String, dynamic> _decode(http.Response response) {
     if (response.body.trim().isEmpty) return <String, dynamic>{};
     try {
