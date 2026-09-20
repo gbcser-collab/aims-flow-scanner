@@ -1,5 +1,3 @@
-[Reading 29 lines from start (total: 29 lines, 0 remaining)]
-
 import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
@@ -29,5 +27,3 @@ class InvoiceService {
     return InvoiceUploadResult(invoiceId:body['invoiceId']?.toString()??'',vignetteId:body['vignetteId']?.toString());
   }
 }
-
-[executed on device: GABOR-PC (4f5060cc-3a10-4200-947d-55b7a0fc1e22)]
