@@ -1,0 +1,205 @@
+name: AIMS Flow R90 hardening
+
+on:
+  push:
+    branches: [aims-flow-driver-v1-r90-hardening]
+  workflow_dispatch:
+
+concurrency:
+  group: aims-flow-r90-hardening-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  hardening:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Install PHP test runtime
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y php-cli php-sqlite3
+
+      - name: Generate Android platform
+        run: |
+          rm -rf /tmp/aims_template
+          flutter create --platforms=android --org hu.logisticaims --project-name aims_flow_scanner /tmp/aims_template
+          cp -R /tmp/aims_template/android ./android
+
+      - name: Configure Android
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import shutil
+
+          p=Path('android/app/src/main/AndroidManifest.xml')
+          s=p.read_text()
+          permissions=[
+            'android.permission.CAMERA',
+            'android.permission.INTERNET',
+            'android.permission.ACCESS_COARSE_LOCATION',
+            'android.permission.ACCESS_FINE_LOCATION',
+            'android.permission.ACCESS_BACKGROUND_LOCATION',
+            'android.permission.FOREGROUND_SERVICE',
+            'android.permission.FOREGROUND_SERVICE_LOCATION',
+            'android.permission.FOREGROUND_SERVICE_MICROPHONE',
+            'android.permission.RECORD_AUDIO',
+            'android.permission.WAKE_LOCK',
+            'android.permission.USE_BIOMETRIC',
+            'android.permission.POST_NOTIFICATIONS',
+            'android.permission.VIBRATE',
+          ]
+          block='\n'.join(
+              f'    <uses-permission android:name="{name}" />'
+              for name in permissions
+          )
+          queries='\n'.join([
+              '    <queries>',
+              '        <intent><action android:name="android.speech.RecognitionService" /></intent>',
+              '        <intent><action android:name="android.intent.action.TTS_SERVICE" /></intent>',
+              '    </queries>',
+          ])
+          s=s.replace('<application',block+'\n'+queries+'\n    <application',1)
+          s=s.replace('android:label="aims_flow_scanner"','android:label="AIMS Flow"')
+
+          assist='\n'.join([
+              '            <intent-filter>',
+              '                <action android:name="android.intent.action.ASSIST" />',
+              '                <category android:name="android.intent.category.DEFAULT" />',
+              '            </intent-filter>',
+              '',
+          ])
+          end=s.find('</activity>')
+          if end < 0:
+              raise SystemExit('MainActivity closing tag missing')
+          s=s[:end]+assist+s[end:]
+          service='\n'.join([
+              '        <service',
+              '            android:name=".AimsHandsFreeService"',
+              '            android:enabled="true"',
+              '            android:exported="false"',
+              '            android:foregroundServiceType="microphone" />',
+              '',
+          ])
+          s=s.replace('</application>',service+'    </application>',1)
+          p.write_text(s)
+          target=Path('android/app/src/main/kotlin/hu/logisticaims/aims_flow_scanner')
+          target.mkdir(parents=True,exist_ok=True)
+          shutil.copy2('native/android/MainActivity.kt',target/'MainActivity.kt')
+          shutil.copy2('native/android/AimsHandsFreeService.kt',target/'AimsHandsFreeService.kt')
+
+          g=Path('android/app/build.gradle.kts')
+          text=g.read_text()
+          text=text.replace('minSdk = flutter.minSdkVersion','minSdk = 23')
+          if 'isCoreLibraryDesugaringEnabled = true' not in text:
+              text=text.replace(
+                  'compileOptions {',
+                  'compileOptions {\n        isCoreLibraryDesugaringEnabled = true',
+                  1,
+              )
+          if 'coreLibraryDesugaring(' not in text:
+              if 'dependencies {' in text:
+                  text=text.replace(
+                      'dependencies {',
+                      'dependencies {\n    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")',
+                      1,
+                  )
+              else:
+                  text += '\n\ndependencies {\n    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")\n}\n'
+          g.write_text(text)
+          PY
+      - name: Flutter dependencies
+        run: flutter pub get
+
+      - name: Flutter analyze
+        run: flutter analyze
+
+      - name: Flutter unit and 10k fuzz tests
+        run: flutter test --reporter expanded
+
+      - name: PHP syntax
+        run: |
+          find server/aims-tracking admin -type f -name '*.php' -print0 |
+            xargs -0 -n1 php -l
+
+      - name: Country-stay 10000 observation test
+        run: php server/aims-tracking/test_country_stay.php
+
+      - name: Start isolated local tracking server
+        run: |
+          set -euo pipefail
+          DATA=/tmp/aims-flow-r90-load
+          rm -rf "$DATA"
+          mkdir -p "$DATA"
+          export AIMS_TRACKING_DATA_DIR="$DATA"
+          export AIMS_TRACKING_TOKEN="ci-test-token"
+          php -r 'require "server/aims-tracking/bootstrap.php"; $pdo=aims_db(); $pdo->prepare("INSERT INTO vehicles (plate,label,device_id,admin_user_id,enabled,created_at) VALUES (?,?,?,?,?,?)")->execute(["SIP115","SIP-115","ci-load-device",1,1,gmdate(DateTimeInterface::ATOM)]);'
+          PHP_CLI_SERVER_WORKERS=4 AIMS_TRACKING_DATA_DIR="$DATA" AIMS_TRACKING_TOKEN="ci-test-token"             php -S 127.0.0.1:18080 -t server/aims-tracking > /tmp/aims-r90-php.log 2>&1 &
+          echo $! > /tmp/aims-r90-php.pid
+          sleep 2
+          curl --fail --silent http://127.0.0.1:18080/ingest.php -o /dev/null || true
+      - name: Tracking HTTP 10000 request load test
+        env:
+          AIMS_TRACKING_TOKEN: ci-test-token
+          AIMS_CI_BASE_URL: http://127.0.0.1:18080
+          AIMS_CI_DB_PATH: /tmp/aims-flow-r90-load/tracking.sqlite
+          AIMS_CI_LOAD_TOTAL: '10000'
+          AIMS_CI_LOAD_WORKERS: '16'
+        run: python3 ci/r90_server_load_test.py
+
+      - name: Stop local tracking server
+        if: always()
+        run: |
+          if [ -f /tmp/aims-r90-php.pid ]; then
+            kill "$(cat /tmp/aims-r90-php.pid)" || true
+          fi
+          tail -100 /tmp/aims-r90-php.log || true
+
+      - name: Build R90 debug APK
+        run: |
+          flutter build apk --debug             --dart-define=AIMS_E2E_TEST=true             --dart-define=AIMS_TRACKING_TOKEN=ci-test-token
+
+      - name: APK integrity
+        run: |
+          test -s build/app/outputs/flutter-apk/app-debug.apk
+          unzip -t build/app/outputs/flutter-apk/app-debug.apk > /tmp/apk-integrity.txt
+          tail -5 /tmp/apk-integrity.txt
+      - name: Android 1000x lifecycle stress
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          script: bash ci/r90_android_stress_test.sh
+
+      - name: Upload R90 test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: AIMS-Flow-R90-hardening-evidence
+          path: |
+            test-evidence-r90/
+            /tmp/apk-integrity.txt
+            /tmp/aims-r90-php.log
+          if-no-files-found: warn
+
+      - name: Upload R90 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: AIMS-Flow-R90-ANDROID
+          path: build/app/outputs/flutter-apk/app-debug.apk
+          if-no-files-found: error
