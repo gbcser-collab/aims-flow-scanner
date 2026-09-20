@@ -47,7 +47,7 @@ jobs:
           text = manifest.read_text()
           text = text.replace(
               'android:label="aims_flow_r88_preview"',
-              'android:label="AIMS Flow R88 Preview"',
+              'android:label="AIMS Flow R88"',
           )
           if 'android.permission.INTERNET' not in text:
               text = text.replace(
@@ -91,23 +91,39 @@ jobs:
       - name: Analyze preview
         run: flutter analyze lib/mobile_preview_main.dart
 
-      - name: Build installable APK
-        run: flutter build apk --debug -t lib/mobile_preview_main.dart
-
-      - name: APK sanity check
+      - name: Build compact ARM64 release APK
         run: |
-          test -s build/app/outputs/flutter-apk/app-debug.apk
-          unzip -t build/app/outputs/flutter-apk/app-debug.apk >/tmp/apk-test.txt
-          tail -5 /tmp/apk-test.txt
-          cp build/app/outputs/flutter-apk/app-debug.apk AIMS-Flow-R88-Mobile-Preview.apk
-          sha256sum AIMS-Flow-R88-Mobile-Preview.apk > AIMS-Flow-R88-Mobile-Preview.sha256
-          ls -lh AIMS-Flow-R88-Mobile-Preview.apk
+          flutter build apk \
+            --release \
+            --target-platform android-arm64 \
+            --split-per-abi \
+            --obfuscate \
+            --split-debug-info=build/symbols \
+            -t lib/mobile_preview_main.dart
 
-      - name: Upload APK
+      - name: APK sanity and size check
+        run: |
+          APK="build/app/outputs/flutter-apk/app-arm64-v8a-release.apk"
+          test -s "$APK"
+          unzip -t "$APK" >/tmp/apk-test.txt
+          tail -5 /tmp/apk-test.txt
+          BYTES=$(stat -c%s "$APK")
+          echo "APK bytes: $BYTES"
+          python3 - <<PY
+          size = int("$BYTES")
+          print(f"APK size: {size/1000000:.2f} MB")
+          if size > 30000000:
+              raise SystemExit(f"APK exceeds 30 MB target: {size/1000000:.2f} MB")
+          PY
+          cp "$APK" AIMS-Flow-R88-Driver-ARM64.apk
+          sha256sum AIMS-Flow-R88-Driver-ARM64.apk > AIMS-Flow-R88-Driver-ARM64.sha256
+          ls -lh AIMS-Flow-R88-Driver-ARM64.apk
+
+      - name: Upload compact APK
         uses: actions/upload-artifact@v4
         with:
-          name: AIMS-Flow-R88-Mobile-Preview
+          name: AIMS-Flow-R88-Driver-ARM64
           path: |
-            AIMS-Flow-R88-Mobile-Preview.apk
-            AIMS-Flow-R88-Mobile-Preview.sha256
+            AIMS-Flow-R88-Driver-ARM64.apk
+            AIMS-Flow-R88-Driver-ARM64.sha256
           if-no-files-found: error
