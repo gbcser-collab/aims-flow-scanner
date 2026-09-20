@@ -1,5 +1,3 @@
-[Reading 401 lines from start (total: 401 lines, 0 remaining)]
-
 <?php
 declare(strict_types=1);
 
@@ -401,5 +399,3 @@ function aims_vehicle_for_point(PDO $pdo, string $deviceId, string $vehicleLabel
     }
     return $vehicle;
 }
-
-[executed on device: GABOR-PC (4f5060cc-3a10-4200-947d-55b7a0fc1e22)]
