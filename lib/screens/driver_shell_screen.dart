@@ -1862,6 +1862,8 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                       ),
                     ),
                   ),
+                  const SizedBox(height: 12),
+                  _driverTools(),
                 ],
               ),
             ),
@@ -2141,6 +2143,8 @@ class _DriverShellScreenState extends State<DriverShellScreen>
       ],
       const SizedBox(height: 12),
       _jobsShortcut(),
+      const SizedBox(height: 10),
+      _driverTools(),
       if (_message != null) ...[
         const SizedBox(height: 10),
         _info(_message!),
@@ -2167,6 +2171,188 @@ class _DriverShellScreenState extends State<DriverShellScreen>
       const SizedBox(height: 12),
       _voicePanel(),
     ], controller: _homeScrollController);
+  }
+
+  Widget _driverTools() => Row(
+        children: [
+          Expanded(
+            child: OutlinedButton.icon(
+              key: const Key('flow-system-button'),
+              onPressed: () => unawaited(_showSystemSheet()),
+              icon: const Icon(Icons.settings_rounded),
+              label: Text(_l('RENDSZER', 'SYSTEM', 'SYSTEM')),
+              style: OutlinedButton.styleFrom(
+                minimumSize: const Size.fromHeight(54),
+                foregroundColor: Colors.white,
+                side: const BorderSide(color: Color(0xFF24557D)),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: OutlinedButton.icon(
+              key: const Key('flow-company-button'),
+              onPressed: _showCompanySheet,
+              icon: const Icon(Icons.business_rounded),
+              label: Text(_l('CÉG', 'COMPANY', 'FIRMA')),
+              style: OutlinedButton.styleFrom(
+                minimumSize: const Size.fromHeight(54),
+                foregroundColor: Colors.white,
+                side: const BorderSide(color: Color(0xFF24557D)),
+              ),
+            ),
+          ),
+        ],
+      );
+
+  Future<void> _showSystemSheet() async {
+    try {
+      final status = await _tracking.currentStatus();
+      if (mounted) setState(() => _trackingStatus = status);
+    } catch (_) {}
+    if (!mounted) return;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: const Color(0xFF04101C),
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(18, 18, 18, 22),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                _l('Rendszer', 'System', 'System'),
+                style: const TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 14),
+              _systemLine(
+                Icons.location_on_rounded,
+                'GPS',
+                _trackingStatus?.running == true
+                    ? _l('ON · AKTÍV', 'ON · ACTIVE', 'ON · AKTIV')
+                    : _l('OFF / INDUL', 'OFF / STARTING', 'OFF / STARTET'),
+                _trackingStatus?.running == true ? _green : Colors.orange,
+              ),
+              const SizedBox(height: 8),
+              _systemLine(
+                Icons.network_cell_rounded,
+                'NET',
+                _networkOnline ? 'ON' : 'OFF',
+                _networkOnline ? _green : Colors.orange,
+              ),
+              const SizedBox(height: 14),
+              FilledButton.icon(
+                key: const Key('flow-restart-app'),
+                onPressed: () {
+                  Navigator.pop(sheetContext);
+                  unawaited(_restartDriverShell());
+                },
+                icon: const Icon(Icons.restart_alt_rounded),
+                label: Text(
+                  _l(
+                    'APP ÚJRAINDÍTÁSA',
+                    'RESTART APP',
+                    'APP NEU STARTEN',
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _systemLine(
+    IconData icon,
+    String label,
+    String value,
+    Color color,
+  ) =>
+      Container(
+        padding: const EdgeInsets.all(13),
+        decoration: BoxDecoration(
+          color: const Color(0xFF071725),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: const Color(0xFF173B54)),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, color: color),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                label,
+                style: const TextStyle(fontWeight: FontWeight.w900),
+              ),
+            ),
+            Text(
+              value,
+              style: TextStyle(
+                color: color,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ],
+        ),
+      );
+
+  Future<void> _restartDriverShell() async {
+    if (!mounted) return;
+    await Navigator.of(context).pushReplacement(
+      MaterialPageRoute(builder: (_) => const DriverShellScreen()),
+    );
+  }
+
+  void _showCompanySheet() {
+    if (!mounted) return;
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: const Color(0xFF04101C),
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(18, 18, 18, 22),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                _l('Cég', 'Company', 'Firma'),
+                style: const TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'Logistic-A.I.M.S. Kft.',
+                style: TextStyle(
+                  color: _blue,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                '2636 Tésa, Petőfi utca 16.\n'
+                'office@logistic-aims.hu\n'
+                '+36 70 590 6861\n'
+                'logistic-aims.hu',
+                style: TextStyle(
+                  color: Colors.white70,
+                  height: 1.5,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   Widget _voicePanel() => _panel(
