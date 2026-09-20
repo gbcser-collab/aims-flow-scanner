@@ -1,0 +1,109 @@
+name: Build R88 Mobile Preview APK
+
+on:
+  push:
+    branches:
+      - preview/r88-mobile-apk
+    paths:
+      - 'lib/mobile_preview_main.dart'
+      - 'assets/mobile_preview/**'
+      - 'pubspec.yaml'
+      - '.github/workflows/mobile-preview-apk.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: r88-mobile-preview-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-preview:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Generate Android platform
+        run: |
+          rm -rf /tmp/aims_preview_template
+          flutter create --platforms=android --org hu.logisticaims --project-name aims_flow_scanner /tmp/aims_preview_template
+          cp -R /tmp/aims_preview_template/android ./android
+          python3 - <<'PY'
+          from pathlib import Path
+
+          manifest = Path('android/app/src/main/AndroidManifest.xml')
+          text = manifest.read_text()
+          text = text.replace(
+              'android:label="aims_flow_scanner"',
+              'android:label="AIMS Flow R88 Preview"',
+          )
+          if 'android.permission.INTERNET' not in text:
+              text = text.replace(
+                  '<application',
+                  '    <uses-permission android:name="android.permission.INTERNET" />\n    <application',
+                  1,
+              )
+          manifest.write_text(text)
+
+          gradle = Path('android/app/build.gradle.kts')
+          g = gradle.read_text()
+          g = g.replace(
+              'minSdk = flutter.minSdkVersion',
+              'minSdk = 23',
+          )
+          if 'isCoreLibraryDesugaringEnabled = true' not in g:
+              g = g.replace(
+                  'compileOptions {',
+                  'compileOptions {\n        isCoreLibraryDesugaringEnabled = true',
+                  1,
+              )
+          if 'coreLibraryDesugaring(' not in g:
+              if 'dependencies {' in g:
+                  g = g.replace(
+                      'dependencies {',
+                      'dependencies {\n    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")',
+                      1,
+                  )
+              else:
+                  g += '\n\ndependencies {\n    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")\n}\n'
+          gradle.write_text(g)
+          PY
+
+      - name: Dependencies
+        run: flutter pub get
+
+      - name: Analyze preview
+        run: flutter analyze lib/mobile_preview_main.dart
+
+      - name: Build installable APK
+        run: flutter build apk --debug -t lib/mobile_preview_main.dart
+
+      - name: APK sanity check
+        run: |
+          test -s build/app/outputs/flutter-apk/app-debug.apk
+          unzip -t build/app/outputs/flutter-apk/app-debug.apk >/tmp/apk-test.txt
+          tail -5 /tmp/apk-test.txt
+          cp build/app/outputs/flutter-apk/app-debug.apk AIMS-Flow-R88-Mobile-Preview.apk
+          sha256sum AIMS-Flow-R88-Mobile-Preview.apk > AIMS-Flow-R88-Mobile-Preview.sha256
+          ls -lh AIMS-Flow-R88-Mobile-Preview.apk
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: AIMS-Flow-R88-Mobile-Preview
+          path: |
+            AIMS-Flow-R88-Mobile-Preview.apk
+            AIMS-Flow-R88-Mobile-Preview.sha256
+          if-no-files-found: error
