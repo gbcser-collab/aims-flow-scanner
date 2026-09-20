@@ -1,12 +1,14 @@
-name: AIMS Flow R90 hardening
+[Reading 212 lines from start (total: 212 lines, 0 remaining)]
+
+name: AIMS Flow R91 invoice scanner
 
 on:
   push:
-    branches: [aims-flow-driver-v1-r90-hardening]
+    branches: [aims-flow-driver-v1-r91-invoice-scanner]
   workflow_dispatch:
 
 concurrency:
-  group: aims-flow-r90-hardening-${{ github.ref }}
+  group: aims-flow-r91-invoice-scanner-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -174,7 +176,7 @@ jobs:
           fi
           tail -100 /tmp/aims-r90-php.log || true
 
-      - name: Build R90 debug APK
+      - name: Build R91 debug APK
         run: |
           flutter build apk --debug             --dart-define=AIMS_E2E_TEST=true             --dart-define=AIMS_TRACKING_TOKEN=ci-test-token
 
@@ -197,17 +199,18 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: AIMS-Flow-R90-hardening-evidence
+          name: AIMS-Flow-R91-invoice-scanner-evidence
           path: |
             test-evidence-r90/
             /tmp/apk-integrity.txt
             /tmp/aims-r90-php.log
           if-no-files-found: warn
 
-      - name: Upload R90 APK
-        if: always()
+      - name: Upload R91 APK
         uses: actions/upload-artifact@v4
         with:
-          name: AIMS-Flow-R90-ANDROID
+          name: AIMS-Flow-R91-ANDROID
           path: build/app/outputs/flutter-apk/app-debug.apk
           if-no-files-found: error
+
+[executed on device: GABOR-PC (4f5060cc-3a10-4200-947d-55b7a0fc1e22)]
