@@ -742,18 +742,12 @@ class _DriverShellScreenState extends State<DriverShellScreen>
       await _activateDriverServices();
     }
 
-    // Driver-first default: voice control is ON unless the driver explicitly
-    // switched it off earlier. No need to hunt for the microphone every trip.
-    final savedHandsFree = prefs.getBool(_prefsHandsFree);
-    final handsFree = savedHandsFree ?? true;
-    if (savedHandsFree == null) {
-      await prefs.setBool(_prefsHandsFree, true);
+    // R90 stability: continuous microphone capture is retired.
+    // Migrate every existing install to explicit push-to-talk.
+    if (prefs.getBool(_prefsHandsFree) != false) {
+      await prefs.setBool(_prefsHandsFree, false);
     }
-    if (handsFree && mounted) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        unawaited(_setHandsFree(true));
-      });
-    }
+    await _voice.disableHandsFree();
 
     final pending = _push.takePendingLaunch();
     if (pending != null && mounted) {
@@ -851,7 +845,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
         ),
       ),
     );
-    await _refreshJobs();
+    await _refreshJobs(showLoading: false);
     if (!mounted) return;
 
     final jobId = event.jobId;
@@ -859,7 +853,17 @@ class _DriverShellScreenState extends State<DriverShellScreen>
       await _ack(jobId, 'seen', closeDialog: false);
       return;
     }
-    _showJobDialog(jobId: jobId);
+    if (event.openedFromNotification) {
+      await _showJobDialog(jobId: jobId);
+    } else {
+      _snack(
+        _l(
+          'Új munka érkezett. A Munkák menüben megnyithatod.',
+          'A new job arrived. Open it from Jobs.',
+          'Ein neuer Auftrag ist eingegangen. Öffne ihn unter Aufträge.',
+        ),
+      );
+    }
   }
 
   Future<void> _showJobDialog({int? jobId}) async {
@@ -941,17 +945,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
       }
       await _refreshJobs();
       if (mounted && action == 'accepted') {
-        setState(() => _index = 0);
         unawaited(_voice.announce(_nextStepAnnouncement(accepted: true)));
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (_homeScrollController.hasClients) {
-            _homeScrollController.animateTo(
-              0,
-              duration: const Duration(milliseconds: 260),
-              curve: Curves.easeOutCubic,
-            );
-          }
-        });
       }
       if (mounted) {
         _snack(action == 'accepted'
@@ -2472,12 +2466,14 @@ class _DriverShellScreenState extends State<DriverShellScreen>
               ),
               child: Row(
                 children: [
+                  const Icon(Icons.privacy_tip_outlined, color: _green, size: 20),
+                  const SizedBox(width: 9),
                   Expanded(
                     child: Text(
                       _l(
-                        'Hands-Free: mondd, hogy „AIMS”, majd a parancsot.',
-                        'Hands-Free: say “AIMS”, then your command.',
-                        'Hands-Free: sage „AIMS“, dann deinen Befehl.',
+                        'A mikrofon alapból KI van kapcsolva. Csak a BESZÉLJ AZ AIMS-HEZ gomb megnyomása után hallgat rövid ideig, majd automatikusan leáll.',
+                        'The microphone is OFF by default. It listens only after you tap TALK TO AIMS, then stops automatically.',
+                        'Das Mikrofon ist standardmäßig AUS. Es hört nur kurz nach dem Tippen auf MIT AIMS SPRECHEN zu und stoppt danach automatisch.',
                       ),
                       style: const TextStyle(
                         color: Colors.white70,
@@ -2485,11 +2481,6 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                         height: 1.3,
                       ),
                     ),
-                  ),
-                  Switch(
-                    key: const Key('aims-hands-free-toggle'),
-                    value: _voiceState.enabled,
-                    onChanged: _handsFreeBusy ? null : _setHandsFree,
                   ),
                 ],
               ),
@@ -2980,6 +2971,19 @@ class _DriverShellScreenState extends State<DriverShellScreen>
               () => _sendSignal('Várakozás'),
             ),
             _signal(
+              Icons.local_parking_rounded,
+              _l('Parkolóban állok', 'Stopped in parking', 'Im Parkplatz'),
+              _l(
+                'Azonnal szól a főnökségnek',
+                'Instant office notification',
+                'Sofortige Meldung an die Disposition',
+              ),
+              () => _sendSignal(
+                'Parkolóban megálltam',
+                message: 'Sofőr kézi parkolójelzése. A 15/30 perces automatikus tétlenségfigyelés változatlanul fut.',
+              ),
+            ),
+            _signal(
               Icons.location_off_outlined,
               _l('Cím / rakodás', 'Address / loading', 'Adresse / Beladung'),
               _l(
@@ -3013,6 +3017,17 @@ class _DriverShellScreenState extends State<DriverShellScreen>
               _otherSignal,
             ),
           ],
+        ),
+        const SizedBox(height: 12),
+        _panel(
+          Text(
+            _l(
+              'A „Parkolóban állok” kézi jelzés csak azonnali üzenetet küld a főnökségnek. Nem nullázza, nem állítja meg és nem írja felül a 15/30 perces automatikus tétlenségfigyelést.',
+              'The parking signal sends an immediate message only. It never resets, pauses or overrides the automatic 15/30 minute inactivity monitor.',
+              'Die Parkplatzmeldung sendet nur sofort eine Nachricht. Sie setzt die automatische 15/30-Minuten-Stillstandsüberwachung weder zurück noch aus.',
+            ),
+            style: const TextStyle(color: Colors.white54, height: 1.4),
+          ),
         ),
       ]);
 
