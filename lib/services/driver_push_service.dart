@@ -58,7 +58,6 @@ class DriverPushService {
 
   Future<void> initialize() async {
     if (_initialized) return;
-    _initialized = true;
 
     const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
     await _notifications.initialize(
@@ -77,7 +76,7 @@ class DriverPushService {
         description: 'Új fuvar és részrakomány értesítések',
         importance: Importance.max,
         playSound: true,
-        sound: RawResourceAndroidNotificationSound('aims_new_job'),
+        sound: const RawResourceAndroidNotificationSound('notification'),
         enableVibration: true,
       ),
     );
@@ -103,7 +102,10 @@ class DriverPushService {
     }
 
     final options = RuntimeFirebaseOptions.current;
-    if (options == null) return;
+    if (options == null) {
+      _initialized = true;
+      return;
+    }
     if (Firebase.apps.isEmpty) {
       await Firebase.initializeApp(options: options);
     }
@@ -153,6 +155,8 @@ class DriverPushService {
         unawaited(registerForPlate(_registeredPlate));
       }
     });
+
+    _initialized = true;
   }
 
   DriverPushEvent? takePendingLaunch() {
@@ -273,7 +277,7 @@ class DriverPushService {
         description: 'Új fuvar és részrakomány értesítések',
         importance: Importance.max,
         playSound: true,
-        sound: RawResourceAndroidNotificationSound('aims_new_job'),
+        sound: const RawResourceAndroidNotificationSound('notification'),
         enableVibration: true,
       ),
     );
@@ -296,7 +300,7 @@ class DriverPushService {
       importance: Importance.max,
       priority: Priority.max,
       playSound: true,
-      sound: const RawResourceAndroidNotificationSound('aims_new_job'),
+      sound: const RawResourceAndroidNotificationSound('notification'),
       enableVibration: true,
       category: AndroidNotificationCategory.message,
       visibility: NotificationVisibility.public,
