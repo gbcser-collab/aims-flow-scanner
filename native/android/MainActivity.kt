@@ -1,8 +1,10 @@
 package hu.logisticaims.aims_flow_scanner
 
 import android.app.role.RoleManager
+import android.content.Context
 import android.content.Intent
 import android.os.Build
+import android.telephony.TelephonyManager
 import android.provider.Settings
 import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -42,6 +44,36 @@ class MainActivity : FlutterFragmentActivity() {
                 }
 
                 "isRunning" -> result.success(AimsHandsFreeService.running)
+
+                "networkCountry" -> {
+                    try {
+                        val telephony = getSystemService(
+                            Context.TELEPHONY_SERVICE
+                        ) as? TelephonyManager
+                        val network = telephony
+                            ?.networkCountryIso
+                            ?.trim()
+                            ?.uppercase()
+                            .orEmpty()
+                        val sim = telephony
+                            ?.simCountryIso
+                            ?.trim()
+                            ?.uppercase()
+                            .orEmpty()
+                        result.success(
+                            mapOf(
+                                "network" to network,
+                                "sim" to sim
+                            )
+                        )
+                    } catch (error: Throwable) {
+                        result.error(
+                            "network_country_failed",
+                            error.message,
+                            null
+                        )
+                    }
+                }
 
                 "requestAssistantRole" -> {
                     try {
