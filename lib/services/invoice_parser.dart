@@ -1,5 +1,3 @@
-[Reading 46 lines from start (total: 46 lines, 0 remaining)]
-
 enum InvoiceCategory { fuel, tollVignette, parking, service, parts, other }
 
 class InvoiceData {
@@ -46,5 +44,3 @@ extension InvoiceCategoryLabel on InvoiceCategory {
   String get wire=>switch(this){InvoiceCategory.fuel=>'fuel',InvoiceCategory.tollVignette=>'toll_vignette',InvoiceCategory.parking=>'parking',InvoiceCategory.service=>'service',InvoiceCategory.parts=>'parts',InvoiceCategory.other=>'other'};
   String get hu=>switch(this){InvoiceCategory.fuel=>'Üzemanyag',InvoiceCategory.tollVignette=>'Útdíj / matrica',InvoiceCategory.parking=>'Parkolás',InvoiceCategory.service=>'Szerviz',InvoiceCategory.parts=>'Alkatrész',InvoiceCategory.other=>'Egyéb'};
 }
-
-[executed on device: GABOR-PC (4f5060cc-3a10-4200-947d-55b7a0fc1e22)]
