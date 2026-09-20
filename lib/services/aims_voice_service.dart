@@ -181,16 +181,6 @@ class AimsVoiceService {
     await AimsHandsFreePlatform.requestAssistantRole();
   }
 
-  Future<void> _startWakeListening() async {
-    if (!_enabled || _speaking || _handlingResult) return;
-    _commandMode = false;
-    await _startListening(
-      mode: AimsVoiceMode.wakeWord,
-      message: _locale.t('wake_listening'),
-      wakeOnly: true,
-    );
-  }
-
   Future<void> _startCommandListening() async {
     if (!_enabled || _speaking || _handlingResult) return;
     _commandMode = true;
@@ -418,21 +408,6 @@ class AimsVoiceService {
         lastHeard: _lastHeard,
       ),
     );
-  }
-
-  Future<void> _retryCommand() async {
-    if (_handlingResult) return;
-    _commandTimeout?.cancel();
-    _commandBuffer = '';
-    _handlingResult = true;
-    try {
-      await _speech.stop();
-      await _speak('Nem hallottam jól. Mondd még egyszer.');
-      _commandMode = true;
-    } finally {
-      _handlingResult = false;
-    }
-    await _startCommandListening();
   }
 
   Future<void> _executeCommandText(String text) async {
