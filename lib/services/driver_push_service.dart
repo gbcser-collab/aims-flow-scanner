@@ -1,3 +1,5 @@
+[Reading 368 lines from start (total: 368 lines, 0 remaining)]
+
 import 'dart:async';
 import 'dart:convert';
 
@@ -313,6 +315,12 @@ class DriverPushService {
           showsUserInterface: true,
           cancelNotification: true,
         ),
+        AndroidNotificationAction(
+          'navigate_pickup',
+          'NAVIGÁCIÓ',
+          showsUserInterface: true,
+          cancelNotification: true,
+        ),
       ],
     );
 
@@ -360,3 +368,5 @@ class DriverPushService {
     await _events.close();
   }
 }
+
+[executed on device: GABOR-PC (4f5060cc-3a10-4200-947d-55b7a0fc1e22)]
