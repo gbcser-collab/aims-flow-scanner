@@ -112,6 +112,12 @@ class _DriverShellScreenState extends State<DriverShellScreen>
   bool _documentRefreshBusy = false;
   bool _networkOnline = true;
   Timer? _pendingStopRetryTimer;
+  final TextEditingController _officeMessageController =
+      TextEditingController();
+  List<DriverChatMessage> _officeMessages = const [];
+  bool _officeMessagesBusy = false;
+  Timer? _officeMessageTimer;
+  DateTime? _lastTrackingUiUpdateAt;
 
   bool _isStopCompleted(DriverStop stop) =>
       stop.completed ||
@@ -531,6 +537,8 @@ class _DriverShellScreenState extends State<DriverShellScreen>
     _pendingStopFlushBusy = true;
     _pendingStopRetryTimer?.cancel();
     _pendingStopRetryTimer = null;
+    _officeMessageTimer?.cancel();
+    _officeMessageTimer = null;
 
     final queue = <({int stopId, _PendingStopAction action})>[];
     for (final entry in _pendingStopActions.entries) {
@@ -685,9 +693,30 @@ class _DriverShellScreenState extends State<DriverShellScreen>
     _sync.addListener(_documentSyncChanged);
     unawaited(_sync.initialize());
     _trackingSub = _tracking.statusStream.listen((status) {
-      if (mounted) setState(() => _trackingStatus = status);
+      if (!mounted) return;
+      final now = DateTime.now();
+      final previous = _lastTrackingUiUpdateAt;
+      if (previous != null &&
+          now.difference(previous) < const Duration(seconds: 3)) {
+        _trackingStatus = status;
+        return;
+      }
+      _lastTrackingUiUpdateAt = now;
+      setState(() => _trackingStatus = status);
     });
-    unawaited(_initialize());
+    unawaited(
+      _initialize().catchError((Object error, StackTrace stackTrace) {
+        if (!mounted) return;
+        setState(() {
+          _loading = false;
+          _message = _l(
+            'A Flow elindult, de egy háttérszolgáltatás hibázott. A képernyő használható; próbáld újra a frissítést.',
+            'Flow started, but a background service failed. The screen remains usable; try refresh again.',
+            'Flow wurde gestartet, aber ein Hintergrunddienst ist fehlgeschlagen. Die Oberfläche bleibt nutzbar; bitte erneut aktualisieren.',
+          );
+        });
+      }),
+    );
   }
 
   Future<void> _initialize() async {
@@ -740,6 +769,13 @@ class _DriverShellScreenState extends State<DriverShellScreen>
     } else {
       await _tracking.setVehicleLabel(_plate);
       await _activateDriverServices();
+      await _refreshOfficeMessages(silent: true);
+      _officeMessageTimer?.cancel();
+      _officeMessageTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+        if (_plate.isNotEmpty) {
+          unawaited(_refreshOfficeMessages(silent: true));
+        }
+      });
     }
 
     // R90 stability: continuous microphone capture is retired.
@@ -835,7 +871,23 @@ class _DriverShellScreenState extends State<DriverShellScreen>
 
   Future<void> _handlePush(DriverPushEvent event) async {
     if (!mounted) return;
-    if (event.data['type']?.toString() != 'driver_job') return;
+    final type = event.data['type']?.toString() ?? '';
+    if (type == 'admin_message') {
+      await _refreshOfficeMessages(silent: true);
+      if (!mounted) return;
+      _snack(
+        _l(
+          'Új üzenet érkezett a főnökségtől.',
+          'A new message arrived from the office.',
+          'Eine neue Nachricht von der Disposition ist eingegangen.',
+        ),
+      );
+      if (event.openedFromNotification && !_documentGateActive) {
+        setState(() => _index = 2);
+      }
+      return;
+    }
+    if (type != 'driver_job') return;
     unawaited(
       _voice.announce(
         _l(
@@ -1065,6 +1117,88 @@ class _DriverShellScreenState extends State<DriverShellScreen>
       );
     } catch (e) {
       _snack('A bizonylat scanner nem indult el: $e');
+    }
+  }
+
+  Future<void> _refreshOfficeMessages({
+    bool silent = false,
+  }) async {
+    if (_plate.isEmpty || _officeMessagesBusy) return;
+    if (!silent && mounted) {
+      setState(() => _officeMessagesBusy = true);
+    } else {
+      _officeMessagesBusy = true;
+    }
+
+    try {
+      final messages = await _api.fetchMessages(_plate);
+      if (!mounted) {
+        _officeMessages = messages;
+        return;
+      }
+      final changed = messages.length != _officeMessages.length ||
+          (messages.isNotEmpty &&
+              (_officeMessages.isEmpty ||
+                  messages.last.id != _officeMessages.last.id));
+      if (changed || !silent) {
+        setState(() => _officeMessages = messages);
+      } else {
+        _officeMessages = messages;
+      }
+    } catch (_) {
+      if (!silent && mounted) {
+        _snack(
+          _l(
+            'Az üzenetek most nem frissíthetők.',
+            'Messages cannot be refreshed right now.',
+            'Nachrichten können derzeit nicht aktualisiert werden.',
+          ),
+        );
+      }
+    } finally {
+      if (mounted && !silent) {
+        setState(() => _officeMessagesBusy = false);
+      } else {
+        _officeMessagesBusy = false;
+      }
+    }
+  }
+
+  Future<void> _sendOfficeMessage() async {
+    if (_plate.isEmpty || _officeMessagesBusy) return;
+    final text = _officeMessageController.text.trim();
+    if (text.isEmpty) return;
+
+    setState(() => _officeMessagesBusy = true);
+    try {
+      await _api.sendMessage(plate: _plate, message: text);
+      _officeMessageController.clear();
+      final messages = await _api.fetchMessages(_plate);
+      if (!mounted) return;
+      setState(() => _officeMessages = messages);
+      _snack(
+        _l(
+          'Üzenet elküldve a főnökségnek.',
+          'Message sent to the office.',
+          'Nachricht an die Disposition gesendet.',
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        _snack(
+          _l(
+            'Az üzenet nem ment el: $e',
+            'Message could not be sent: $e',
+            'Nachricht konnte nicht gesendet werden: $e',
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _officeMessagesBusy = false);
+      } else {
+        _officeMessagesBusy = false;
+      }
     }
   }
 
@@ -1626,6 +1760,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
     _voiceSub?.cancel();
     _sync.removeListener(_documentSyncChanged);
     _homeScrollController.dispose();
+    _officeMessageController.dispose();
     unawaited(_voice.dispose());
     super.dispose();
   }
@@ -3027,6 +3162,135 @@ class _DriverShellScreenState extends State<DriverShellScreen>
               'Die Parkplatzmeldung sendet nur sofort eine Nachricht. Sie setzt die automatische 15/30-Minuten-Stillstandsüberwachung weder zurück noch aus.',
             ),
             style: const TextStyle(color: Colors.white54, height: 1.4),
+          ),
+        ),
+        const SizedBox(height: 12),
+        _panel(
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      _l(
+                        'ÜZENET A FŐNÖKSÉGNEK',
+                        'MESSAGE THE OFFICE',
+                        'NACHRICHT AN DIE DISPOSITION',
+                      ),
+                      style: const TextStyle(
+                        color: _blue,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: .7,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: _l('Frissítés', 'Refresh', 'Aktualisieren'),
+                    onPressed: _officeMessagesBusy
+                        ? null
+                        : () => unawaited(
+                              _refreshOfficeMessages(silent: false),
+                            ),
+                    icon: const Icon(Icons.refresh_rounded),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              if (_officeMessages.isEmpty)
+                Text(
+                  _l(
+                    'Még nincs üzenetváltás.',
+                    'No messages yet.',
+                    'Noch keine Nachrichten.',
+                  ),
+                  style: const TextStyle(color: Colors.white38),
+                )
+              else
+                ..._officeMessages.reversed.take(8).toList().reversed.map(
+                  (message) => Align(
+                    alignment: message.fromDriver
+                        ? Alignment.centerRight
+                        : Alignment.centerLeft,
+                    child: Container(
+                      constraints: const BoxConstraints(maxWidth: 330),
+                      margin: const EdgeInsets.only(bottom: 7),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 11,
+                        vertical: 9,
+                      ),
+                      decoration: BoxDecoration(
+                        color: message.fromDriver
+                            ? _blue.withValues(alpha: .14)
+                            : const Color(0xFF0E2638),
+                        borderRadius: BorderRadius.circular(13),
+                        border: Border.all(
+                          color: message.fromDriver
+                              ? _blue.withValues(alpha: .42)
+                              : const Color(0xFF31536B),
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            message.fromDriver
+                                ? _l('TE', 'YOU', 'DU')
+                                : _l(
+                                    'FŐNÖKSÉG',
+                                    'OFFICE',
+                                    'DISPOSITION',
+                                  ),
+                            style: TextStyle(
+                              color: message.fromDriver ? _blue : _green,
+                              fontSize: 9,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            message.body,
+                            style: const TextStyle(height: 1.35),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              const SizedBox(height: 8),
+              TextField(
+                key: const Key('flow-office-message-input'),
+                controller: _officeMessageController,
+                minLines: 1,
+                maxLines: 4,
+                maxLength: 1000,
+                textInputAction: TextInputAction.newline,
+                decoration: InputDecoration(
+                  counterText: '',
+                  hintText: _l(
+                    'Írj a főnökségnek…',
+                    'Message the office…',
+                    'Nachricht an die Disposition…',
+                  ),
+                  prefixIcon: const Icon(Icons.chat_bubble_outline_rounded),
+                ),
+              ),
+              const SizedBox(height: 8),
+              FilledButton.icon(
+                key: const Key('flow-office-message-send'),
+                onPressed:
+                    _officeMessagesBusy ? null : _sendOfficeMessage,
+                icon: const Icon(Icons.send_rounded),
+                label: Text(
+                  _l(
+                    'ÜZENET KÜLDÉSE',
+                    'SEND MESSAGE',
+                    'NACHRICHT SENDEN',
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       ]);
