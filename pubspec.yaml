@@ -28,6 +28,7 @@ dependencies:
   speech_to_text: ^7.4.0
   flutter_tts: ^4.2.5
   local_auth: ^2.3.0
+  webview_flutter: ^4.13.0
 
 dev_dependencies:
   flutter_test:
@@ -35,3 +36,5 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/mobile_preview/
