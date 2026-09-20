@@ -1,5 +1,3 @@
-[Reading 1000 lines from start (total: 3155 lines, 2155 remaining)]
-
 import 'dart:async';
 import 'dart:convert';
 
@@ -1000,5 +998,3 @@ class _DriverShellScreenState extends State<DriverShellScreen>
     final data = job.orderData;
     String value(String key) => data[key]?.toString().trim() ?? '';
     final rows = <MapEntry<String, String>>[
-
-[executed on device: GABOR-PC (4f5060cc-3a10-4200-947d-55b7a0fc1e22)]
