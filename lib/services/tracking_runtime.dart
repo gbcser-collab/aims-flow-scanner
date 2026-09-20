@@ -23,6 +23,9 @@ class TrackingRuntime extends ChangeNotifier {
   Timer? _syncTimer;
   bool _initialized = false;
   bool _busy = false;
+  bool _syncing = false;
+  bool _syncRequested = false;
+  Future<void> _positionTail = Future<void>.value();
   String _deviceState = 'unknown';
   String? _statusMessage;
 
@@ -155,9 +158,18 @@ class TrackingRuntime extends ChangeNotifier {
           );
 
     _positionSubscription = Geolocator.getPositionStream(locationSettings: settings).listen(
-      (position) => unawaited(_handlePosition(position)),
+      _enqueuePosition,
       onError: (Object error) {
         _statusMessage = 'GPS hiba: $error';
+        notifyListeners();
+      },
+    );
+  }
+
+  void _enqueuePosition(Position position) {
+    _positionTail = _positionTail.then((_) => _handlePosition(position)).catchError(
+      (Object error) {
+        _statusMessage = 'GPS pozíció mentési hiba: $error';
         notifyListeners();
       },
     );
@@ -186,6 +198,22 @@ class TrackingRuntime extends ChangeNotifier {
   }
 
   Future<void> syncNow() async {
+    if (_syncing) {
+      _syncRequested = true;
+      return;
+    }
+    _syncing = true;
+    try {
+      do {
+        _syncRequested = false;
+        await _syncPass();
+      } while (_syncRequested);
+    } finally {
+      _syncing = false;
+    }
+  }
+
+  Future<void> _syncPass() async {
     final current = _session;
     if (current == null) return;
 
