@@ -383,6 +383,94 @@ function aims_try_push(PDO $pdo, int $limit = 10): void {
 }
 
 
+function aims_send_driver_direct_push(
+    PDO $pdo,
+    int $vehicleId,
+    string $title,
+    string $body,
+    array $payload = []
+): array {
+    $devices = $pdo->prepare('SELECT * FROM driver_push_devices WHERE vehicle_id = :vehicle AND enabled = 1');
+    $devices->execute([':vehicle' => $vehicleId]);
+    $rows = $devices->fetchAll(PDO::FETCH_ASSOC);
+    if (!$rows) return ['configured' => true, 'sent' => 0, 'failed' => 0];
+
+    $config = aims_push_config();
+    if ($config === null) return ['configured' => false, 'sent' => 0, 'failed' => count($rows)];
+
+    $data = aims_fcm_data($payload);
+    $sent = 0;
+    $failed = 0;
+
+    foreach ($rows as $device) {
+        if ($config['mode'] === 'fake') {
+            $line = json_encode([
+                'driverVehicleId' => $vehicleId,
+                'driverPushDeviceId' => (int)$device['id'],
+                'title' => $title,
+                'body' => $body,
+                'data' => $data,
+            ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            if (is_string($line)) {
+                @file_put_contents($config['log'], $line . PHP_EOL, FILE_APPEND | LOCK_EX);
+            }
+            $sent++;
+            continue;
+        }
+
+        $accessToken = aims_fcm_access_token($config);
+        if ($accessToken === null) {
+            $failed++;
+            continue;
+        }
+
+        $message = [
+            'message' => [
+                'token' => $device['fcm_token'],
+                'notification' => [
+                    'title' => $title,
+                    'body' => $body,
+                ],
+                'data' => $data,
+                'android' => [
+                    'priority' => 'high',
+                    'notification' => ['sound' => 'default'],
+                ],
+                'apns' => [
+                    'headers' => ['apns-priority' => '10'],
+                    'payload' => ['aps' => ['sound' => 'default']],
+                ],
+            ],
+        ];
+
+        $response = aims_http_post(
+            'https://fcm.googleapis.com/v1/projects/' . rawurlencode($config['project_id']) . '/messages:send',
+            ['Authorization: Bearer ' . $accessToken],
+            json_encode($message, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
+        );
+
+        if ($response['ok']) {
+            $sent++;
+            continue;
+        }
+
+        $failed++;
+        $responseBody = (string)$response['body'];
+        if ($response['status'] === 404
+            || str_contains($responseBody, 'UNREGISTERED')
+            || str_contains($responseBody, 'registration-token-not-registered')) {
+            $pdo->prepare('UPDATE driver_push_devices SET enabled = 0, updated_at = :now WHERE id = :id')
+                ->execute([
+                    ':now' => gmdate(DateTimeInterface::ATOM),
+                    ':id' => $device['id'],
+                ]);
+        }
+    }
+
+    return ['configured' => true, 'sent' => $sent, 'failed' => $failed];
+}
+
+
 function aims_send_driver_job_push(PDO $pdo, int $jobId): array {
     $stmt = $pdo->prepare('SELECT j.*, v.plate, v.id AS vehicle_id
                            FROM jobs j JOIN vehicles v ON v.id = j.vehicle_id
