@@ -57,6 +57,7 @@ function aims_db(): PDO {
     $pdo->exec('PRAGMA journal_mode=WAL');
     $pdo->exec('PRAGMA synchronous=NORMAL');
     $pdo->exec('PRAGMA foreign_keys=ON');
+    $pdo->exec('PRAGMA busy_timeout=5000');
 
     $pdo->exec('CREATE TABLE IF NOT EXISTS admin_users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -94,6 +95,59 @@ function aims_db(): PDO {
     $pdo->exec('CREATE INDEX IF NOT EXISTS idx_points_device_time ON points(device_id, captured_at DESC)');
     $pdo->exec('CREATE INDEX IF NOT EXISTS idx_points_vehicle_time ON points(vehicle_id, captured_at DESC)');
     $pdo->exec('CREATE INDEX IF NOT EXISTS idx_points_received ON points(received_at DESC)');
+
+    $pointColumns = [];
+    foreach ($pdo->query('PRAGMA table_info(points)')->fetchAll(PDO::FETCH_ASSOC) as $column) {
+        $pointColumns[(string)$column['name']] = true;
+    }
+    if (!isset($pointColumns['point_key'])) {
+        $pdo->exec('ALTER TABLE points ADD COLUMN point_key TEXT');
+    }
+    if (!isset($pointColumns['country_code'])) {
+        $pdo->exec('ALTER TABLE points ADD COLUMN country_code TEXT');
+    }
+    $pdo->exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_points_point_key_unique
+        ON points(point_key) WHERE point_key IS NOT NULL AND point_key <> ""');
+    $pdo->exec('CREATE INDEX IF NOT EXISTS idx_points_country_time
+        ON points(country_code, captured_at DESC)');
+
+    $pdo->exec('CREATE TABLE IF NOT EXISTS vehicle_country_state (
+        vehicle_id INTEGER PRIMARY KEY,
+        confirmed_country_code TEXT,
+        candidate_country_code TEXT,
+        candidate_since TEXT,
+        candidate_hits INTEGER NOT NULL DEFAULT 0,
+        last_observed_at TEXT,
+        last_latitude REAL,
+        last_longitude REAL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY(vehicle_id) REFERENCES vehicles(id) ON DELETE CASCADE
+    )');
+
+    $pdo->exec('CREATE TABLE IF NOT EXISTS country_stays (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        vehicle_id INTEGER NOT NULL,
+        country_code TEXT NOT NULL,
+        entered_at TEXT NOT NULL,
+        exited_at TEXT,
+        entry_latitude REAL,
+        entry_longitude REAL,
+        exit_latitude REAL,
+        exit_longitude REAL,
+        transition_from TEXT,
+        confirmed_at TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY(vehicle_id) REFERENCES vehicles(id) ON DELETE CASCADE
+    )');
+    $pdo->exec('CREATE INDEX IF NOT EXISTS idx_country_stays_vehicle_time
+        ON country_stays(vehicle_id, entered_at DESC)');
+    $pdo->exec('CREATE INDEX IF NOT EXISTS idx_country_stays_open
+        ON country_stays(vehicle_id, exited_at)');
+
+    $pdo->exec('CREATE TABLE IF NOT EXISTS maintenance_state (
+        name TEXT PRIMARY KEY,
+        last_run TEXT NOT NULL
+    )');
 
     $pdo->exec('CREATE TABLE IF NOT EXISTS vehicle_state (
         vehicle_id INTEGER PRIMARY KEY,
