@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 require __DIR__ . '/bootstrap.php';
+require_once __DIR__ . '/country_stay.php';
 
 aims_require_token('AIMS_TRACKING_TOKEN');
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
@@ -16,13 +17,16 @@ $deviceId = trim((string)($data['deviceId'] ?? ''));
 $vehicleLabel = trim((string)($data['vehicleLabel'] ?? ''));
 $capturedAt = trim((string)($data['timestamp'] ?? ''));
 $source = trim((string)($data['source'] ?? 'stream'));
+$pointKey = trim((string)($data['pointId'] ?? ''));
+$countryCode = strtoupper(trim((string)($data['countryCode'] ?? '')));
+if (!preg_match('/^[A-Z]{2}$/', $countryCode)) $countryCode = '';
 $lat = filter_var($data['latitude'] ?? null, FILTER_VALIDATE_FLOAT);
 $lng = filter_var($data['longitude'] ?? null, FILTER_VALIDATE_FLOAT);
 $accuracy = isset($data['accuracy']) ? (float)$data['accuracy'] : null;
 $speedMps = isset($data['speedMps']) ? max(0.0, (float)$data['speedMps']) : null;
 $delayedReplay = ($data['delayed'] ?? false) === true;
 
-if ($deviceId === '' || strlen($deviceId) > 120 || $capturedAt === '' || $lat === false || $lng === false) {
+if ($deviceId === '' || strlen($deviceId) > 120 || strlen($pointKey) > 120 || $capturedAt === '' || $lat === false || $lng === false) {
     aims_json(['ok' => false, 'error' => 'invalid_payload'], 422);
 }
 if ($lat < -90 || $lat > 90 || $lng < -180 || $lng > 180) {
@@ -263,15 +267,19 @@ $vehicleId = $vehicle === null ? null : (int)$vehicle['id'];
 
 $pdo->beginTransaction();
 try {
-    $stmt = $pdo->prepare('INSERT INTO points (
-        device_id, vehicle_id, vehicle_label, captured_at, received_at,
-        latitude, longitude, accuracy, speed_mps, heading, altitude, source
-    ) VALUES (:device_id, :vehicle_id, :vehicle_label, :captured_at, :received_at,
-              :latitude, :longitude, :accuracy, :speed_mps, :heading, :altitude, :source)');
+    $stmt = $pdo->prepare('INSERT OR IGNORE INTO points (
+        point_key, device_id, vehicle_id, vehicle_label, country_code,
+        captured_at, received_at, latitude, longitude, accuracy,
+        speed_mps, heading, altitude, source
+    ) VALUES (:point_key, :device_id, :vehicle_id, :vehicle_label, :country_code,
+              :captured_at, :received_at, :latitude, :longitude, :accuracy,
+              :speed_mps, :heading, :altitude, :source)');
     $stmt->execute([
+        ':point_key' => $pointKey !== '' ? $pointKey : null,
         ':device_id' => $deviceId,
         ':vehicle_id' => $vehicleId,
         ':vehicle_label' => mb_substr($vehicleLabel, 0, 80),
+        ':country_code' => $countryCode !== '' ? $countryCode : null,
         ':captured_at' => $captured->format(DateTimeInterface::ATOM),
         ':received_at' => gmdate(DateTimeInterface::ATOM),
         ':latitude' => (float)$lat,
@@ -283,20 +291,59 @@ try {
         ':source' => in_array($source, ['stream', 'heartbeat'], true) ? $source : 'stream',
     ]);
 
+    $duplicatePoint = $pointKey !== '' && $stmt->rowCount() === 0;
     $arrivalEvents = 0;
     $stationaryEvents = 0;
-    if ($vehicle !== null) {
+    $borderEvents = 0;
+    if ($vehicle !== null && !$duplicatePoint) {
         $arrivalEvents = aims_process_arrivals(
             $pdo, $vehicle, (float)$lat, (float)$lng, $accuracy, $speedMps, $captured, !$delayedReplay
         );
         $stationaryEvents = aims_process_stationary(
             $pdo, $vehicle, (float)$lat, (float)$lng, $accuracy, $speedMps, $captured, !$delayedReplay
         );
+        $borderEvents = aims_process_country_stay(
+            $pdo, $vehicle, $countryCode, (float)$lat, (float)$lng, $captured, !$delayedReplay
+        );
     }
 
-    $cutoff = (new DateTimeImmutable('-60 days', new DateTimeZone('UTC')))->format(DateTimeInterface::ATOM);
-    $cleanup = $pdo->prepare('DELETE FROM points WHERE received_at < :cutoff');
-    $cleanup->execute([':cutoff' => $cutoff]);
+    $maintenanceNow = new DateTimeImmutable('now', new DateTimeZone('UTC'));
+    $maintenance = $pdo->prepare(
+        'SELECT last_run FROM maintenance_state WHERE name = :name'
+    );
+    $maintenance->execute([':name' => 'points_cleanup']);
+    $lastCleanupRaw = $maintenance->fetchColumn();
+    $cleanupDue = $lastCleanupRaw === false;
+
+    if (!$cleanupDue) {
+        try {
+            $lastCleanup = new DateTimeImmutable((string)$lastCleanupRaw);
+            $cleanupDue =
+                $maintenanceNow->getTimestamp() - $lastCleanup->getTimestamp() >= 21600;
+        } catch (Throwable) {
+            $cleanupDue = true;
+        }
+    }
+
+    if ($cleanupDue) {
+        $cutoff = $maintenanceNow
+            ->modify('-60 days')
+            ->format(DateTimeInterface::ATOM);
+        $cleanup = $pdo->prepare(
+            'DELETE FROM points WHERE received_at < :cutoff'
+        );
+        $cleanup->execute([':cutoff' => $cutoff]);
+
+        $markMaintenance = $pdo->prepare(
+            'INSERT INTO maintenance_state (name, last_run)
+             VALUES (:name, :last_run)
+             ON CONFLICT(name) DO UPDATE SET last_run = excluded.last_run'
+        );
+        $markMaintenance->execute([
+            ':name' => 'points_cleanup',
+            ':last_run' => $maintenanceNow->format(DateTimeInterface::ATOM),
+        ]);
+    }
 
     $pdo->commit();
 } catch (Throwable $error) {
@@ -310,7 +357,10 @@ aims_try_push($pdo, 8);
 aims_json([
     'ok' => true,
     'registeredVehicle' => $vehicle !== null,
+    'duplicatePoint' => $duplicatePoint,
     'arrivalEvents' => $arrivalEvents,
     'stationaryEvents' => $stationaryEvents,
+    'borderEvents' => $borderEvents,
+    'countryCode' => $countryCode !== '' ? $countryCode : null,
     'receivedAt' => gmdate(DateTimeInterface::ATOM),
 ]);
