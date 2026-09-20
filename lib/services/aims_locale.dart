@@ -60,25 +60,55 @@ class AimsLanguageSelector extends StatelessWidget {
     final locale = AimsLocaleController.instance;
     return AnimatedBuilder(
       animation: locale,
-      builder: (context, _) => Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (!compact) ...[
-            const Icon(Icons.language_rounded, size: 18),
-            const SizedBox(width: 7),
-          ],
-          for (final code in const ['hu', 'en', 'de'])
-            Padding(
-              padding: const EdgeInsets.only(left: 4),
-              child: ChoiceChip(
-                label: Text(code.toUpperCase()),
-                selected: locale.languageCode == code,
-                visualDensity: VisualDensity.compact,
-                onSelected: (_) => locale.setLanguage(code),
+      builder: (context, _) {
+        if (compact) {
+          return PopupMenuButton<String>(
+            tooltip: 'Language / Nyelv / Sprache',
+            onSelected: locale.setLanguage,
+            itemBuilder: (context) => const [
+              PopupMenuItem(value: 'hu', child: Text('HU · Magyar')),
+              PopupMenuItem(value: 'en', child: Text('EN · English')),
+              PopupMenuItem(value: 'de', child: Text('DE · Deutsch')),
+            ],
+            child: Container(
+              constraints: const BoxConstraints(minWidth: 48, minHeight: 44),
+              alignment: Alignment.center,
+              padding: const EdgeInsets.symmetric(horizontal: 9),
+              decoration: BoxDecoration(
+                color: const Color(0xFF081A28),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0xFF24557D)),
+              ),
+              child: Text(
+                locale.languageCode.toUpperCase(),
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: .8,
+                ),
               ),
             ),
-        ],
-      ),
+          );
+        }
+
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.language_rounded, size: 18),
+            const SizedBox(width: 7),
+            for (final code in const ['hu', 'en', 'de'])
+              Padding(
+                padding: const EdgeInsets.only(left: 4),
+                child: ChoiceChip(
+                  label: Text(code.toUpperCase()),
+                  selected: locale.languageCode == code,
+                  visualDensity: VisualDensity.compact,
+                  onSelected: (_) => locale.setLanguage(code),
+                ),
+              ),
+          ],
+        );
+      },
     );
   }
 }

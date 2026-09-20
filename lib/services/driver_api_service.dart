@@ -68,7 +68,7 @@ class DriverJob {
     for (final stop in stops) {
       if (!stop.completed) return stop;
     }
-    return stops.isEmpty ? null : stops.last;
+    return null;
   }
 
   factory DriverJob.fromJson(Map<String, dynamic> json) => DriverJob(
