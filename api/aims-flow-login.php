@@ -11,6 +11,42 @@ aims_security_headers(true);
 header('Content-Type: application/json; charset=UTF-8');
 header('Cache-Control: no-store');
 
+
+function flow_normalize_driver_code(string $value): string {
+  return strtoupper(preg_replace('/[^A-Za-z0-9]/','',trim($value)) ?? '');
+}
+
+function flow_driver_code_format_valid(string $value): bool {
+  return preg_match('/^(?=(?:.*[A-Z]){3})(?=(?:.*[0-9]){3})[A-Z0-9]{6}$/',$value)===1
+    && preg_match_all('/[A-Z]/',$value)===3
+    && preg_match_all('/[0-9]/',$value)===3;
+}
+
+function flow_vehicle_driver_code_valid(array $vehicle,string $code,string &$reason): bool {
+  $reason='invalid';
+  $hash=trim((string)($vehicle['driver_code_hash']??''));
+  if($hash==='') return false;
+
+  if(!password_verify($code,$hash)) return false;
+
+  $isTemp=((int)($vehicle['driver_code_is_temp']??0))===1;
+  if($isTemp){
+    $expires=trim((string)($vehicle['driver_code_expires_at']??''));
+    if($expires!==''){
+      $ts=strtotime($expires);
+      if($ts!==false && $ts<time()){
+        $reason='temp_expired';
+        return false;
+      }
+    }
+    $reason='temp';
+    return true;
+  }
+
+  $reason='ok';
+  return true;
+}
+
 function flow_reply(array $data,int $status=200): never {
   http_response_code($status);
   echo json_encode($data,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
@@ -149,9 +185,9 @@ if($admin){
 }
 
 $plate=aims_normalize_plate($login);
-$driverCode=aims_normalize_driver_code($password);
+$driverCode=flow_normalize_driver_code($password);
 
-if($plate!==''&&aims_driver_code_format_valid($driverCode)){
+if($plate!==''&&flow_driver_code_format_valid($driverCode)){
   $plateRate=aims_rate_limit('flow-driver-plate',$plate,12,3600,false);
   if(!$plateRate['allowed']) flow_reply(['ok'=>false,'error'=>'rate_limited'],429);
 
@@ -162,7 +198,7 @@ if($plate!==''&&aims_driver_code_format_valid($driverCode)){
     $vehicle=$q->fetch(PDO::FETCH_ASSOC);
     $reason='invalid';
 
-    if($vehicle&&!empty($vehicle['enabled'])&&aims_vehicle_driver_code_valid($vehicle,$driverCode,$reason)){
+    if($vehicle&&!empty($vehicle['enabled'])&&flow_vehicle_driver_code_valid($vehicle,$driverCode,$reason)){
       aims_rate_limit_clear('flow-native-login',$key);
       aims_rate_limit_clear('flow-driver-plate',$plate);
       aims_audit('flow_native_login',['actor'=>'driver','detail'=>$plate,'result'=>'ok']);
