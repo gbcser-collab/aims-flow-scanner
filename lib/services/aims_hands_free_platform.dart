@@ -61,6 +61,22 @@ class AimsHandsFreePlatform {
     }
   }
 
+  static Future<String?> networkCountryCode() async {
+    _installHandler();
+    try {
+      final result = await _channel.invokeMapMethod<String, dynamic>(
+        'networkCountry',
+      );
+      final code = (result?['network'] ?? '').toString().trim().toUpperCase();
+      if (RegExp(r'^[A-Z]{2}$').hasMatch(code)) return code;
+      return null;
+    } on MissingPluginException {
+      return null;
+    } on PlatformException {
+      return null;
+    }
+  }
+
   static Future<bool> requestAssistantRole() async {
     _installHandler();
     try {
