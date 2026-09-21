@@ -195,6 +195,26 @@ class DriverChatMessage {
   }
 }
 
+class DriverRestModeState {
+  const DriverRestModeState({
+    required this.active,
+    this.startedAt,
+    this.until,
+  });
+
+  final bool active;
+  final DateTime? startedAt;
+  final DateTime? until;
+
+  factory DriverRestModeState.fromJson(Map<String, dynamic> json) =>
+      DriverRestModeState(
+        active: json['active'] == true,
+        startedAt:
+            DateTime.tryParse(json['startedAt']?.toString() ?? '')?.toLocal(),
+        until: DateTime.tryParse(json['until']?.toString() ?? '')?.toLocal(),
+      );
+}
+
 class DriverApiService {
   const DriverApiService();
 
@@ -372,6 +392,60 @@ class DriverApiService {
         body['error']?.toString() ?? 'HTTP ${response.statusCode}',
       );
     }
+  }
+
+  Future<DriverRestModeState> fetchRestMode(String plate) async {
+    _ensureConfigured();
+    final normalized = plate.trim().toUpperCase();
+    final response = await http
+        .get(
+          Uri.parse(
+            '${_base()}/driver_rest_mode.php?plate=${Uri.encodeQueryComponent(normalized)}',
+          ),
+          headers: _headers,
+        )
+        .timeout(const Duration(seconds: 12));
+    final body = _decode(response);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw DriverApiException(
+        response.statusCode,
+        body['error']?.toString() ?? 'HTTP ${response.statusCode}',
+      );
+    }
+    final raw = body['restMode'];
+    return DriverRestModeState.fromJson(
+      raw is Map ? Map<String, dynamic>.from(raw) : const <String, dynamic>{},
+    );
+  }
+
+  Future<DriverRestModeState> setRestMode({
+    required String plate,
+    required bool enabled,
+    int durationMinutes = 540,
+  }) async {
+    _ensureConfigured();
+    final response = await http
+        .post(
+          Uri.parse('${_base()}/driver_rest_mode.php'),
+          headers: _headers,
+          body: jsonEncode({
+            'plate': plate.trim().toUpperCase(),
+            'enabled': enabled,
+            'durationMinutes': durationMinutes,
+          }),
+        )
+        .timeout(const Duration(seconds: 12));
+    final body = _decode(response);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw DriverApiException(
+        response.statusCode,
+        body['error']?.toString() ?? 'HTTP ${response.statusCode}',
+      );
+    }
+    final raw = body['restMode'];
+    return DriverRestModeState.fromJson(
+      raw is Map ? Map<String, dynamic>.from(raw) : const <String, dynamic>{},
+    );
   }
 
   Future<void> registerPush({
