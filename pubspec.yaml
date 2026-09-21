@@ -28,6 +28,7 @@ dependencies:
   speech_to_text: ^7.4.0
   flutter_tts: ^4.2.5
   local_auth: ^2.3.0
+  pdf: ^3.11.3
 
 dev_dependencies:
   flutter_test:
