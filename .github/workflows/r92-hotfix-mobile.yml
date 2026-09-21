@@ -1,0 +1,153 @@
+name: R92 Signal Message Hotfix APK
+
+on:
+  push:
+    branches:
+      - r92-hotfix-signals-messages-build
+  workflow_dispatch:
+
+concurrency:
+  group: r92-signal-message-hotfix-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Flutter stable
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Generate Android platform
+        run: |
+          rm -rf /tmp/aims_template
+          flutter create --platforms=android --org hu.logisticaims --project-name aims_flow_scanner /tmp/aims_template
+          cp -R /tmp/aims_template/android ./android
+
+      - name: Configure Android
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import shutil
+
+          p = Path('android/app/src/main/AndroidManifest.xml')
+          s = p.read_text()
+          permissions = [
+              'android.permission.CAMERA',
+              'android.permission.INTERNET',
+              'android.permission.ACCESS_COARSE_LOCATION',
+              'android.permission.ACCESS_FINE_LOCATION',
+              'android.permission.ACCESS_BACKGROUND_LOCATION',
+              'android.permission.FOREGROUND_SERVICE',
+              'android.permission.FOREGROUND_SERVICE_LOCATION',
+              'android.permission.FOREGROUND_SERVICE_MICROPHONE',
+              'android.permission.RECORD_AUDIO',
+              'android.permission.WAKE_LOCK',
+              'android.permission.USE_BIOMETRIC',
+              'android.permission.POST_NOTIFICATIONS',
+              'android.permission.VIBRATE',
+          ]
+          block = '\n'.join(
+              f'    <uses-permission android:name="{name}" />'
+              for name in permissions
+          )
+          queries = '\n'.join([
+              '    <queries>',
+              '        <intent><action android:name="android.speech.RecognitionService" /></intent>',
+              '        <intent><action android:name="android.intent.action.TTS_SERVICE" /></intent>',
+              '    </queries>',
+          ])
+          s = s.replace('<application', block + '\n' + queries + '\n    <application', 1)
+          s = s.replace('android:label="aims_flow_scanner"', 'android:label="AIMS Flow R92 HOTFIX"')
+          assist = '\n'.join([
+              '            <intent-filter>',
+              '                <action android:name="android.intent.action.ASSIST" />',
+              '                <category android:name="android.intent.category.DEFAULT" />',
+              '            </intent-filter>',
+              '',
+          ])
+          end = s.find('</activity>')
+          if end < 0:
+              raise SystemExit('MainActivity closing tag missing')
+          s = s[:end] + assist + s[end:]
+          service = '\n'.join([
+              '        <service',
+              '            android:name=".AimsHandsFreeService"',
+              '            android:enabled="true"',
+              '            android:exported="false"',
+              '            android:foregroundServiceType="microphone" />',
+              '',
+          ])
+          s = s.replace('</application>', service + '    </application>', 1)
+          p.write_text(s)
+
+          target = Path('android/app/src/main/kotlin/hu/logisticaims/aims_flow_scanner')
+          target.mkdir(parents=True, exist_ok=True)
+          shutil.copy2('native/android/MainActivity.kt', target / 'MainActivity.kt')
+          shutil.copy2('native/android/AimsHandsFreeService.kt', target / 'AimsHandsFreeService.kt')
+
+          g = Path('android/app/build.gradle.kts')
+          text = g.read_text()
+          text = text.replace('minSdk = flutter.minSdkVersion', 'minSdk = 23')
+          if 'isCoreLibraryDesugaringEnabled = true' not in text:
+              text = text.replace(
+                  'compileOptions {',
+                  'compileOptions {\n        isCoreLibraryDesugaringEnabled = true',
+                  1,
+              )
+          if 'coreLibraryDesugaring(' not in text:
+              if 'dependencies {' in text:
+                  text = text.replace(
+                      'dependencies {',
+                      'dependencies {\n    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")',
+                      1,
+                  )
+              else:
+                  text += '\n\ndependencies {\n    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")\n}\n'
+          g.write_text(text)
+          PY
+          mkdir -p android/app/src/main/res/raw
+          base64 -d native/android/raw/aims_new_job.mp3.b64 > android/app/src/main/res/raw/aims_new_job.mp3
+          base64 -d native/android/raw/aims_new_message.mp3.b64 > android/app/src/main/res/raw/aims_new_message.mp3
+
+      - name: Dependencies
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Build real driver APK
+        env:
+          AIMS_TRACKING_TOKEN: ${{ secrets.AIMS_TRACKING_TOKEN }}
+        run: |
+          flutter build apk --debug \
+            --dart-define=AIMS_TRACKING_BASE_URL=https://logistic-aims.hu/api/aims-tracking \
+            --dart-define=AIMS_TRACKING_TOKEN="${AIMS_TRACKING_TOKEN}"
+          cp build/app/outputs/flutter-apk/app-debug.apk AIMS-Flow-R92-SIGNAL-MESSAGE-HOTFIX.apk
+
+      - name: APK integrity
+        run: |
+          test -s AIMS-Flow-R92-SIGNAL-MESSAGE-HOTFIX.apk
+          unzip -t AIMS-Flow-R92-SIGNAL-MESSAGE-HOTFIX.apk >/tmp/apk-test.txt
+          sha256sum AIMS-Flow-R92-SIGNAL-MESSAGE-HOTFIX.apk > AIMS-Flow-R92-SIGNAL-MESSAGE-HOTFIX.sha256
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: AIMS-Flow-R92-SIGNAL-MESSAGE-HOTFIX
+          path: |
+            AIMS-Flow-R92-SIGNAL-MESSAGE-HOTFIX.apk
+            AIMS-Flow-R92-SIGNAL-MESSAGE-HOTFIX.sha256
+          if-no-files-found: error
