@@ -428,6 +428,96 @@ function aims_admin_user_id(PDO $pdo): int {
     return (int)$id;
 }
 
+function aims_finalize_rest_pause(
+    PDO $pdo,
+    int $vehicleId,
+    DateTimeImmutable $endedAt
+): void {
+    $stmt = $pdo->prepare('SELECT s.id, s.waiting_pause_started_at
+        FROM job_stops s
+        JOIN jobs j ON j.id = s.job_id
+        WHERE j.vehicle_id = :vehicle
+          AND j.status = "active"
+          AND s.completed_at IS NULL
+          AND s.waiting_pause_started_at IS NOT NULL');
+    $stmt->execute([':vehicle' => $vehicleId]);
+    $update = $pdo->prepare('UPDATE job_stops
+        SET waiting_paused_seconds = waiting_paused_seconds + :seconds,
+            waiting_pause_started_at = NULL
+        WHERE id = :id');
+    foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $stop) {
+        try {
+            $started = new DateTimeImmutable((string)$stop['waiting_pause_started_at']);
+        } catch (Throwable) {
+            $started = $endedAt;
+        }
+        $seconds = max(0, $endedAt->getTimestamp() - $started->getTimestamp());
+        $update->execute([
+            ':seconds' => $seconds,
+            ':id' => (int)$stop['id'],
+        ]);
+    }
+
+    $state = $pdo->prepare('UPDATE vehicle_state
+        SET stationary_since = :ended,
+            last_motion_at = :ended,
+            alerts_mask = 0
+        WHERE vehicle_id = :vehicle');
+    $state->execute([
+        ':ended' => $endedAt->format(DateTimeInterface::ATOM),
+        ':vehicle' => $vehicleId,
+    ]);
+}
+
+function aims_rest_mode_state(
+    PDO $pdo,
+    int $vehicleId,
+    ?DateTimeImmutable $at = null
+): array {
+    $at ??= new DateTimeImmutable('now', new DateTimeZone('UTC'));
+    $stmt = $pdo->prepare('SELECT rest_mode_started_at, rest_mode_until
+        FROM vehicles WHERE id = :vehicle LIMIT 1');
+    $stmt->execute([':vehicle' => $vehicleId]);
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+    if (!$row) {
+        return ['active' => false, 'startedAt' => null, 'until' => null];
+    }
+
+    $startedRaw = trim((string)($row['rest_mode_started_at'] ?? ''));
+    $untilRaw = trim((string)($row['rest_mode_until'] ?? ''));
+    if ($startedRaw === '' || $untilRaw === '') {
+        return ['active' => false, 'startedAt' => null, 'until' => null];
+    }
+
+    try {
+        $startedAt = (new DateTimeImmutable($startedRaw))
+            ->setTimezone(new DateTimeZone('UTC'));
+        $until = (new DateTimeImmutable($untilRaw))
+            ->setTimezone(new DateTimeZone('UTC'));
+    } catch (Throwable) {
+        $clear = $pdo->prepare('UPDATE vehicles
+            SET rest_mode_started_at = NULL, rest_mode_until = NULL
+            WHERE id = :vehicle');
+        $clear->execute([':vehicle' => $vehicleId]);
+        return ['active' => false, 'startedAt' => null, 'until' => null];
+    }
+
+    if ($until <= $at) {
+        aims_finalize_rest_pause($pdo, $vehicleId, $until);
+        $clear = $pdo->prepare('UPDATE vehicles
+            SET rest_mode_started_at = NULL, rest_mode_until = NULL
+            WHERE id = :vehicle');
+        $clear->execute([':vehicle' => $vehicleId]);
+        return ['active' => false, 'startedAt' => null, 'until' => null];
+    }
+
+    return [
+        'active' => true,
+        'startedAt' => $startedAt->format(DateTimeInterface::ATOM),
+        'until' => $until->format(DateTimeInterface::ATOM),
+    ];
+}
+
 function aims_notify(
     PDO $pdo,
     int $adminUserId,
