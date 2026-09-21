@@ -71,3 +71,18 @@ A sofőr fő folyamata:
 4. BEJELENTKEZTEM A REGISZTRÁCIÓN → GPS-tanulás
 5. Rakodás/lerakás kész
 6. Következő stop vagy záró hangüzenet
+
+
+## Új fejlesztési feladat – egyszer használatos megbízói live tracking link
+- Minden fuvarhoz generálható legyen egy egyedi, hosszú véletlen tokenes nyomkövető link.
+- A link csak az adott fuvar GPS-adatait mutathatja, más járművet/fuvart soha.
+- A link címzett e-mail címe automatikusan töltődjön ki a fuvarmegbízás/partner adataiból, de admin módosíthassa küldés előtt.
+- A link a megbízói e-mail címhez legyen kötve; első megnyitás és további megnyitások naplózva legyenek.
+- A megbízó a link alatt lássa legalább: aktuális járműpozíció, utolsó frissítés, felrakó/lerakó, fuvar státusza és ETA, de a sofőr egyéb munkái ne legyenek láthatók.
+- A sofőr utolsó „munka befejezve” eseményére a tracking token azonnal legyen visszavonva/lejárt státuszú.
+- Lezárás után a régi link többé ne mutasson élő helyzetet; csak „A fuvar lezárult” állapotot vagy 410 Gone választ adjon.
+- A CMR lezárás/szinkron után automatikusan menjen ki ugyanarra a hitelesített megbízói e-mail címre.
+- Ha a CMR még nincs kész a munka lezárásakor, a rendszer várja meg a végleges CMR feltöltést/szinkront, majd küldje ki automatikusan.
+- Legyen audit: link generálva, elküldve, első megnyitás, további megnyitások, lejárat/visszavonás, CMR elküldve/hibás küldés.
+- Adminból lehessen a linket kézzel azonnal visszavonni és új linket generálni.
+- Biztonság: token csak hash formában legyen tárolva; noindex/noarchive; rövid cache tiltás; rate limit; nincs publikus járműlista.
