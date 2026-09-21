@@ -16,7 +16,7 @@ void main() {
     await tester.pumpWidget(const MaterialApp(home: DriverShellScreen()));
     await tester.pump(const Duration(milliseconds: 700));
 
-    await tester.tap(find.text('JELZÉS'));
+    await tester.tap(find.text('JELZÉS').last);
     await tester.pump(const Duration(milliseconds: 250));
 
     for (final label in <String>[
@@ -40,11 +40,13 @@ void main() {
     await tester.pumpWidget(const MaterialApp(home: DriverShellScreen()));
     await tester.pump(const Duration(milliseconds: 700));
 
-    await tester.tap(find.text('JELZÉS'));
+    await tester.tap(find.text('JELZÉS').last);
     await tester.pump(const Duration(milliseconds: 250));
 
     final input = find.byKey(const Key('flow-office-message-input'));
     final send = find.byKey(const Key('flow-office-message-send'));
+    await tester.ensureVisible(input);
+    await tester.pump(const Duration(milliseconds: 250));
     expect(input, findsOneWidget);
     expect(send, findsOneWidget);
 
