@@ -46,6 +46,16 @@ function aims_due_stop_alerts(int $stationarySeconds, int $sentMask): array {
     return [end($due)];
 }
 
+
+function aims_due_job_waiting_slot(int $waitingSeconds, int $lastSlot): ?array {
+    $slot = intdiv(max(0, $waitingSeconds), 20 * 60);
+    if ($slot < 1 || $slot <= $lastSlot) return null;
+    return [
+        'slot' => $slot,
+        'minutes' => $slot * 20,
+    ];
+}
+
 function aims_geofence_radius_m(float $configuredRadius, ?float $accuracy): float {
     $gpsRadius = $accuracy === null ? 0.0 : min(350.0, max(0.0, $accuracy * 2.0));
     return max($configuredRadius, $gpsRadius);
