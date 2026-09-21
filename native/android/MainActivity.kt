@@ -6,6 +6,7 @@ import android.content.Intent
 import android.os.Build
 import android.telephony.TelephonyManager
 import android.provider.Settings
+import android.view.WindowManager
 import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -69,6 +70,50 @@ class MainActivity : FlutterFragmentActivity() {
                     } catch (error: Throwable) {
                         result.error(
                             "network_country_failed",
+                            error.message,
+                            null
+                        )
+                    }
+                }
+
+                "applyNightBrightnessCap" -> {
+                    try {
+                        val cap = (call.argument<Double>("cap") ?: 0.35)
+                            .toFloat()
+                            .coerceIn(0.05f, 1.0f)
+                        val systemBrightness = Settings.System.getInt(
+                            contentResolver,
+                            Settings.System.SCREEN_BRIGHTNESS,
+                            128
+                        ).coerceIn(1, 255) / 255f
+                        val target = minOf(systemBrightness, cap)
+                        runOnUiThread {
+                            val params = window.attributes
+                            params.screenBrightness = target
+                            window.attributes = params
+                        }
+                        result.success(target.toDouble())
+                    } catch (error: Throwable) {
+                        result.error(
+                            "brightness_cap_failed",
+                            error.message,
+                            null
+                        )
+                    }
+                }
+
+                "resetAppBrightness" -> {
+                    try {
+                        runOnUiThread {
+                            val params = window.attributes
+                            params.screenBrightness =
+                                WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+                            window.attributes = params
+                        }
+                        result.success(true)
+                    } catch (error: Throwable) {
+                        result.error(
+                            "brightness_reset_failed",
                             error.message,
                             null
                         )
