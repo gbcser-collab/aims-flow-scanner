@@ -313,6 +313,15 @@ function aims_db(): PDO {
     if (!isset($jobColumns['delete_reason'])) {
         $pdo->exec('ALTER TABLE jobs ADD COLUMN delete_reason TEXT');
     }
+    if (!isset($jobColumns['document_received_at'])) {
+        $pdo->exec('ALTER TABLE jobs ADD COLUMN document_received_at TEXT');
+    }
+    if (!isset($jobColumns['document_local_id'])) {
+        $pdo->exec('ALTER TABLE jobs ADD COLUMN document_local_id TEXT');
+    }
+    if (!isset($jobColumns['document_sync_state'])) {
+        $pdo->exec('ALTER TABLE jobs ADD COLUMN document_sync_state TEXT');
+    }
 
     $stopColumns = [];
     foreach ($pdo->query('PRAGMA table_info(job_stops)')->fetchAll(PDO::FETCH_ASSOC) as $column) {
