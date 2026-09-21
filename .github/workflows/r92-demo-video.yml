@@ -1,0 +1,46 @@
+name: AIMS Flow R92 Demo Video
+
+on:
+  push:
+    branches:
+      - aims-flow-driver-v1-r92-driver-first-all-in-one
+    paths:
+      - 'demo/build_flow_r92_demo.py'
+      - '.github/workflows/r92-demo-video.yml'
+  workflow_dispatch:
+
+jobs:
+  build-demo:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install video dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg fonts-dejavu-core
+          python -m pip install --upgrade pip
+          python -m pip install pillow edge-tts
+
+      - name: Build narrated demo
+        run: python demo/build_flow_r92_demo.py
+
+      - name: Verify MP4
+        run: |
+          test -s demo/AIMS-Flow-R92-Demo-HU.mp4
+          ffprobe -v error -show_entries format=duration,size -of json demo/AIMS-Flow-R92-Demo-HU.mp4
+
+      - name: Upload demo video
+        uses: actions/upload-artifact@v4
+        with:
+          name: AIMS-Flow-R92-Demo-HU
+          path: demo/AIMS-Flow-R92-Demo-HU.mp4
+          retention-days: 90
