@@ -112,11 +112,14 @@ class CmrParser {
   }
 
   String? _field(List<String> lines, int number, List<String> labels) {
-    final labelled = _afterLabel(lines, labels);
-    if (_usableFieldValue(labelled, labels)) return _trimValue(labelled!);
-
+    // Standard CMR forms are numbered 1-24. Prefer the numbered box because
+    // printed multilingual labels often contain generic prompt text that OCR
+    // otherwise mistakes for the actual value.
     final numbered = _afterFieldNumber(lines, number, labels);
     if (_usableFieldValue(numbered, labels)) return _trimValue(numbered!);
+
+    final labelled = _afterLabel(lines, labels);
+    if (_usableFieldValue(labelled, labels)) return _trimValue(labelled!);
     return null;
   }
 
@@ -207,12 +210,32 @@ class CmrParser {
     final lower = v.toLowerCase();
     if (v.length < 3) return false;
     if (labels.any((label) => lower == label.toLowerCase())) return false;
-    if (RegExp(
-      r'^(name|address|country|nom|adresse|pays)[ /,()\-]*$',
-      caseSensitive: false,
-    ).hasMatch(v)) {
-      return false;
+
+    // Reject the form's own printed helper text such as
+    // "(name, address, country)" / "(nom, adresse, pays)".
+    const promptWords = <String>[
+      'name',
+      'address',
+      'country',
+      'nom',
+      'adresse',
+      'pays',
+      'anschrift',
+      'land',
+      'nazwa',
+      'adres',
+      'kraj',
+    ];
+    var promptHits = 0;
+    for (final word in promptWords) {
+      if (RegExp('(^|[^a-zà-ž])' + RegExp.escape(word) + r'([^a-zà-ž]|$)',
+              caseSensitive: false)
+          .hasMatch(lower)) {
+        promptHits++;
+      }
     }
+    if (promptHits >= 2) return false;
+
     return RegExp(r'[A-Za-zÀ-ž0-9]').hasMatch(v);
   }
 
