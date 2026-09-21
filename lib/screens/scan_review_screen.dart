@@ -16,12 +16,16 @@ class ScanReviewScreen extends StatefulWidget {
   const ScanReviewScreen({
     super.key,
     required this.processedImagePath,
+    this.signatureImagePath,
+    this.signatureConfidence = 0,
     required this.quality,
     required this.cmr,
     this.savedDocument,
   });
 
   final String processedImagePath;
+  final String? signatureImagePath;
+  final double signatureConfidence;
   final ScanQuality quality;
   final CmrData cmr;
   final ScannedDocument? savedDocument;
@@ -156,6 +160,8 @@ class _ScanReviewScreenState extends State<ScanReviewScreen> {
         final stamp = await _location.capture();
         saved = await _repository.saveNew(
           sourceImagePath: widget.processedImagePath,
+          signatureImagePath: widget.signatureImagePath,
+          signatureConfidence: widget.signatureConfidence,
           cmr: cmr,
           quality: widget.quality,
           location: stamp,
@@ -206,11 +212,22 @@ class _ScanReviewScreenState extends State<ScanReviewScreen> {
       if (loc != null) {
         text.writeln('GPS: ${loc.latitude.toStringAsFixed(6)}, ${loc.longitude.toStringAsFixed(6)} (±${loc.accuracy.toStringAsFixed(0)} m)');
       }
+      final files = <XFile>[];
+      final pdfPath = document.pdfPath;
+      if (pdfPath != null && await File(pdfPath).exists()) {
+        files.add(XFile(pdfPath, mimeType: 'application/pdf'));
+      } else {
+        files.add(XFile(document.imagePath, mimeType: 'image/jpeg'));
+      }
+      final signaturePath = document.signatureImagePath;
+      if (signaturePath != null && await File(signaturePath).exists()) {
+        files.add(XFile(signaturePath, mimeType: 'image/jpeg'));
+      }
       await SharePlus.instance.share(
         ShareParams(
           subject: 'AIMS Flow CMR ${document.cmr.cmrNumber ?? document.id}',
           text: text.toString().trim(),
-          files: [XFile(document.imagePath, mimeType: 'image/jpeg')],
+          files: files,
         ),
       );
     } finally {
@@ -267,6 +284,72 @@ class _ScanReviewScreenState extends State<ScanReviewScreen> {
               ),
             ),
             const SizedBox(height: 14),
+            if ((_savedDocument?.signatureImagePath ?? widget.signatureImagePath) != null) ...[
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF14181D),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: const Color(0xFFE6B85C).withValues(alpha: .35)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.draw_rounded, color: Color(0xFFE6B85C)),
+                        const SizedBox(width: 9),
+                        Expanded(
+                          child: Text(
+                            _l(
+                              'Aláírás / pecsét külön kivágása',
+                              'Separate signature / stamp crop',
+                              'Separater Unterschrift-/Stempelausschnitt',
+                            ),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: Image.file(
+                        File(_savedDocument?.signatureImagePath ?? widget.signatureImagePath!),
+                        width: double.infinity,
+                        height: 180,
+                        fit: BoxFit.contain,
+                        errorBuilder: (_, __, ___) => SizedBox(
+                          height: 100,
+                          child: Center(
+                            child: Text(
+                              _l(
+                                'Az aláírás előnézete nem tölthető be.',
+                                'Signature preview cannot be loaded.',
+                                'Vorschau der Unterschrift kann nicht geladen werden.',
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      _l(
+                        'Felismerési biztonság: ${(((_savedDocument?.signatureConfidence ?? widget.signatureConfidence) * 100).clamp(0, 100)).round()}%. Mentéskor ez külön képfájlként kerül a CMR PDF mellé.',
+                        'Detection confidence: ${(((_savedDocument?.signatureConfidence ?? widget.signatureConfidence) * 100).clamp(0, 100)).round()}%. It is saved as a separate image next to the CMR PDF.',
+                        'Erkennungssicherheit: ${(((_savedDocument?.signatureConfidence ?? widget.signatureConfidence) * 100).clamp(0, 100)).round()} %. Beim Speichern wird sie als separates Bild neben dem CMR-PDF gespeichert.',
+                      ),
+                      style: const TextStyle(color: Colors.white54, height: 1.35),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 14),
+            ],
             Container(
               padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
