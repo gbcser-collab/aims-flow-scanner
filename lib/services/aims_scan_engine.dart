@@ -34,11 +34,13 @@ class AimsScanEngine {
   Future<ScanProcessingResult> process({
     required String inputPath,
     required String outputPath,
+    String? signatureOutputPath,
     FrameCropSpec? frameCrop,
   }) {
     return Isolate.run(() => const AimsScanEngine()._processSync(
           inputPath: inputPath,
           outputPath: outputPath,
+          signatureOutputPath: signatureOutputPath,
           frameCrop: frameCrop,
         ));
   }
@@ -46,6 +48,7 @@ class AimsScanEngine {
   ScanProcessingResult _processSync({
     required String inputPath,
     required String outputPath,
+    String? signatureOutputPath,
     FrameCropSpec? frameCrop,
   }) {
     final bytes = File(inputPath).readAsBytesSync();
@@ -73,8 +76,30 @@ class AimsScanEngine {
     final enhanced = _enhanceDocument(warped);
     final quality = _measureQuality(enhanced, fillRatio);
 
-    File(outputPath).writeAsBytesSync(img.encodeJpg(enhanced, quality: 90), flush: true);
-    return ScanProcessingResult(outputPath: outputPath, corners: corners, quality: quality);
+    File(outputPath).writeAsBytesSync(
+      img.encodeJpg(enhanced, quality: 94),
+      flush: true,
+    );
+
+    String? signaturePath;
+    double signatureConfidence = 0;
+    if (signatureOutputPath != null && signatureOutputPath.trim().isNotEmpty) {
+      final signature = _extractSignatureZone(enhanced);
+      signatureConfidence = signature.$2;
+      File(signatureOutputPath).writeAsBytesSync(
+        img.encodeJpg(signature.$1, quality: 96),
+        flush: true,
+      );
+      signaturePath = signatureOutputPath;
+    }
+
+    return ScanProcessingResult(
+      outputPath: outputPath,
+      corners: corners,
+      quality: quality,
+      signatureImagePath: signaturePath,
+      signatureConfidence: signatureConfidence,
+    );
   }
 
   img.Image _cropToVisibleFrame(img.Image source, FrameCropSpec spec) {
@@ -293,8 +318,11 @@ class AimsScanEngine {
     for (final p in result) {
       int adjust(num value) {
         final normalized = ((value - minL) / spread * 255).clamp(0, 255).toDouble();
-        final contrasted = (normalized - 128) * 1.12 + 128;
-        return contrasted.round().clamp(0, 255).toInt();
+        final contrasted = (normalized - 128) * 1.14 + 128;
+        final whitened = contrasted > 175
+            ? contrasted + (255 - contrasted) * 0.24
+            : contrasted;
+        return whitened.round().clamp(0, 255).toInt();
       }
       p
         ..r = adjust(p.r)
@@ -302,6 +330,90 @@ class AimsScanEngine {
         ..b = adjust(p.b);
     }
     return result;
+  }
+
+  (img.Image, double) _extractSignatureZone(img.Image source) {
+    final x = (source.width * 0.48).round().clamp(0, source.width - 2).toInt();
+    final y = (source.height * 0.62).round().clamp(0, source.height - 2).toInt();
+    final width = max(2, (source.width * 0.50).round()).clamp(2, source.width - x).toInt();
+    final height = max(2, (source.height * 0.36).round()).clamp(2, source.height - y).toInt();
+    final zone = img.copyCrop(source, x: x, y: y, width: width, height: height);
+
+    var ink = 0;
+    var total = 0;
+    var minX = zone.width;
+    var minY = zone.height;
+    var maxX = 0;
+    var maxY = 0;
+
+    final edgePadX = max(3, (zone.width * 0.025).round());
+    final edgePadY = max(3, (zone.height * 0.025).round());
+
+    for (var yy = edgePadY; yy < zone.height - edgePadY; yy += 2) {
+      for (var xx = edgePadX; xx < zone.width - edgePadX; xx += 2) {
+        final p = zone.getPixel(xx, yy);
+        final r = p.r.toDouble();
+        final g = p.g.toDouble();
+        final b = p.b.toDouble();
+        final maxC = max(r, max(g, b));
+        final minC = min(r, min(g, b));
+        final saturation = maxC <= 0 ? 0.0 : (maxC - minC) / maxC;
+        final luma = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+
+        // Dark handwriting and coloured stamps should count as evidence.
+        final isInk = luma < 170 || (saturation > 0.18 && luma < 235);
+        total++;
+        if (!isInk) continue;
+        ink++;
+        if (xx < minX) minX = xx;
+        if (yy < minY) minY = yy;
+        if (xx > maxX) maxX = xx;
+        if (yy > maxY) maxY = yy;
+      }
+    }
+
+    final density = total == 0 ? 0.0 : ink / total;
+    final hasInkBounds = ink > 20 && maxX > minX && maxY > minY;
+    img.Image result = zone;
+
+    if (hasInkBounds) {
+      final padX = max(18, ((maxX - minX) * 0.18).round());
+      final padY = max(18, ((maxY - minY) * 0.22).round());
+      final sx = max(0, minX - padX);
+      final sy = max(0, minY - padY);
+      final ex = min(zone.width - 1, maxX + padX);
+      final ey = min(zone.height - 1, maxY + padY);
+      if (ex - sx > zone.width * 0.30 && ey - sy > zone.height * 0.20) {
+        result = img.copyCrop(
+          zone,
+          x: sx,
+          y: sy,
+          width: ex - sx + 1,
+          height: ey - sy + 1,
+        );
+      }
+    }
+
+    // Whitening pass: preserve dark/coloured ink but clean the paper background.
+    for (final p in result) {
+      final r = p.r.toDouble();
+      final g = p.g.toDouble();
+      final b = p.b.toDouble();
+      final maxC = max(r, max(g, b));
+      final minC = min(r, min(g, b));
+      final saturation = maxC <= 0 ? 0.0 : (maxC - minC) / maxC;
+      final luma = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+      if (luma > 185 && saturation < 0.16) {
+        final amount = ((luma - 185) / 70).clamp(0.0, 1.0) * 0.72;
+        p
+          ..r = (r + (255 - r) * amount).round().clamp(0, 255)
+          ..g = (g + (255 - g) * amount).round().clamp(0, 255)
+          ..b = (b + (255 - b) * amount).round().clamp(0, 255);
+      }
+    }
+
+    final confidence = (density * 18).clamp(0.0, 1.0).toDouble();
+    return (result, confidence);
   }
 
   ScanQuality _measureQuality(img.Image source, double fillRatio) {
