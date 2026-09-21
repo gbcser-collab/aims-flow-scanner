@@ -169,3 +169,21 @@ Cél: egyetlen összefogott, production-ready, sofőrbarát Flow ág.
 9. Célzott live deploy és éles E2E.
 
 Ez a fájl az R92 master scope. Új Flow-feladatot ehhez kell hozzáadni, hogy ne vesszen el.
+
+
+## 16. AIMS DRIVE MODE – elfogadott sofőrbarát fejlesztések
+
+### 16.1 Mindig csak egy következő teendő — ELFOGADVA / PRIORITÁS
+A sofőr főképernyője mindig csak a következő szükséges lépést emelje ki nagy, egyértelmű fő műveletként.
+
+Példa folyamat:
+NAVIGÁCIÓ A FELRAKÓRA → MEGÉRKEZTEM → MENJ A REGISZTRÁCIÓHOZ → BEJELENTKEZTEM → FELRAKÁS KÉSZ → KÖVETKEZŐ CÍM.
+
+Követelmények:
+- egyszerre egy domináns főgomb;
+- a következő lépést a fuvar állapota határozza meg;
+- a sofőrnek ne kelljen menük között keresni;
+- a következő teendő rövid hangos visszajelzést is kaphat;
+- hibás/érvénytelen lépést ne engedjen átugrani;
+- offline állapotban is ugyanaz a lépéslogika maradjon, helyi sorba mentéssel;
+- a főképernyőn mindig látszódjon: MOST / KÖVETKEZŐ.
