@@ -331,6 +331,22 @@ function aims_db(): PDO {
         $pdo->exec('ALTER TABLE job_stops ADD COLUMN registration_point_id INTEGER');
     }
 
+    $pdo->exec('CREATE TABLE IF NOT EXISTS driver_messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        vehicle_id INTEGER NOT NULL,
+        admin_user_id INTEGER NOT NULL,
+        sender TEXT NOT NULL,
+        body TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        read_at TEXT,
+        FOREIGN KEY(vehicle_id) REFERENCES vehicles(id) ON DELETE CASCADE,
+        FOREIGN KEY(admin_user_id) REFERENCES admin_users(id) ON DELETE CASCADE
+    )');
+    $pdo->exec('CREATE INDEX IF NOT EXISTS idx_driver_messages_vehicle_id
+        ON driver_messages(vehicle_id, id DESC)');
+    $pdo->exec('CREATE INDEX IF NOT EXISTS idx_driver_messages_admin_id
+        ON driver_messages(admin_user_id, id DESC)');
+
     $pdo->exec('CREATE TABLE IF NOT EXISTS driver_push_devices (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         vehicle_id INTEGER NOT NULL,
