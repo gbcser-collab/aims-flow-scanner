@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -5,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../services/aims_locale.dart';
 import '../services/smart_document_classifier.dart';
 import '../services/smart_document_repository.dart';
+import '../services/sync_coordinator.dart';
 
 class SmartDocumentReviewScreen extends StatefulWidget {
   const SmartDocumentReviewScreen({
@@ -13,12 +15,14 @@ class SmartDocumentReviewScreen extends StatefulWidget {
     required this.rawText,
     required this.initialType,
     required this.confidence,
+    required this.plate,
   });
 
   final String imagePath;
   final String rawText;
   final SmartDocumentType initialType;
   final double confidence;
+  final String plate;
 
   @override
   State<SmartDocumentReviewScreen> createState() =>
@@ -53,7 +57,10 @@ class _SmartDocumentReviewScreenState extends State<SmartDocumentReviewScreen> {
         type: _type,
         rawText: widget.rawText,
         confidence: widget.confidence,
+        plate: widget.plate,
       );
+      await SyncCoordinator.instance.refreshPendingCount();
+      unawaited(SyncCoordinator.instance.syncNow());
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -132,7 +139,13 @@ class _SmartDocumentReviewScreenState extends State<SmartDocumentReviewScreen> {
                   borderRadius: BorderRadius.circular(14),
                 ),
               ),
-              items: SmartDocumentType.values
+              items: const <SmartDocumentType>[
+                SmartDocumentType.pod,
+                SmartDocumentType.deliveryNote,
+                SmartDocumentType.customs,
+                SmartDocumentType.pallet,
+                SmartDocumentType.other,
+              ]
                   .map(
                     (type) => DropdownMenuItem(
                       value: type,
