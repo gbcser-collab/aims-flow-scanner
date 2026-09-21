@@ -10,8 +10,17 @@ import '../services/ocr_service.dart';
 import '../services/vehicle_tracking_service.dart';
 
 class InvoiceScannerScreen extends StatefulWidget {
-  const InvoiceScannerScreen({super.key,required this.camera});
+  const InvoiceScannerScreen({
+    super.key,
+    required this.camera,
+    this.initialImagePath,
+    this.initialOcr,
+    this.initialData,
+  });
   final CameraDescription camera;
+  final String? initialImagePath;
+  final String? initialOcr;
+  final InvoiceData? initialData;
   @override State<InvoiceScannerScreen> createState()=>_InvoiceScannerScreenState();
 }
 
@@ -25,7 +34,39 @@ class _InvoiceScannerScreenState extends State<InvoiceScannerScreen> with Widget
 
   String _l(String hu,String en,String de)=>switch(AimsLocaleController.instance.languageCode){'en'=>en,'de'=>de,_=>hu};
 
-  @override void initState(){super.initState();WidgetsBinding.instance.addObserver(this);VehicleTrackingService.instance.currentStatus().then((s){if(mounted)setState(()=>_plate.text=s.vehicleLabel);});_initCamera();}
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    VehicleTrackingService.instance.currentStatus().then((s) {
+      if (mounted) setState(() => _plate.text = s.vehicleLabel);
+    });
+    final initialPath = widget.initialImagePath;
+    if (initialPath != null && initialPath.trim().isNotEmpty) {
+      _imagePath = initialPath;
+      _ocr = widget.initialOcr ?? '';
+      _applyData(widget.initialData ?? const InvoiceParser().parse(_ocr));
+    } else {
+      _initCamera();
+    }
+  }
+
+  void _applyData(InvoiceData d) {
+    _category = d.category;
+    _vendor.text = d.vendor ?? '';
+    _date.text = d.date ?? DateTime.now().toIso8601String().substring(0, 10);
+    _total.text = d.totalAmount?.toString() ?? '';
+    _currency.text = d.currency ?? '';
+    _doc.text = d.documentNumber ?? '';
+    _country.text = d.countryCode ?? '';
+    _liters.text = d.liters?.toString() ?? '';
+    _unit.text = d.pricePerLiter?.toString() ?? '';
+    if (_category == InvoiceCategory.tollVignette) {
+      _createVignette = true;
+      _validFrom ??= DateTime.now();
+      _validUntil ??= DateTime.now().add(const Duration(days: 1));
+    }
+  }
   Future<void> _initCamera() async {
     if(_busy||_imagePath!=null)return;setState((){_busy=true;_error=null;});
     try{await _camera?.dispose();}catch(_){}
@@ -46,8 +87,7 @@ class _InvoiceScannerScreenState extends State<InvoiceScannerScreen> with Widget
       try{final result=await const AimsScanEngine().process(inputPath:shot.path,outputPath:out);finalPath=result.outputPath;}catch(_){await File(shot.path).copy(out);finalPath=out;}
       if(mounted)setState(()=>_phase=_l('OCR + számlaadatok felismerése…','OCR + invoice recognition…','OCR + Rechnungserkennung…'));
       final text=await ocr.recognize(finalPath);final d=const InvoiceParser().parse(text);
-      _ocr=text;_category=d.category;_vendor.text=d.vendor??'';_date.text=d.date??DateTime.now().toIso8601String().substring(0,10);_total.text=d.totalAmount?.toString()??'';_currency.text=d.currency??'';_doc.text=d.documentNumber??'';_country.text=d.countryCode??'';_liters.text=d.liters?.toString()??'';_unit.text=d.pricePerLiter?.toString()??'';
-      if(_category==InvoiceCategory.tollVignette){_createVignette=true;_validFrom=DateTime.now();_validUntil=DateTime.now().add(const Duration(days:1));}
+      _ocr=text;_applyData(d);
       await c.dispose();if(!mounted)return;setState((){_camera=null;_imagePath=finalPath;_phase='';});
     }catch(e){if(mounted)setState(()=>_error=_l('A számla feldolgozása nem sikerült: ','Invoice processing failed: ','Rechnungsverarbeitung fehlgeschlagen: ')+e.toString());}
     finally{await ocr.dispose();if(shot!=null){try{if(await File(shot.path).exists())await File(shot.path).delete();}catch(_){}}if(mounted)setState(()=>_busy=false);}
