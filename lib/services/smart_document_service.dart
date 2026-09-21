@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:http/http.dart' as http;
 
+import 'smart_document_classifier.dart';
 import 'smart_document_repository.dart';
 
 class SmartDocumentUploadResult {
