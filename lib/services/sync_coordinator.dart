@@ -6,6 +6,8 @@ import '../models/scan_models.dart';
 import 'aims_api_service.dart';
 import 'device_identity_service.dart';
 import 'scan_repository.dart';
+import 'smart_document_repository.dart';
+import 'smart_document_service.dart';
 
 class SyncCoordinator extends ChangeNotifier {
   SyncCoordinator._();
@@ -13,6 +15,9 @@ class SyncCoordinator extends ChangeNotifier {
   static final SyncCoordinator instance = SyncCoordinator._();
 
   final ScanRepository _repository = const ScanRepository();
+  final SmartDocumentRepository _smartRepository =
+      const SmartDocumentRepository();
+  final SmartDocumentService _smartService = const SmartDocumentService();
   final DeviceIdentityService _identityService = const DeviceIdentityService();
   final AimsApiService _api = const AimsApiService();
 
@@ -40,8 +45,9 @@ class SyncCoordinator extends ChangeNotifier {
   }
 
   Future<void> refreshPendingCount() async {
-    final pending = await _repository.pendingForSync();
-    _pendingCount = pending.length;
+    final cmrPending = await _repository.pendingForSync();
+    final smartPending = await _smartRepository.pendingForSync();
+    _pendingCount = cmrPending.length + smartPending.length;
     notifyListeners();
   }
 
@@ -95,6 +101,30 @@ class SyncCoordinator extends ChangeNotifier {
           _lastError = 'Nincs kapcsolat. A dokumentum offline sorban marad.';
         }
       }
+      final smartPending = await _smartRepository.pendingForSync();
+      for (final document in smartPending) {
+        try {
+          final result = await _smartService.send(document);
+          await _smartRepository.update(
+            document.copyWith(
+              syncState: SmartDocumentSyncState.uploaded,
+              serverDocumentId: result.documentId,
+              uploadedAt: DateTime.now().toUtc(),
+              clearLastError: true,
+            ),
+          );
+        } catch (e) {
+          await _smartRepository.update(
+            document.copyWith(
+              syncState: SmartDocumentSyncState.failed,
+              lastError: e.toString(),
+            ),
+          );
+          _lastError =
+              'Smart Document szinkron várakozik. A fájl biztonságosan a telefonon marad.';
+        }
+      }
+
       _lastSyncAt = DateTime.now();
       await _repository.pruneExpiredApproved();
     } on AimsApiException catch (e) {
@@ -104,8 +134,9 @@ class SyncCoordinator extends ChangeNotifier {
     } catch (_) {
       _lastError = 'Nincs hálózati kapcsolat. Az adatok biztonságosan offline maradnak.';
     } finally {
-      final pending = await _repository.pendingForSync();
-      _pendingCount = pending.length;
+      final cmrPending = await _repository.pendingForSync();
+      final smartPending = await _smartRepository.pendingForSync();
+      _pendingCount = cmrPending.length + smartPending.length;
       _syncing = false;
       notifyListeners();
     }
