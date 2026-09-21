@@ -207,8 +207,19 @@ class _FlowLoginScreenState extends State<FlowLoginScreen> {
         await prefs.setString('aims_user_role', 'driver');
       }
 
+      final prefs = await SharedPreferences.getInstance();
+      final initialPlate =
+          (prefs.getString('aims_driver_plate') ?? '').trim().toUpperCase();
+      final initialDriverName =
+          (prefs.getString('aims_driver_name') ?? '').trim();
+
       await Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const DriverShellScreen()),
+        MaterialPageRoute(
+          builder: (_) => DriverShellScreen(
+            initialPlate: initialPlate,
+            initialDriverName: initialDriverName,
+          ),
+        ),
       );
     } catch (e) {
       if (!mounted) return;
