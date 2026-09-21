@@ -143,6 +143,9 @@ jobs:
       - name: Unit tests
         run: flutter test --reporter expanded
 
+      - name: R93 signal/message source guard
+        run: python3 ci/r93_signal_message_source_guard.py
+
       - name: R93 signal and message crash regression
         run: flutter test test/r93_signal_message_regression_test.dart --reporter expanded
 
