@@ -31,6 +31,9 @@ $q=$pdo->prepare('SELECT s.*,j.reference,j.status AS job_status,v.id AS vehicle_
 $q->execute([':stop'=>$stopId,':plate'=>$plate]);
 $stop=$q->fetch(PDO::FETCH_ASSOC);
 if(!$stop) aims_json(['ok'=>false,'error'=>'stop_not_found'],404);
+if(($stop['job_status'] ?? '')==='deleted'){
+    aims_json(['ok'=>false,'error'=>'job_deleted'],410);
+}
 if(($stop['job_status'] ?? '')!=='active' && $action!=='completed'){
     aims_json(['ok'=>false,'error'=>'job_not_active'],409);
 }
