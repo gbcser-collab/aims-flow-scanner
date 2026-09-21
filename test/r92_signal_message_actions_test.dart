@@ -45,7 +45,12 @@ void main() {
 
     final input = find.byKey(const Key('flow-office-message-input'));
     final send = find.byKey(const Key('flow-office-message-send'));
-    await tester.ensureVisible(input);
+
+    await tester.dragUntilVisible(
+      input,
+      find.byType(ListView).at(2),
+      const Offset(0, -260),
+    );
     await tester.pump(const Duration(milliseconds: 250));
     expect(input, findsOneWidget);
     expect(send, findsOneWidget);
