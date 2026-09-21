@@ -346,6 +346,34 @@ class DriverApiService {
     }
   }
 
+  Future<void> completeDocumentGate({
+    required String plate,
+    required int jobId,
+    required String documentId,
+    required String syncState,
+  }) async {
+    _ensureConfigured();
+    final response = await http
+        .post(
+          Uri.parse('${_base()}/driver_job_document.php'),
+          headers: _headers,
+          body: jsonEncode({
+            'plate': plate.trim().toUpperCase(),
+            'jobId': jobId,
+            'documentId': documentId.trim(),
+            'syncState': syncState,
+          }),
+        )
+        .timeout(const Duration(seconds: 12));
+    final body = _decode(response);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw DriverApiException(
+        response.statusCode,
+        body['error']?.toString() ?? 'HTTP ${response.statusCode}',
+      );
+    }
+  }
+
   Future<void> registerPush({
     required String plate,
     required String deviceId,
