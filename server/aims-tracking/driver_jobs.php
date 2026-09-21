@@ -15,21 +15,48 @@ $vehicle=$v->fetch(PDO::FETCH_ASSOC);
 if (!$vehicle) aims_json(['ok'=>true,'jobs'=>[]]);
 $j=$pdo->prepare('SELECT * FROM jobs WHERE vehicle_id=:vehicle AND status="active" ORDER BY id DESC');
 $j->execute([':vehicle'=>$vehicle['id']]);
+$normalizeRegistrationKey=function(string $value): string {
+    $value=mb_strtolower(trim($value),'UTF-8');
+    $value=preg_replace('/\s+/u',' ',$value) ?: '';
+    $ascii=@iconv('UTF-8','ASCII//TRANSLIT//IGNORE',$value);
+    if (is_string($ascii) && $ascii!=='') $value=$ascii;
+    $value=preg_replace('/[^a-z0-9]+/',' ',strtolower($value)) ?: '';
+    return trim(preg_replace('/\s+/',' ',$value) ?: '');
+};
 $jobs=[];
 foreach ($j->fetchAll(PDO::FETCH_ASSOC) as $job) {
     $st=$pdo->prepare('SELECT * FROM job_stops WHERE job_id=:job ORDER BY stop_order ASC');
     $st->execute([':job'=>$job['id']]);
     $stops=[];
     foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $row) {
+        $company=(string)($row['company'] ?? '');
+        $address=(string)($row['address'] ?? '');
+        $companyKey=$normalizeRegistrationKey($company);
+        $addressKey=$normalizeRegistrationKey($address);
+        $knownPoint=null;
+        if ($companyKey!=='' && $addressKey!=='') {
+            $rp=$pdo->prepare('SELECT id,latitude,longitude,confirmations,updated_at FROM registration_points
+                WHERE company_key=:company_key AND address_key=:address_key AND stop_type=:stop_type LIMIT 1');
+            $rp->execute([':company_key'=>$companyKey,':address_key'=>$addressKey,':stop_type'=>$row['stop_type']]);
+            $knownPoint=$rp->fetch(PDO::FETCH_ASSOC) ?: null;
+        }
         $stops[]=[
             'id'=>(int)$row['id'],'type'=>$row['stop_type'],'order'=>(int)$row['stop_order'],
-            'company'=>$row['company'] ?? '','address'=>$row['address'],
+            'company'=>$company,'address'=>$address,
             'phone'=>$row['contact_phone'] ?? '',
             'latitude'=>(float)$row['latitude'],'longitude'=>(float)$row['longitude'],
             'arrived'=>$row['arrival_notified_at'] !== null,
             'completed'=>$row['completed_at'] !== null,
             'arrivedAt'=>$row['arrival_notified_at'] ?? null,
             'completedAt'=>$row['completed_at'] ?? null,
+            'registrationCheckedAt'=>$row['registration_checked_at'] ?? null,
+            'registrationPoint'=>$knownPoint ? [
+                'id'=>(int)$knownPoint['id'],
+                'latitude'=>(float)$knownPoint['latitude'],
+                'longitude'=>(float)$knownPoint['longitude'],
+                'confirmations'=>(int)$knownPoint['confirmations'],
+                'updatedAt'=>$knownPoint['updated_at'] ?? null,
+            ] : null,
         ];
     }
     $orderData=[];
