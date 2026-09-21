@@ -47,6 +47,13 @@ function aims_due_stop_alerts(int $stationarySeconds, int $sentMask): array {
 }
 
 
+function aims_effective_waiting_seconds(
+    int $elapsedSeconds,
+    int $pausedSeconds
+): int {
+    return max(0, $elapsedSeconds - max(0, $pausedSeconds));
+}
+
 function aims_due_job_waiting_slot(int $waitingSeconds, int $lastSlot): ?array {
     $slot = intdiv(max(0, $waitingSeconds), 20 * 60);
     if ($slot < 1 || $slot <= $lastSlot) return null;
