@@ -57,7 +57,11 @@ if($place!=='') $place.=' • '.$address; else $place=$address;
 if($action==='arrived'){
     if($stop['arrival_notified_at']===null){
         $u=$pdo->prepare('UPDATE job_stops
-            SET arrival_notified_at=:now, arrival_source=:source, inside_since=COALESCE(inside_since,:now)
+            SET arrival_notified_at=:now,
+                arrival_source=:source,
+                inside_since=COALESCE(inside_since,:now),
+                waiting_alert_slot=0,
+                waiting_alert_last_at=NULL
             WHERE id=:id AND arrival_notified_at IS NULL');
         $u->execute([':now'=>$eventStamp,':source'=>$source,':id'=>$stopId]);
         $changed=$u->rowCount()===1;
