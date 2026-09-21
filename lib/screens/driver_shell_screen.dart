@@ -416,6 +416,52 @@ class _DriverShellScreenState extends State<DriverShellScreen>
     setState(() => _index = 3);
   }
 
+  Future<void> _finalizeDocumentGateIfPossible({
+    DriverJob? only,
+  }) async {
+    if (_plate.isEmpty) return;
+    final candidates = only == null
+        ? List<DriverJob>.from(_jobs)
+        : <DriverJob>[only];
+    final closed = <int>[];
+
+    for (final job in candidates) {
+      if (job.acceptedAt == null ||
+          _hasOpenStop(job) ||
+          !_hasJobCmr(job)) {
+        continue;
+      }
+      final documentId = _jobCmrIds[job.id];
+      if (documentId == null || documentId.isEmpty) continue;
+      final syncState = _jobCmrStates[job.id]?.name ?? 'pending';
+      try {
+        await _api.completeDocumentGate(
+          plate: _plate,
+          jobId: job.id,
+          documentId: documentId,
+          syncState: syncState,
+        );
+        closed.add(job.id);
+      } on DriverApiException catch (error) {
+        if (error.code == 'job_deleted' || error.code == 'job_not_found') {
+          closed.add(job.id);
+        }
+      } catch (_) {
+        // Offline is expected here. The CMR link is persisted locally and
+        // the next normal job refresh retries the server-side closure.
+      }
+    }
+
+    if (closed.isEmpty) return;
+    final nextJobs = _jobs.where((job) => !closed.contains(job.id)).toList();
+    if (mounted) {
+      setState(() => _jobs = nextJobs);
+    } else {
+      _jobs = nextJobs;
+    }
+    await _saveJobsCache(nextJobs);
+  }
+
   Future<void> _linkNewestCmrToJob(
     DriverJob job,
     DateTime scanStartedAt,
@@ -437,6 +483,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
     await _saveJobCmrLinks();
     await _sync.refreshPendingCount();
     unawaited(_sync.syncNow());
+    await _finalizeDocumentGateIfPossible(only: job);
 
     if (!mounted) return;
     setState(() => _index = 0);
@@ -1216,7 +1263,8 @@ class _DriverShellScreenState extends State<DriverShellScreen>
         _message = null;
       });
       await _refreshJobCmrStates();
-      unawaited(_saveJobsCache(jobs));
+      await _finalizeDocumentGateIfPossible();
+      unawaited(_saveJobsCache(_jobs));
     } catch (e) {
       if (!mounted || generation != _refreshGeneration) return;
       setState(() {
