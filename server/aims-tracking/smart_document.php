@@ -27,7 +27,7 @@ $allowedTypes = [
     'pod',
     'delivery_note',
     'customs',
-    'pallet',
+    'pallet_exchange',
     'other',
 ];
 if ($plate === '' || $localId === '' || strlen($localId) > 160) {
@@ -132,7 +132,7 @@ $typeLabel = [
     'pod' => 'POD',
     'delivery_note' => 'szállítólevél',
     'customs' => 'vámokmány',
-    'pallet' => 'raklapcsere-papír',
+    'pallet_exchange' => 'raklapcsere-papír',
     'other' => 'egyéb dokumentum',
 ][$type] ?? $type;
 
