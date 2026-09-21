@@ -197,7 +197,14 @@ class _PendingRegistrationPoint {
 enum _SignalDelivery { sent, queued, failed }
 
 class DriverShellScreen extends StatefulWidget {
-  const DriverShellScreen({super.key});
+  const DriverShellScreen({
+    super.key,
+    this.initialPlate = '',
+    this.initialDriverName = '',
+  });
+
+  final String initialPlate;
+  final String initialDriverName;
 
   @override
   State<DriverShellScreen> createState() => _DriverShellScreenState();
@@ -1260,8 +1267,12 @@ class _DriverShellScreenState extends State<DriverShellScreen>
   Future<void> _initialize() async {
     final prefs = await SharedPreferences.getInstance();
     final role = (prefs.getString('aims_user_role') ?? 'driver').trim();
-    var plate = (prefs.getString(_prefsPlate) ?? '').trim().toUpperCase();
-    final driverName = (prefs.getString(_prefsDriverName) ?? '').trim();
+    var plate = widget.initialPlate.trim().isNotEmpty
+        ? widget.initialPlate.trim().toUpperCase()
+        : (prefs.getString(_prefsPlate) ?? '').trim().toUpperCase();
+    final driverName = widget.initialDriverName.trim().isNotEmpty
+        ? widget.initialDriverName.trim()
+        : (prefs.getString(_prefsDriverName) ?? '').trim();
 
     final status = await _tracking.currentStatus();
 
@@ -1894,18 +1905,43 @@ class _DriverShellScreenState extends State<DriverShellScreen>
     if (_plate.trim().isNotEmpty) return true;
     if (!mounted) return false;
 
+    // Self-heal a missing in-memory plate before a driver action. The login
+    // persists the identity, but Android lifecycle/rebuild timing must never
+    // turn the quick-signal/message buttons into a navigation-triggered crash.
+    final prefs = await SharedPreferences.getInstance();
+    var recoveredPlate =
+        (prefs.getString(_prefsPlate) ?? '').trim().toUpperCase();
+
+    if (recoveredPlate.isEmpty) {
+      try {
+        final status = await _tracking.currentStatus();
+        recoveredPlate = status.vehicleLabel.trim().toUpperCase();
+      } catch (_) {
+        // Identity recovery must remain independent from GPS availability.
+      }
+    }
+
+    if (recoveredPlate.isNotEmpty) {
+      await prefs.setString(_prefsPlate, recoveredPlate);
+      if (!mounted) return false;
+      setState(() => _plate = recoveredPlate);
+      try {
+        await _tracking.setVehicleLabel(recoveredPlate);
+      } catch (_) {}
+      unawaited(_activateDriverServices());
+      return true;
+    }
+
+    // Do not tear down the whole widget tree from an active TextField/button
+    // callback. That path caused Flutter's framework.dart _dependents.isEmpty
+    // assertion on real devices.
+    FocusManager.instance.primaryFocus?.unfocus();
     _snack(
       _l(
-        'Nincs bejelentkezett rendszám. Újra megnyitom a belépést.',
-        'No signed-in plate. Reopening sign in.',
-        'Kein angemeldetes Kennzeichen. Anmeldung wird erneut geöffnet.',
+        'Hiányzik a sofőrazonosítás. Lépj ki, majd jelentkezz be újra.',
+        'Driver identity is missing. Sign out, then sign in again.',
+        'Die Fahreridentität fehlt. Bitte abmelden und erneut anmelden.',
       ),
-    );
-    await Future<void>.delayed(const Duration(milliseconds: 250));
-    if (!mounted) return false;
-    await Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => const FlowLoginScreen()),
-      (_) => false,
     );
     return false;
   }
