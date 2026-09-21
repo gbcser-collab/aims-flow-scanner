@@ -141,7 +141,7 @@ clips=[]
 for i,s in enumerate(scenes,1):
     slide=make_slide(i,s["title"],s["subtitle"],s["left"],s["right"],"MŰKÖDIK" if "NEM kész" not in s["title"] else "ROADMAP")
     audio=OUT/f"audio_{i:02d}.mp3"
-    subprocess.run(["edge-tts","--voice","hu-HU-TamasNeural","--rate","-3%","--text",s["narr"],"--write-media",str(audio)],check=True)
+    subprocess.run(["edge-tts","--voice","hu-HU-TamasNeural","--rate=-3%","--text",s["narr"],"--write-media",str(audio)],check=True)
     probe=subprocess.check_output(["ffprobe","-v","error","-show_entries","format=duration","-of","json",str(audio)],text=True)
     dur=float(json.loads(probe)["format"]["duration"])+0.35
     clip=OUT/f"clip_{i:02d}.mp4"
