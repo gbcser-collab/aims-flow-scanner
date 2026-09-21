@@ -2949,6 +2949,25 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                     ),
                   ),
                 ),
+                const SizedBox(height: 10),
+                FilledButton.icon(
+                  key: const Key('flow-problem-button'),
+                  onPressed: _actionBusy ? null : _showProblemSheet,
+                  icon: const Icon(Icons.report_problem_rounded, size: 25),
+                  label: Text(
+                    _l('BAJ VAN', 'I NEED HELP', 'PROBLEM MELDEN'),
+                  ),
+                  style: FilledButton.styleFrom(
+                    minimumSize: const Size.fromHeight(60),
+                    backgroundColor: const Color(0xFFD93232),
+                    foregroundColor: Colors.white,
+                    textStyle: const TextStyle(
+                      fontWeight: FontWeight.w900,
+                      fontSize: 17,
+                      letterSpacing: .7,
+                    ),
+                  ),
+                ),
                 if (_needsRegistration(stop)) ...[
                   const SizedBox(height: 12),
                   Container(
@@ -4018,6 +4037,124 @@ class _DriverShellScreenState extends State<DriverShellScreen>
           ),
         ),
       ]);
+
+  Future<void> _showProblemSheet() async {
+    if (_actionBusy) return;
+    final selected = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF06131F),
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Container(
+                width: 44,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 14),
+                decoration: BoxDecoration(
+                  color: Colors.white24,
+                  borderRadius: BorderRadius.circular(99),
+                ),
+              ),
+              Text(
+                _l('BAJ VAN', 'I NEED HELP', 'PROBLEM MELDEN'),
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Colors.redAccent,
+                  fontSize: 24,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                _l(
+                  'Egy koppintás. A Flow automatikusan hozzáadja a fuvar, jármű, idő és GPS adatokat.',
+                  'One tap. Flow automatically attaches job, vehicle, time and GPS data.',
+                  'Ein Tippen. Flow hängt Auftrag, Fahrzeug, Zeit und GPS automatisch an.',
+                ),
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.white54, height: 1.35),
+              ),
+              const SizedBox(height: 14),
+              for (final option in <({String code, IconData icon, String hu, String en, String de, bool urgent})>[
+                (code: 'Nem találom a bejáratot', icon: Icons.wrong_location_rounded, hu: 'NEM TALÁLOM A BEJÁRATOT', en: 'CANNOT FIND THE ENTRANCE', de: 'EINFAHRT NICHT GEFUNDEN', urgent: false),
+                (code: 'Áru nincs kész', icon: Icons.inventory_2_outlined, hu: 'ÁRU NINCS KÉSZ', en: 'GOODS NOT READY', de: 'WARE NICHT BEREIT', urgent: false),
+                (code: 'Nem engednek be', icon: Icons.block_rounded, hu: 'NEM ENGEDNEK BE', en: 'ENTRY REFUSED', de: 'KEIN ZUTRITT', urgent: false),
+                (code: 'Cím hibás', icon: Icons.location_off_rounded, hu: 'CÍM HIBÁS', en: 'WRONG ADDRESS', de: 'FALSCHE ADRESSE', urgent: false),
+                (code: 'Járműprobléma', icon: Icons.car_repair_rounded, hu: 'JÁRMŰPROBLÉMA', en: 'VEHICLE PROBLEM', de: 'FAHRZEUGPROBLEM', urgent: false),
+                (code: 'Baleset / sürgős', icon: Icons.sos_rounded, hu: 'BALESET / SÜRGŐS', en: 'ACCIDENT / URGENT', de: 'UNFALL / DRINGEND', urgent: true),
+                (code: 'Egyéb', icon: Icons.more_horiz_rounded, hu: 'EGYÉB', en: 'OTHER', de: 'SONSTIGES', urgent: false),
+              ])
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: FilledButton.icon(
+                    onPressed: () => Navigator.pop(context, option.code),
+                    icon: Icon(option.icon),
+                    label: Text(_l(option.hu, option.en, option.de)),
+                    style: FilledButton.styleFrom(
+                      minimumSize: const Size.fromHeight(54),
+                      backgroundColor: option.urgent
+                          ? const Color(0xFFD93232)
+                          : const Color(0xFF0D2A3E),
+                      foregroundColor: Colors.white,
+                      alignment: Alignment.centerLeft,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (!mounted || selected == null) return;
+    if (selected == 'Egyéb') {
+      await _otherSignal();
+      return;
+    }
+    final urgent = selected == 'Baleset / sürgős';
+    final result = await _sendSignal(
+      selected,
+      urgent: urgent,
+      showFeedback: false,
+    );
+    if (!mounted) return;
+    if (result == _SignalDelivery.sent) {
+      unawaited(
+        _voice.announce(
+          _l(
+            'A jelzést elküldtem.',
+            'The alert has been sent.',
+            'Die Meldung wurde gesendet.',
+          ),
+        ),
+      );
+      _snack(_l(
+        'A jelzést elküldtem a főnökségnek.',
+        'The alert was sent to the office.',
+        'Die Meldung wurde an die Disposition gesendet.',
+      ));
+    } else if (result == _SignalDelivery.queued) {
+      unawaited(
+        _voice.announce(
+          _l(
+            'A jelzést elmentettem. Kapcsolat esetén automatikusan elküldöm.',
+            'The alert is saved and will be sent automatically when connection returns.',
+            'Die Meldung ist gespeichert und wird bei Verbindung automatisch gesendet.',
+          ),
+        ),
+      );
+      _snack(_l(
+        'Nincs stabil kapcsolat. A jelzés sorba állítva.',
+        'No stable connection. Alert queued.',
+        'Keine stabile Verbindung. Meldung wurde vorgemerkt.',
+      ));
+    }
+  }
 
   Future<void> _otherSignal() async {
     final controller = TextEditingController();
