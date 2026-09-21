@@ -143,6 +143,9 @@ jobs:
       - name: Job waiting rules
         run: php server/aims-tracking/test_job_waiting.php
 
+      - name: Geocode fallback rules
+        run: php server/aims-tracking/test_geocode_candidates.php
+
       - name: Document gate lifecycle E2E
         run: python3 ci/r92_document_gate_test.py
 
