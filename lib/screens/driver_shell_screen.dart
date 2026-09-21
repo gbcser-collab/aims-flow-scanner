@@ -235,6 +235,8 @@ class _DriverShellScreenState extends State<DriverShellScreen>
   Timer? _officeMessageTimer;
   final Set<int> _preArrivalBriefedStops = <int>{};
   DateTime? _lastPreArrivalCheckAt;
+  DriverRestModeState _restMode = const DriverRestModeState(active: false);
+  bool _restModeBusy = false;
 
   bool _isStopCompleted(DriverStop stop) =>
       stop.completed ||
@@ -1264,6 +1266,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
     } else {
       await _tracking.setVehicleLabel(_plate);
       await _activateDriverServices();
+      await _refreshRestMode(silent: true);
       await _refreshOfficeMessages(silent: true);
       _officeMessageTimer?.cancel();
       _officeMessageTimer = Timer.periodic(const Duration(seconds: 15), (_) {
@@ -2887,7 +2890,22 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                     : 'GPS',
                 _trackingStatus?.running == true ? _green : Colors.white38,
               ),
-              const SizedBox(width: 4),
+              const SizedBox(width: 2),
+              IconButton(
+                tooltip: _restMode.active
+                    ? _l('Pihenőmód aktív', 'Rest mode active', 'Ruhemodus aktiv')
+                    : _l('Pihenőmód', 'Rest mode', 'Ruhemodus'),
+                onPressed: _restModeBusy ? null : _showRestModeSheet,
+                icon: Icon(
+                  _restMode.active
+                      ? Icons.bedtime_rounded
+                      : Icons.bedtime_outlined,
+                  color: _restMode.active
+                      ? _green
+                      : Colors.white54,
+                ),
+              ),
+              const SizedBox(width: 2),
               IconButton(
                 tooltip: _l(
                   'Night Driver Mode: ${AimsDisplayModeController.instance.label(AimsLocaleController.instance.languageCode)}',
@@ -4187,6 +4205,152 @@ class _DriverShellScreenState extends State<DriverShellScreen>
           ),
         ),
       ]);
+
+  Future<void> _refreshRestMode({bool silent = false}) async {
+    if (_plate.isEmpty) return;
+    try {
+      final state = await _api.fetchRestMode(_plate);
+      if (!mounted) {
+        _restMode = state;
+        return;
+      }
+      setState(() => _restMode = state);
+    } catch (e) {
+      if (!silent && mounted) {
+        _snack(_l(
+          'A pihenőmód állapota nem frissíthető: $e',
+          'Rest mode status cannot be refreshed: $e',
+          'Ruhemodus-Status kann nicht aktualisiert werden: $e',
+        ));
+      }
+    }
+  }
+
+  Future<void> _setRestMode(
+    bool enabled, {
+    int durationMinutes = 540,
+  }) async {
+    if (_restModeBusy || _plate.isEmpty) return;
+    setState(() => _restModeBusy = true);
+    try {
+      final state = await _api.setRestMode(
+        plate: _plate,
+        enabled: enabled,
+        durationMinutes: durationMinutes,
+      );
+      if (!mounted) return;
+      setState(() => _restMode = state);
+      final phrase = enabled
+          ? _l(
+              'Pihenőmód bekapcsolva. A várakozásfigyelés szünetel.',
+              'Rest mode enabled. Waiting alerts are paused.',
+              'Ruhemodus aktiviert. Wartezeitmeldungen sind pausiert.',
+            )
+          : _l(
+              'Pihenőmód kikapcsolva. A várakozásfigyelés folytatódik.',
+              'Rest mode disabled. Waiting alerts are active again.',
+              'Ruhemodus beendet. Wartezeitmeldungen sind wieder aktiv.',
+            );
+      unawaited(_voice.announce(phrase));
+      _snack(phrase);
+    } catch (e) {
+      if (mounted) {
+        _snack(_l(
+          'A pihenőmód nem állítható: $e',
+          'Rest mode could not be changed: $e',
+          'Ruhemodus konnte nicht geändert werden: $e',
+        ));
+      }
+    } finally {
+      if (mounted) setState(() => _restModeBusy = false);
+    }
+  }
+
+  Future<void> _showRestModeSheet() async {
+    if (_restModeBusy || _plate.isEmpty) return;
+    final choice = await showModalBottomSheet<int>(
+      context: context,
+      backgroundColor: const Color(0xFF06131F),
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 18, 16, 22),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                _l('PIHENŐ MÓD', 'REST MODE', 'RUHEMODUS'),
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 23,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 7),
+              Text(
+                _restMode.active
+                    ? _l(
+                        'Aktív. A 20 perces várakozás- és állásriasztás pihenő alatt szünetel.',
+                        'Active. 20-minute waiting and stationary alerts are paused during rest.',
+                        'Aktiv. 20-Minuten-Warte- und Stillstandsmeldungen sind während der Pause ausgesetzt.',
+                      )
+                    : _l(
+                        'Kapcsold be jogos pihenőnél. A Flow a pihenő idejét nem számolja bele a várakozásba.',
+                        'Enable it during a legitimate rest. Flow excludes rest time from waiting time.',
+                        'Bei einer regulären Pause aktivieren. Flow zählt die Ruhezeit nicht zur Wartezeit.',
+                      ),
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.white54, height: 1.35),
+              ),
+              const SizedBox(height: 14),
+              if (_restMode.active)
+                FilledButton.icon(
+                  onPressed: () => Navigator.pop(context, 0),
+                  icon: const Icon(Icons.play_arrow_rounded),
+                  label: Text(_l(
+                    'PIHENŐ BEFEJEZÉSE',
+                    'END REST',
+                    'RUHE BEENDEN',
+                  )),
+                  style: FilledButton.styleFrom(
+                    minimumSize: const Size.fromHeight(58),
+                    backgroundColor: _green,
+                    foregroundColor: const Color(0xFF001B12),
+                  ),
+                )
+              else
+                for (final option in <({int minutes, String hu, String en, String de})>[
+                  (minutes: 30, hu: '30 PERC', en: '30 MINUTES', de: '30 MINUTEN'),
+                  (minutes: 60, hu: '1 ÓRA', en: '1 HOUR', de: '1 STUNDE'),
+                  (minutes: 120, hu: '2 ÓRA', en: '2 HOURS', de: '2 STUNDEN'),
+                  (minutes: 540, hu: '9 ÓRA / NAPI PIHENŐ', en: '9 HOURS / DAILY REST', de: '9 STUNDEN / TAGESRUHE'),
+                ])
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: FilledButton.icon(
+                      onPressed: () =>
+                          Navigator.pop(context, option.minutes),
+                      icon: const Icon(Icons.bedtime_rounded),
+                      label: Text(_l(option.hu, option.en, option.de)),
+                      style: FilledButton.styleFrom(
+                        minimumSize: const Size.fromHeight(54),
+                        backgroundColor: const Color(0xFF0D2A3E),
+                        foregroundColor: Colors.white,
+                      ),
+                    ),
+                  ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (!mounted || choice == null) return;
+    if (choice == 0) {
+      await _setRestMode(false);
+    } else {
+      await _setRestMode(true, durationMinutes: choice);
+    }
+  }
 
   Future<void> _showProblemSheet() async {
     if (_actionBusy) return;
