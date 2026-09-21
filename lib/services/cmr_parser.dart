@@ -4,7 +4,7 @@ class CmrParser {
   const CmrParser();
 
   CmrData parse(String raw) {
-    final normalized = raw.replaceAll('\r', '\n');
+    final normalized = _normalize(raw);
     final lines = normalized
         .split('\n')
         .map((e) => e.trim())
@@ -13,24 +13,226 @@ class CmrParser {
 
     return CmrData(
       cmrNumber: _cmrNumber(lines, normalized),
-      shipper: _afterLabel(lines, const ['sender', 'feladó', 'absender', 'nadawca', 'expéditeur']),
-      consignee: _afterLabel(lines, const ['consignee', 'címzett', 'empfänger', 'odbiorca', 'destinataire']),
-      loadingPlace: _afterLabel(lines, const ['place of taking over', 'felrakóhely', 'lieu de chargement', 'miejsce załadunku', 'übernahmeort']),
-      deliveryPlace: _afterLabel(lines, const ['place of delivery', 'lerakóhely', 'lieu de livraison', 'miejsce dostawy', 'ablieferungsort']),
-      date: _firstMatch(normalized, RegExp(r'\b(?:0?[1-9]|[12]\d|3[01])[./-](?:0?[1-9]|1[0-2])[./-](?:20)?\d{2}\b')),
+      shipper: _field(
+        lines,
+        1,
+        const ['sender', 'feladó', 'absender', 'nadawca', 'expéditeur'],
+      ),
+      consignee: _field(
+        lines,
+        2,
+        const ['consignee', 'címzett', 'empfänger', 'odbiorca', 'destinataire'],
+      ),
+      deliveryPlace: _field(
+        lines,
+        3,
+        const [
+          'place of delivery',
+          'lerakóhely',
+          'lieu prévu pour la livraison',
+          'lieu de livraison',
+          'miejsce dostawy',
+          'ablieferungsort',
+        ],
+      ),
+      loadingPlace: _field(
+        lines,
+        4,
+        const [
+          'place and date of taking over',
+          'place of taking over',
+          'felrakóhely',
+          'lieu et date de la prise en charge',
+          'lieu de chargement',
+          'miejsce załadunku',
+          'übernahmeort',
+        ],
+      ),
+      date: _date(normalized),
       plate: _plate(normalized),
-      packageCount: _packages(lines, normalized),
-      grossWeightKg: _weight(normalized),
-      goodsDescription: _afterLabel(lines, const ['nature of goods', 'áru megnevezése', 'bezeichnung des gutes', 'rodzaj towaru', 'nature de la marchandise']),
+      packageCount: _packageCount(lines, normalized),
+      grossWeightKg: _weight(lines, normalized),
+      goodsDescription: _field(
+        lines,
+        9,
+        const [
+          'nature of goods',
+          'áru megnevezése',
+          'bezeichnung des gutes',
+          'rodzaj towaru',
+          'nature de la marchandise',
+        ],
+      ),
       rawText: raw,
     );
   }
 
+  String _normalize(String value) {
+    return value
+        .replaceAll('\r\n', '\n')
+        .replaceAll('\r', '\n')
+        .replaceAll('–', '-')
+        .replaceAll('—', '-')
+        .replaceAll(RegExp(r'[ \t]+'), ' ')
+        .replaceAll(RegExp(r'\n{3,}'), '\n\n')
+        .trim();
+  }
+
   String? _cmrNumber(List<String> lines, String raw) {
-    final labelled = _afterLabel(lines, const ['cmr no', 'cmr nr', 'cmr szám', 'lettre de voiture']);
-    if (labelled != null) return labelled;
-    final match = RegExp(r'\b(?:CMR[\s:#-]*)?([A-Z0-9][A-Z0-9/-]{5,20})\b', caseSensitive: false).firstMatch(raw);
-    return match?.group(1) ?? match?.group(0);
+    final labelled = _afterLabel(
+      lines,
+      const [
+        'cmr no',
+        'cmr no.',
+        'cmr nr',
+        'cmr nr.',
+        'cmr szám',
+        'lettre de voiture',
+        'consignment note no',
+      ],
+    );
+    if (_usable(labelled)) return _trimValue(labelled!);
+
+    final patterns = <RegExp>[
+      RegExp(
+        r'\bCMR\s*(?:NO|NR|N[°º]|SZÁM)?\s*[:#.-]?\s*([A-Z0-9][A-Z0-9/.-]{4,24})\b',
+        caseSensitive: false,
+      ),
+      RegExp(
+        r'\b(?:NO|NR|N[°º])\s*[:#.-]?\s*([A-Z]{0,4}\d[A-Z0-9/.-]{4,20})\b',
+        caseSensitive: false,
+      ),
+    ];
+    for (final pattern in patterns) {
+      final match = pattern.firstMatch(raw);
+      final value = match?.group(1);
+      if (_usable(value)) return _trimValue(value!);
+    }
+    return null;
+  }
+
+  String? _field(List<String> lines, int number, List<String> labels) {
+    final labelled = _afterLabel(lines, labels);
+    if (_usableFieldValue(labelled, labels)) return _trimValue(labelled!);
+
+    final numbered = _afterFieldNumber(lines, number, labels);
+    if (_usableFieldValue(numbered, labels)) return _trimValue(numbered!);
+    return null;
+  }
+
+  String? _afterFieldNumber(
+    List<String> lines,
+    int number,
+    List<String> labels,
+  ) {
+    final startPattern = RegExp(
+      '^\\s*' + RegExp.escape(number.toString()) + '\\s*[.)\\-:]*\\s*(.*)\$',
+      caseSensitive: false,
+    );
+
+    for (var i = 0; i < lines.length; i++) {
+      final match = startPattern.firstMatch(lines[i]);
+      if (match == null) continue;
+
+      var same = (match.group(1) ?? '').trim();
+      same = _removeKnownLabels(same, labels);
+      if (_usableFieldValue(same, labels)) return same;
+
+      final collected = <String>[];
+      for (var j = i + 1; j < lines.length && collected.length < 3; j++) {
+        if (_looksLikeNextField(lines[j], number)) break;
+        final candidate = _removeKnownLabels(lines[j], labels);
+        if (!_usableFieldValue(candidate, labels)) continue;
+        collected.add(candidate);
+        if (collected.join(' ').length >= 18) break;
+      }
+      if (collected.isNotEmpty) return collected.join(', ');
+    }
+    return null;
+  }
+
+  bool _looksLikeNextField(String line, int current) {
+    final match = RegExp(r'^\s*(\d{1,2})\s*[.)\-:]').firstMatch(line);
+    if (match == null) return false;
+    final value = int.tryParse(match.group(1)!);
+    return value != null && value != current && value >= 1 && value <= 24;
+  }
+
+  String _removeKnownLabels(String value, List<String> labels) {
+    var result = value.trim();
+    for (final label in labels) {
+      final lower = result.toLowerCase();
+      final index = lower.indexOf(label.toLowerCase());
+      if (index < 0) continue;
+      final before = result.substring(0, index).trim();
+      final after = result.substring(index + label.length).trim();
+      result = after.length >= before.length ? after : before;
+    }
+    return result
+        .replaceFirst(RegExp(r'^\s*[:;,.\-]+\s*'), '')
+        .trim();
+  }
+
+  String? _afterLabel(List<String> lines, List<String> labels) {
+    for (var i = 0; i < lines.length; i++) {
+      final lower = lines[i].toLowerCase();
+      for (final label in labels) {
+        final index = lower.indexOf(label.toLowerCase());
+        if (index < 0) continue;
+        final start = (index + label.length).clamp(0, lines[i].length).toInt();
+        final sameLine = lines[i]
+            .substring(start)
+            .replaceFirst(RegExp(r'^\s*[:;,.\-]?\s*'), '')
+            .trim();
+        if (_usableFieldValue(sameLine, labels)) return sameLine;
+
+        for (var j = i + 1; j < lines.length && j <= i + 3; j++) {
+          if (_looksLikeAnyFieldStart(lines[j])) break;
+          final candidate = lines[j].trim();
+          if (_usableFieldValue(candidate, labels)) return candidate;
+        }
+      }
+    }
+    return null;
+  }
+
+  bool _looksLikeAnyFieldStart(String line) =>
+      RegExp(r'^\s*(?:[1-9]|1\d|2[0-4])\s*[.)\-:]').hasMatch(line);
+
+  bool _usable(String? value) => value != null && value.trim().length >= 2;
+
+  bool _usableFieldValue(String? value, List<String> labels) {
+    if (!_usable(value)) return false;
+    final v = value!.trim();
+    final lower = v.toLowerCase();
+    if (v.length < 3) return false;
+    if (labels.any((label) => lower == label.toLowerCase())) return false;
+    if (RegExp(
+      r'^(name|address|country|nom|adresse|pays)[ /,()\-]*$',
+      caseSensitive: false,
+    ).hasMatch(v)) {
+      return false;
+    }
+    return RegExp(r'[A-Za-zÀ-ž0-9]').hasMatch(v);
+  }
+
+  String _trimValue(String value) {
+    return value
+        .replaceFirst(RegExp(r'^\s*[:;,.\-]+\s*'), '')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+  }
+
+  String? _date(String raw) {
+    final patterns = <RegExp>[
+      RegExp(r'\b(?:0?[1-9]|[12]\d|3[01])[./-](?:0?[1-9]|1[0-2])[./-](?:19|20)?\d{2}\b'),
+      RegExp(r'\b(?:19|20)\d{2}[./-](?:0?[1-9]|1[0-2])[./-](?:0?[1-9]|[12]\d|3[01])\b'),
+    ];
+    for (final pattern in patterns) {
+      final match = pattern.firstMatch(raw);
+      if (match != null) return match.group(0);
+    }
+    return null;
   }
 
   String? _plate(String raw) {
@@ -46,39 +248,56 @@ class CmrParser {
     return null;
   }
 
-  double? _weight(String raw) {
-    final match = RegExp(r'\b(\d{1,6}(?:[.,]\d{1,3})?)\s*(?:kg|kgs|kilogram)\b', caseSensitive: false).firstMatch(raw);
-    if (match == null) return null;
-    return double.tryParse(match.group(1)!.replaceAll(',', '.'));
-  }
-
-  int? _packages(List<String> lines, String raw) {
-    final labelled = _afterLabel(lines, const ['number of packages', 'darabszám', 'anzahl der packstücke', 'ilość sztuk', 'nombre de colis']);
-    if (labelled != null) {
-      final number = RegExp(r'\b\d{1,5}\b').firstMatch(labelled);
-      if (number != null) return int.tryParse(number.group(0)!);
-    }
-    final general = RegExp(r'\b(\d{1,5})\s*(?:pcs|pc|db|colli|pal(?:let)?s?)\b', caseSensitive: false).firstMatch(raw);
-    return general == null ? null : int.tryParse(general.group(1)!);
-  }
-
-  String? _afterLabel(List<String> lines, List<String> labels) {
-    for (var i = 0; i < lines.length; i++) {
-      final lower = lines[i].toLowerCase();
-      for (final label in labels) {
-        final index = lower.indexOf(label.toLowerCase());
-        if (index < 0) continue;
-        final start = (index + label.length).clamp(0, lines[i].length).toInt();
-        final sameLine = lines[i]
-            .substring(start)
-            .replaceFirst(RegExp(r'^\s*[:.-]?\s*'), '')
-            .trim();
-        if (sameLine.length >= 3) return sameLine;
-        if (i + 1 < lines.length && lines[i + 1].length >= 3) return lines[i + 1];
+  double? _weight(List<String> lines, String raw) {
+    final field11 = _afterFieldNumber(
+      lines,
+      11,
+      const [
+        'gross weight',
+        'gross weight in kg',
+        'bruttó tömeg',
+        'bruttogewicht',
+        'poids brut',
+        'waga brutto',
+      ],
+    );
+    for (final source in [field11, raw]) {
+      if (source == null) continue;
+      final match = RegExp(
+        r'\b(\d{1,6}(?:[.,]\d{1,3})?)\s*(?:kg|kgs|kilogram)?\b',
+        caseSensitive: false,
+      ).firstMatch(source);
+      if (match != null) {
+        final value = double.tryParse(match.group(1)!.replaceAll(',', '.'));
+        if (value != null && value > 0) return value;
       }
     }
     return null;
   }
 
-  String? _firstMatch(String raw, RegExp pattern) => pattern.firstMatch(raw)?.group(0);
+  int? _packageCount(List<String> lines, String raw) {
+    final field7 = _afterFieldNumber(
+      lines,
+      7,
+      const [
+        'number of packages',
+        'darabszám',
+        'anzahl der packstücke',
+        'ilość sztuk',
+        'nombre de colis',
+      ],
+    );
+    for (final source in [field7, raw]) {
+      if (source == null) continue;
+      final match = RegExp(
+        r'\b(\d{1,5})\s*(?:pcs|pc|db|colli|pal(?:let)?s?)?\b',
+        caseSensitive: false,
+      ).firstMatch(source);
+      if (match != null) {
+        final value = int.tryParse(match.group(1)!);
+        if (value != null && value > 0) return value;
+      }
+    }
+    return null;
+  }
 }
