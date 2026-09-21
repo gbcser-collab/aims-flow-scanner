@@ -1802,6 +1802,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
         MaterialPageRoute(
           builder: (_) => SmartDocumentScannerScreen(
             camera: camera,
+            plate: _plate,
             contextHint: contextHint,
           ),
         ),
