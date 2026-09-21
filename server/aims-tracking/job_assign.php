@@ -155,6 +155,8 @@ foreach ($rawStops as $stop) {
 if ($errors) aims_json(['ok' => false, 'error' => 'stop_geocode_failed', 'stops' => $errors], 422);
 
 $now = gmdate(DateTimeInterface::ATOM);
+$createdNew = false;
+$duplicateAssignment = false;
 $pdo->beginTransaction();
 try {
     if ($sourceOrderId !== '') {
@@ -180,54 +182,44 @@ try {
             ':orderJson' => $orderJson,
         ]);
         $jobId = (int)$pdo->lastInsertId();
+        $createdNew = true;
+
+        $insertStop = $pdo->prepare('INSERT INTO job_stops
+            (job_id, stop_type, stop_order, company, address, contact_phone, latitude, longitude, radius_m, created_at)
+            VALUES (:job, :type, :ord, :company, :address, :phone, :lat, :lng, :radius, :created)');
+        foreach ($resolved as $stop) {
+            $insertStop->execute([
+                ':job' => $jobId,
+                ':type' => $stop['type'],
+                ':ord' => $stop['order'],
+                ':company' => $stop['company'],
+                ':address' => $stop['address'],
+                ':phone' => $stop['phone'],
+                ':lat' => $stop['latitude'],
+                ':lng' => $stop['longitude'],
+                ':radius' => $stop['radius'],
+                ':created' => $now,
+            ]);
+        }
+
+        aims_notify(
+            $pdo,
+            $adminId,
+            (int)$vehicle['id'],
+            'job_registered',
+            'info',
+            ($vehicle['label'] !== '' ? $vehicle['label'] : $vehicle['plate']) . ' új fuvar',
+            "$reference • " . count($resolved) . ' megálló figyelése aktív',
+            "job_registered:$jobId",
+            ['jobId' => $jobId, 'reference' => $reference, 'stopCount' => count($resolved)]
+        );
     } else {
+        // Idempotency is intentional: a repeated click/send for the same
+        // source order or reference must never reset SEEN/ACCEPTED state,
+        // recreate stops, or erase driver progress.
         $jobId = (int)$jobId;
-        $reset = $pdo->prepare('UPDATE jobs
-            SET status = "active", reference = :reference, updated_at = :updated, partial_load = :partial,
-                source_order_id = :sourceOrder, order_payload_json = :orderJson,
-                driver_seen_at = NULL, driver_accepted_at = NULL, driver_push_last_at = NULL
-            WHERE id = :id');
-        $reset->execute([
-            ':reference' => $reference,
-            ':updated' => $now,
-            ':partial' => $partialLoad,
-            ':sourceOrder' => $sourceOrderId !== '' ? $sourceOrderId : null,
-            ':orderJson' => $orderJson,
-            ':id' => $jobId,
-        ]);
-        $delete = $pdo->prepare('DELETE FROM job_stops WHERE job_id = :job');
-        $delete->execute([':job' => $jobId]);
+        $duplicateAssignment = true;
     }
-
-    $insertStop = $pdo->prepare('INSERT INTO job_stops
-        (job_id, stop_type, stop_order, company, address, contact_phone, latitude, longitude, radius_m, created_at)
-        VALUES (:job, :type, :ord, :company, :address, :phone, :lat, :lng, :radius, :created)');
-    foreach ($resolved as $stop) {
-        $insertStop->execute([
-            ':job' => $jobId,
-            ':type' => $stop['type'],
-            ':ord' => $stop['order'],
-            ':company' => $stop['company'],
-            ':address' => $stop['address'],
-            ':phone' => $stop['phone'],
-            ':lat' => $stop['latitude'],
-            ':lng' => $stop['longitude'],
-            ':radius' => $stop['radius'],
-            ':created' => $now,
-        ]);
-    }
-
-    aims_notify(
-        $pdo,
-        $adminId,
-        (int)$vehicle['id'],
-        'job_registered',
-        'info',
-        ($vehicle['label'] !== '' ? $vehicle['label'] : $vehicle['plate']) . ' új fuvar',
-        "$reference • " . count($resolved) . ' megálló figyelése aktív',
-        "job_registered:$jobId:" . hash('sha1', $now),
-        ['jobId' => $jobId, 'reference' => $reference, 'stopCount' => count($resolved)]
-    );
 
     $pdo->commit();
 } catch (Throwable $error) {
@@ -237,7 +229,9 @@ try {
 }
 
 aims_try_push($pdo, 8);
-$driverPush = aims_send_driver_job_push($pdo, (int)$jobId);
+$driverPush = $createdNew
+    ? aims_send_driver_job_push($pdo, (int)$jobId)
+    : ['configured' => true, 'sent' => 0, 'failed' => 0, 'skipped' => 'duplicate_assignment'];
 
 aims_json([
     'ok' => true,
@@ -245,5 +239,7 @@ aims_json([
     'reference' => $reference,
     'plate' => $plate,
     'stops' => $resolved,
+    'created' => $createdNew,
+    'duplicate' => $duplicateAssignment,
     'driverPush' => $driverPush,
 ]);
