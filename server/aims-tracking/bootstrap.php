@@ -263,6 +263,21 @@ function aims_db(): PDO {
         FOREIGN KEY(admin_user_id) REFERENCES admin_users(id)
     )');
 
+    $pdo->exec('CREATE TABLE IF NOT EXISTS smart_documents (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        local_id TEXT NOT NULL UNIQUE,
+        vehicle_id INTEGER NOT NULL,
+        document_type TEXT NOT NULL,
+        captured_at TEXT NOT NULL,
+        ocr_text TEXT,
+        confidence REAL,
+        image_path TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY(vehicle_id) REFERENCES vehicles(id) ON DELETE CASCADE
+    )');
+    $pdo->exec('CREATE INDEX IF NOT EXISTS idx_smart_documents_vehicle_time
+        ON smart_documents(vehicle_id, captured_at DESC)');
+
     $pdo->exec('CREATE TABLE IF NOT EXISTS push_devices (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         admin_user_id INTEGER NOT NULL,
