@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../services/aims_display_mode.dart';
 import '../services/aims_locale.dart';
 import '../services/device_unlock_service.dart';
 import '../services/driver_push_service.dart';
@@ -265,9 +266,35 @@ class _FlowLoginScreenState extends State<FlowLoginScreen> {
                     constraints: const BoxConstraints(maxWidth: 520),
                     child: Column(
                       children: [
-                        const Align(
+                        Align(
                           alignment: Alignment.centerRight,
-                          child: AimsLanguageSelector(),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                tooltip:
+                                    'Night Driver Mode: ${AimsDisplayModeController.instance.label(locale.languageCode)}',
+                                onPressed: () => AimsDisplayModeController
+                                    .instance
+                                    .cycleMode(),
+                                icon: Icon(
+                                  switch (AimsDisplayModeController.instance.mode) {
+                                    AimsDisplayMode.auto =>
+                                      Icons.brightness_auto_rounded,
+                                    AimsDisplayMode.light =>
+                                      Icons.light_mode_rounded,
+                                    AimsDisplayMode.dark =>
+                                      Icons.dark_mode_rounded,
+                                  },
+                                  color:
+                                      AimsDisplayModeController.instance.isDark
+                                          ? const Color(0xFF8BD8FF)
+                                          : const Color(0xFFFFC857),
+                                ),
+                              ),
+                              const AimsLanguageSelector(),
+                            ],
+                          ),
                         ),
                         const SizedBox(height: 12),
                         Image.memory(_logo, width: 96, height: 96),
