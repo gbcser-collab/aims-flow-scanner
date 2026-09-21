@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 require __DIR__ . '/bootstrap.php';
+require_once __DIR__ . '/smart_rules.php';
 
 $pdo = aims_db();
 $adminId = aims_admin_user_id($pdo);
@@ -72,22 +73,26 @@ function aims_geocode(PDO $pdo, string $address): ?array {
     }
 
     $base = rtrim(getenv('AIMS_GEOCODER_URL') ?: 'https://nominatim.openstreetmap.org/search', '?');
-    $url = $base . '?' . http_build_query([
-        'q' => $address,
-        'format' => 'jsonv2',
-        'limit' => 1,
-        'addressdetails' => 0,
-    ]);
-    $result = aims_http_get_json($url, [
-        'Accept: application/json',
-        'User-Agent: AIMS-Flow/1.3 (logistic-aims.hu)',
-    ]);
-
     $lat = null;
     $lng = null;
-    if (is_array($result) && isset($result[0]['lat'], $result[0]['lon'])) {
-        $lat = (float)$result[0]['lat'];
-        $lng = (float)$result[0]['lon'];
+
+    foreach (aims_geocode_address_candidates($address) as $candidate) {
+        $url = $base . '?' . http_build_query([
+            'q' => $candidate,
+            'format' => 'jsonv2',
+            'limit' => 1,
+            'addressdetails' => 0,
+        ]);
+        $result = aims_http_get_json($url, [
+            'Accept: application/json',
+            'User-Agent: AIMS-Flow/1.3 (logistic-aims.hu)',
+        ]);
+
+        if (is_array($result) && isset($result[0]['lat'], $result[0]['lon'])) {
+            $lat = (float)$result[0]['lat'];
+            $lng = (float)$result[0]['lon'];
+            break;
+        }
     }
 
     $save = $pdo->prepare('INSERT INTO geocode_cache
