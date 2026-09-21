@@ -332,3 +332,18 @@ R92-ben ellenőrizendő portálintegráció:
 - az ismert regisztrációs GPS-pont automatikusan bekerül-e az új fuvar kiküldött adatai közé;
 - a kiküldött munkában egyszerre maradjon meg az olvasható postai cím és a pontos regisztrációs GPS-koordináta;
 - eltérő felrakó/lerakó regisztrációs pontokat ne keverjen össze.
+
+
+## R92 baseline – korábban már eldöntött, nem új ötlet
+Az alábbiakat a további ötletelés során nem szabad új fejlesztési javaslatként felsorolni; ezek a Flow megtartandó alapfunkciói:
+- férfi hangos push új fuvar és fontos üzenet érkezésekor;
+- a sofőr lépésről lépésre történő hangos végigvezetése a munkafolyamaton;
+- navigáció indításának hangos visszajelzése;
+- megérkezéskor hangos felszólítás a következő teendőre;
+- regisztrációs/bejelentkezési lépés hangos vezetése;
+- felrakás/lerakás lezárásakor megfelelő visszajelzés;
+- ha van következő munka, további jó utat / következő feladat jelzése;
+- ha nincs további munka, köszönő és kulturált záróüzenet;
+- a fontos munkafázisok push + hang kombinációja.
+
+Ezeket R92-ben regressziósan ellenőrizni kell, de nem új funkcióként kezeljük.
