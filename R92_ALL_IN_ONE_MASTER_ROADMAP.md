@@ -187,3 +187,41 @@ Követelmények:
 - hibás/érvénytelen lépést ne engedjen átugrani;
 - offline állapotban is ugyanaz a lépéslogika maradjon, helyi sorba mentéssel;
 - a főképernyőn mindig látszódjon: MOST / KÖVETKEZŐ.
+
+
+### 16.2 Navigáció marad elöl — MÓDOSÍTVA / ELFOGADVA
+- Vezetés közben a külső navigációs app (pl. Waze) maradjon az előtérben.
+- A Flow ne próbáljon vezetés közben saját felületet a térkép elé tenni.
+- A navigáció indítása után a sofőr a navigációs appot használja.
+- Amikor a sofőr a Flow-ban megnyomja a MEGÉRKEZTEM gombot, a Flow folytassa automatikusan a következő munkafázissal.
+- A cél az, hogy a navigáció és a Flow ne versenyezzen egymással, hanem egymást váltsa a munkafolyamat szerint.
+- Automatikus külső app-bezárást csak olyan platform/API esetén szabad használni, ahol ez megbízható és engedélyezett; enélkül a Flow a fókusz-visszatérést kezeli.
+
+
+### 16.3 BAJ VAN — ELFOGADVA / PRIORITÁS
+A sofőr főképernyőjén legyen egy nagy, egyértelmű BAJ VAN gomb.
+
+Gyors opciók:
+- NEM TALÁLOM A BEJÁRATOT
+- ÁRU NINCS KÉSZ
+- NEM ENGEDNEK BE
+- CÍM HIBÁS
+- JÁRMŰPROBLÉMA
+- BALESET / SÜRGŐS
+- EGYÉB
+
+Automatikusan csatolt adatok:
+- fuvarazonosító;
+- jármű/rendszám;
+- aktuális felrakó vagy lerakó;
+- időpont;
+- aktuális GPS-koordináta, ha elérhető;
+- sofőr neve;
+- aktuális munkafázis.
+
+Működés:
+- egy érintésből küldhető legyen;
+- sürgős esemény külön prioritást és push-t kapjon;
+- kapcsolat nélkül helyben sorba álljon és automatikusan újraküldődjön;
+- admin/Flow Portál oldalon egyértelmű eseményként jelenjen meg;
+- opcionálisan rövid hangos visszajelzés: „A jelzést elküldtem.”
