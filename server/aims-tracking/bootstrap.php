@@ -330,6 +330,12 @@ function aims_db(): PDO {
     if (!isset($stopColumns['registration_point_id'])) {
         $pdo->exec('ALTER TABLE job_stops ADD COLUMN registration_point_id INTEGER');
     }
+    if (!isset($stopColumns['waiting_alert_slot'])) {
+        $pdo->exec('ALTER TABLE job_stops ADD COLUMN waiting_alert_slot INTEGER NOT NULL DEFAULT 0');
+    }
+    if (!isset($stopColumns['waiting_alert_last_at'])) {
+        $pdo->exec('ALTER TABLE job_stops ADD COLUMN waiting_alert_last_at TEXT');
+    }
 
     $pdo->exec('CREATE TABLE IF NOT EXISTS driver_messages (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
