@@ -29,6 +29,10 @@ class DriverStop {
     required this.completed,
     this.arrivedAt,
     this.completedAt,
+    this.registrationCheckedAt,
+    this.registrationLatitude,
+    this.registrationLongitude,
+    this.registrationConfirmations = 0,
   });
 
   final int id;
@@ -43,6 +47,14 @@ class DriverStop {
   final bool completed;
   final String? arrivedAt;
   final String? completedAt;
+  final String? registrationCheckedAt;
+  final double? registrationLatitude;
+  final double? registrationLongitude;
+  final int registrationConfirmations;
+
+  bool get registrationChecked => registrationCheckedAt?.trim().isNotEmpty == true;
+  bool get hasKnownRegistrationPoint =>
+      registrationLatitude != null && registrationLongitude != null;
 
   Map<String, dynamic> toJson() => {
         'id': id,
@@ -57,6 +69,14 @@ class DriverStop {
         'completed': completed,
         'arrivedAt': arrivedAt,
         'completedAt': completedAt,
+        'registrationCheckedAt': registrationCheckedAt,
+        'registrationPoint': hasKnownRegistrationPoint
+            ? {
+                'latitude': registrationLatitude,
+                'longitude': registrationLongitude,
+                'confirmations': registrationConfirmations,
+              }
+            : null,
       };
 
   factory DriverStop.fromJson(Map<String, dynamic> json) => DriverStop(
@@ -72,6 +92,16 @@ class DriverStop {
         completed: json['completed'] == true,
         arrivedAt: json['arrivedAt']?.toString(),
         completedAt: json['completedAt']?.toString(),
+        registrationCheckedAt: json['registrationCheckedAt']?.toString(),
+        registrationLatitude: json['registrationPoint'] is Map
+            ? ((json['registrationPoint'] as Map)['latitude'] as num?)?.toDouble()
+            : null,
+        registrationLongitude: json['registrationPoint'] is Map
+            ? ((json['registrationPoint'] as Map)['longitude'] as num?)?.toDouble()
+            : null,
+        registrationConfirmations: json['registrationPoint'] is Map
+            ? (((json['registrationPoint'] as Map)['confirmations'] as num?)?.toInt() ?? 0)
+            : 0,
       );
 }
 
@@ -219,6 +249,41 @@ class DriverApiService {
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw StateError(body['error']?.toString() ?? 'HTTP ${response.statusCode}');
     }
+  }
+
+  Future<Map<String, dynamic>> saveRegistrationPoint({
+    required String plate,
+    required int jobId,
+    required int stopId,
+    required double latitude,
+    required double longitude,
+    double? accuracy,
+  }) async {
+    _ensureConfigured();
+    final response = await http
+        .post(
+          Uri.parse('${_base()}/registration_point.php'),
+          headers: _headers,
+          body: jsonEncode({
+            'plate': plate.trim().toUpperCase(),
+            'jobId': jobId,
+            'stopId': stopId,
+            'latitude': latitude,
+            'longitude': longitude,
+            'accuracy': accuracy,
+          }),
+        )
+        .timeout(const Duration(seconds: 12));
+    final body = _decode(response);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw DriverApiException(
+        response.statusCode,
+        body['error']?.toString() ?? 'HTTP ${response.statusCode}',
+      );
+    }
+    return body['registrationPoint'] is Map
+        ? Map<String, dynamic>.from(body['registrationPoint'] as Map)
+        : const <String, dynamic>{};
   }
 
   Future<void> updateStop({
