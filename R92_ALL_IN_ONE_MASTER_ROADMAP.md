@@ -225,3 +225,42 @@ Működés:
 - kapcsolat nélkül helyben sorba álljon és automatikusan újraküldődjön;
 - admin/Flow Portál oldalon egyértelmű eseményként jelenjen meg;
 - opcionálisan rövid hangos visszajelzés: „A jelzést elküldtem.”
+
+
+### 16.4 Automatikus várakozásfigyelés — ELFOGADVA / PRIORITÁS
+A Flow automatikusan érzékelje, ha a sofőr megérkezett egy felrakóhoz/lerakóhoz, de a munkafázis hosszabb ideig nem halad tovább.
+
+Alaplogika:
+- érkezési időpont rögzítése;
+- ha 20 perc után még ugyanabban a várakozó munkafázisban van, első várakozási esemény;
+- utána 20 percenként ismétlődő státuszjelzés, amíg a munkafázis nem változik;
+- példa: 10:00 érkezés → 10:20 → 10:40 → 11:00 → 11:20 stb.;
+- minden új státusz külön időbélyeget kap.
+
+Minden várakozási jelzés tartalmazza:
+- jármű / rendszám;
+- sofőr;
+- fuvarazonosító;
+- referencia / pickup / delivery referencia;
+- aktuális felrakó vagy lerakó;
+- GPS koordináta;
+- GPS pontosság, ha elérhető;
+- érkezés időpontja;
+- aktuális várakozási idő;
+- aktuális munkafázis;
+- utolsó státuszváltozás ideje.
+
+Értesítések:
+- push az admin/főnökségi telefonra;
+- esemény a Flow admin/főnökségi felületen;
+- jól látható státusz: „MÉG VÁRAKOZIK”;
+- ugyanazon fuvar ismételt jelzései csoportosíthatók, de az időpontok külön megmaradnak.
+
+Leállítás:
+- automatikusan megszűnik, ha a sofőr továbblép a következő munkafázisra;
+- automatikusan megszűnik, ha a fuvar lezárul;
+- admin kézzel nyugtázhatja, de a nyugtázás önmagában ne törölje a további várakozásfigyelést.
+
+Nyitott külön feladat:
+- pihenő/alvó sofőr felismerése vagy sofőr által kapcsolható PIHENŐ MÓD, hogy a jogos pihenést a rendszer ne értelmezze hibás várakozásként;
+- ezt külön UX/szabályként kell megtervezni a Driver Mode véglegesítése előtt.
