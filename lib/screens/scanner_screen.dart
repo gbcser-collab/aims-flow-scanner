@@ -210,10 +210,13 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
       setState(() => _phase = _l('Kereten kívüli rész levágása…', 'Cropping outside the frame…', 'Bereich außerhalb des Rahmens wird zugeschnitten…'));
 
       final temp = await getTemporaryDirectory();
-      final processed = '${temp.path}/aims_smart_${DateTime.now().microsecondsSinceEpoch}.jpg';
+      final stamp = DateTime.now().microsecondsSinceEpoch;
+      final processed = '${temp.path}/aims_smart_$stamp.jpg';
+      final signature = '${temp.path}/aims_signature_$stamp.jpg';
       final result = await const AimsScanEngine().process(
         inputPath: shot.path,
         outputPath: processed,
+        signatureOutputPath: signature,
         frameCrop: FrameCropSpec(viewportAspect: _viewportAspect),
       );
 
@@ -232,6 +235,8 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
         MaterialPageRoute(
           builder: (_) => ScanReviewScreen(
             processedImagePath: result.outputPath,
+            signatureImagePath: result.signatureImagePath,
+            signatureConfidence: result.signatureConfidence,
             quality: result.quality,
             cmr: cmr,
           ),
