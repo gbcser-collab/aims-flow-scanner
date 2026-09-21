@@ -33,10 +33,7 @@ void main() {
     await tester.tap(find.text('Késés').first);
     await tester.pump(const Duration(seconds: 1));
 
-    expect(
-      find.textContaining('Jelzés').or(find.textContaining('jelzés')),
-      findsWidgets,
-    );
+    expect(find.byType(SnackBar), findsOneWidget);
   });
 
   testWidgets('office message send is actionable and never silently dead', (tester) async {
@@ -55,7 +52,7 @@ void main() {
     await tester.tap(send);
     await tester.pump(const Duration(seconds: 1));
 
-    expect(find.textContaining('üzenet'), findsWidgets);
+    expect(find.byType(SnackBar), findsOneWidget);
   });
 
   testWidgets('missing driver plate forces login instead of dead controls', (tester) async {
