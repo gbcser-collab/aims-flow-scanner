@@ -194,9 +194,10 @@ function aims_process_job_waiting(
         return 0;
     }
 
+    $pausedSeconds = max(0, (int)($candidate['waiting_paused_seconds'] ?? 0));
     $waitingSeconds = max(
         0,
-        $captured->getTimestamp() - $arrivedAt->getTimestamp()
+        $captured->getTimestamp() - $arrivedAt->getTimestamp() - $pausedSeconds
     );
     $lastSlot = (int)($candidate['waiting_alert_slot'] ?? 0);
     $due = aims_due_job_waiting_slot($waitingSeconds, $lastSlot);
@@ -428,15 +429,22 @@ try {
     $stationaryEvents = 0;
     $borderEvents = 0;
     if ($vehicle !== null && !$duplicatePoint) {
+        $restMode = aims_rest_mode_state(
+            $pdo,
+            (int)$vehicle['id'],
+            $captured
+        );
         $arrivalEvents = aims_process_arrivals(
             $pdo, $vehicle, (float)$lat, (float)$lng, $accuracy, $speedMps, $captured, !$delayedReplay
         );
-        $waitingEvents = aims_process_job_waiting(
-            $pdo, $vehicle, (float)$lat, (float)$lng, $accuracy, $captured, !$delayedReplay
-        );
-        $stationaryEvents = aims_process_stationary(
-            $pdo, $vehicle, (float)$lat, (float)$lng, $accuracy, $speedMps, $captured, !$delayedReplay
-        );
+        if (($restMode['active'] ?? false) !== true) {
+            $waitingEvents = aims_process_job_waiting(
+                $pdo, $vehicle, (float)$lat, (float)$lng, $accuracy, $captured, !$delayedReplay
+            );
+            $stationaryEvents = aims_process_stationary(
+                $pdo, $vehicle, (float)$lat, (float)$lng, $accuracy, $speedMps, $captured, !$delayedReplay
+            );
+        }
         $borderEvents = aims_process_country_stay(
             $pdo, $vehicle, $countryCode, (float)$lat, (float)$lng, $captured, !$delayedReplay
         );
