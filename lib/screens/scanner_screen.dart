@@ -223,8 +223,15 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
       );
 
       if (!mounted) return;
-      setState(() => _phase = _l('Szöveg felismerése…', 'Recognizing text…', 'Text wird erkannt…'));
-      final text = await ocr.recognize(result.outputPath);
+      setState(() => _phase = _l(
+            'Szöveg felismerése több képből…',
+            'Recognizing text from multiple image variants…',
+            'Text wird aus mehreren Bildvarianten erkannt…',
+          ));
+      final text = await ocr.recognizeBest(
+        processedImagePath: result.outputPath,
+        originalImagePath: shot.path,
+      );
 
       if (!mounted) return;
       setState(() => _phase = _l('CMR mezők kitöltése…', 'Filling CMR fields…', 'CMR-Felder werden ausgefüllt…'));
