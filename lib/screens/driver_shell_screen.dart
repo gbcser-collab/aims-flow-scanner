@@ -1528,6 +1528,8 @@ class _DriverShellScreenState extends State<DriverShellScreen>
             );
     }
     final occurredAt = DateTime.now().toUtc();
+    final finalCompletion =
+        action == 'completed' && _isFinalOpenStop(stop);
 
     if (_pendingStopActions[stop.id]?.isNotEmpty == true) {
       final message = await _queueStopForLater(
@@ -1537,6 +1539,14 @@ class _DriverShellScreenState extends State<DriverShellScreen>
         occurredAt,
       );
       unawaited(_flushPendingStopActions());
+      if (finalCompletion) {
+        await _activateDocumentGate();
+        return _l(
+          'A fuvar befejeződött. A lezárás offline sorban áll. Kérlek, scanneld be a szükséges dokumentumot.',
+          'The job is complete and queued offline. Please scan the required document.',
+          'Der Auftrag ist abgeschlossen und wartet offline. Bitte das erforderliche Dokument scannen.',
+        );
+      }
       return message;
     }
 
@@ -1549,6 +1559,20 @@ class _DriverShellScreenState extends State<DriverShellScreen>
         occurredAt: occurredAt,
       );
       await _refreshJobs();
+      if (finalCompletion) {
+        await _activateDocumentGate();
+        return _documentGateActive
+            ? _l(
+                'A fuvar befejeződött. Kérlek, scanneld be a szükséges dokumentumot.',
+                'The job is complete. Please scan the required document.',
+                'Der Auftrag ist abgeschlossen. Bitte das erforderliche Dokument scannen.',
+              )
+            : _l(
+                'A fuvar befejeződött.',
+                'The job is complete.',
+                'Der Auftrag ist abgeschlossen.',
+              );
+      }
       if (action == 'arrived') {
         return expectedType == 'pickup'
             ? _l(
@@ -1581,26 +1605,53 @@ class _DriverShellScreenState extends State<DriverShellScreen>
           'Der Server hat die Stopp-Aktualisierung abgelehnt. Auftrag aktualisieren oder Administration kontaktieren.',
         );
       }
-      return _queueStopForLater(
+      final queuedMessage = await _queueStopForLater(
         stop,
         action,
         source,
         occurredAt,
       );
+      if (finalCompletion) {
+        await _activateDocumentGate();
+        return _l(
+          'A fuvar befejeződött. A lezárás offline sorban áll. Kérlek, scanneld be a szükséges dokumentumot.',
+          'The job is complete and queued offline. Please scan the required document.',
+          'Der Auftrag ist abgeschlossen und wartet offline. Bitte das erforderliche Dokument scannen.',
+        );
+      }
+      return queuedMessage;
     } on StateError {
-      return _queueStopForLater(
+      final queuedMessage = await _queueStopForLater(
         stop,
         action,
         source,
         occurredAt,
       );
+      if (finalCompletion) {
+        await _activateDocumentGate();
+        return _l(
+          'A fuvar befejeződött. A lezárás offline sorban áll. Kérlek, scanneld be a szükséges dokumentumot.',
+          'The job is complete and queued offline. Please scan the required document.',
+          'Der Auftrag ist abgeschlossen und wartet offline. Bitte das erforderliche Dokument scannen.',
+        );
+      }
+      return queuedMessage;
     } catch (_) {
-      return _queueStopForLater(
+      final queuedMessage = await _queueStopForLater(
         stop,
         action,
         source,
         occurredAt,
       );
+      if (finalCompletion) {
+        await _activateDocumentGate();
+        return _l(
+          'A fuvar befejeződött. A lezárás offline sorban áll. Kérlek, scanneld be a szükséges dokumentumot.',
+          'The job is complete and queued offline. Please scan the required document.',
+          'Der Auftrag ist abgeschlossen und wartet offline. Bitte das erforderliche Dokument scannen.',
+        );
+      }
+      return queuedMessage;
     }
   }
 
@@ -1791,8 +1842,10 @@ class _DriverShellScreenState extends State<DriverShellScreen>
             ),
           ),
         );
+      } else {
+        unawaited(_voice.announce(message));
       }
-      setState(() => _index = 0);
+      setState(() => _index = _documentGateActive ? 3 : 0);
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (_homeScrollController.hasClients) {
           _homeScrollController.animateTo(
@@ -3302,6 +3355,29 @@ class _DriverShellScreenState extends State<DriverShellScreen>
       ]);
 
   Widget _documents() => _page([
+        if (_documentGateActive)
+          Container(
+            key: const Key('flow-document-gate-notice'),
+            margin: const EdgeInsets.only(bottom: 14),
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: const Color(0xFF2A2113),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: const Color(0xFFE6B85C)),
+            ),
+            child: Text(
+              _l(
+                'A fuvar lezárásához még szükséges a dokumentum feltöltése. A Flow addig nem enged továbblépni.',
+                'A required document is still missing. Flow will keep this job locked until it is scanned.',
+                'Für den Abschluss fehlt noch ein Dokument. Flow hält den Auftrag bis zum Scan gesperrt.',
+              ),
+              style: const TextStyle(
+                color: Color(0xFFFFE0A3),
+                fontWeight: FontWeight.w900,
+                height: 1.35,
+              ),
+            ),
+          ),
         Text(
           _l('Dokumentum', 'Documents', 'Dokumente'),
           style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w900),
