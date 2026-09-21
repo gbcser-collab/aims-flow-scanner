@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../models/scan_models.dart';
+import '../services/aims_display_mode.dart';
 import '../services/aims_locale.dart';
 import '../services/aims_voice_command.dart';
 import '../services/aims_voice_service.dart';
@@ -1125,6 +1126,15 @@ class _DriverShellScreenState extends State<DriverShellScreen>
     unawaited(_sync.initialize());
     _trackingSub = _tracking.statusStream.listen((status) {
       if (mounted) setState(() => _trackingStatus = status);
+      final position = status.lastPosition;
+      if (position != null) {
+        unawaited(
+          AimsDisplayModeController.instance.updateLocation(
+            position.latitude,
+            position.longitude,
+          ),
+        );
+      }
       unawaited(_maybeAnnouncePreArrival(status));
     });
     unawaited(_initialize());
@@ -2877,7 +2887,28 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                     : 'GPS',
                 _trackingStatus?.running == true ? _green : Colors.white38,
               ),
-              const SizedBox(width: 6),
+              const SizedBox(width: 4),
+              IconButton(
+                tooltip: _l(
+                  'Night Driver Mode: ${AimsDisplayModeController.instance.label(AimsLocaleController.instance.languageCode)}',
+                  'Night Driver Mode: ${AimsDisplayModeController.instance.label(AimsLocaleController.instance.languageCode)}',
+                  'Night Driver Mode: ${AimsDisplayModeController.instance.label(AimsLocaleController.instance.languageCode)}',
+                ),
+                onPressed: () => unawaited(
+                  AimsDisplayModeController.instance.cycleMode(),
+                ),
+                icon: Icon(
+                  switch (AimsDisplayModeController.instance.mode) {
+                    AimsDisplayMode.auto => Icons.brightness_auto_rounded,
+                    AimsDisplayMode.light => Icons.light_mode_rounded,
+                    AimsDisplayMode.dark => Icons.dark_mode_rounded,
+                  },
+                  color: AimsDisplayModeController.instance.isDark
+                      ? const Color(0xFF8BD8FF)
+                      : const Color(0xFFFFC857),
+                ),
+              ),
+              const SizedBox(width: 2),
               const AimsLanguageSelector(compact: true),
             ],
           ),
