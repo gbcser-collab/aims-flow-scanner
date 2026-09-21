@@ -19,6 +19,7 @@ import '../services/vehicle_tracking_service.dart';
 import '../widgets/aims_flow_logo.dart';
 import 'invoice_scanner_screen.dart';
 import 'scanner_screen.dart';
+import 'smart_document_scanner_screen.dart';
 
 class _PendingStopAction {
   const _PendingStopAction({
@@ -1684,6 +1685,49 @@ class _DriverShellScreenState extends State<DriverShellScreen>
       }
     } catch (e) {
       _snack('A scanner nem indult el: $e');
+    }
+  }
+
+  Future<void> _openSmartDocumentScanner() async {
+    try {
+      final camera = await _backCamera();
+      if (!mounted) return;
+      if (camera == null) {
+        _snack(_l(
+          'Nem található kamera.',
+          'No camera found.',
+          'Keine Kamera gefunden.',
+        ));
+        return;
+      }
+      final job = _job;
+      final stop = _stop;
+      final contextHint = [
+        if (_documentGateActive) 'cmr document gate',
+        if (job != null) job.reference,
+        if (stop != null) stop.type,
+        if (stop != null) stop.company,
+      ].join(' ');
+      final scanStartedAt = DateTime.now();
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => SmartDocumentScannerScreen(
+            camera: camera,
+            contextHint: contextHint,
+          ),
+        ),
+      );
+      if (job != null && !_hasOpenStop(job)) {
+        await _linkNewestCmrToJob(job, scanStartedAt);
+      } else {
+        await _refreshJobCmrStates();
+      }
+    } catch (e) {
+      _snack(_l(
+        'A Smart Scanner nem indult el: $e',
+        'Smart Scanner could not start: $e',
+        'Smart Scanner konnte nicht gestartet werden: $e',
+      ));
     }
   }
 
@@ -3983,17 +4027,17 @@ class _DriverShellScreenState extends State<DriverShellScreen>
             ),
           ),
         Text(
-          _l('Dokumentum', 'Documents', 'Dokumente'),
+          _l('Smart dokumentum', 'Smart documents', 'Smart Dokumente'),
           style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w900),
         ),
         const SizedBox(height: 4),
         Text(
           _l(
-            'Fotózd le, a Flow feldolgozza és továbbítja.',
-            'Take a photo. Flow processes and forwards it.',
-            'Foto aufnehmen. Flow verarbeitet und leitet es weiter.',
+            'Egy fotó. A Flow felismeri, milyen dokumentumot fotóztál, és a megfelelő feldolgozóba küldi.',
+            'One photo. Flow recognizes the document type and routes it to the correct processor.',
+            'Ein Foto. Flow erkennt den Dokumenttyp und leitet ihn an die passende Verarbeitung weiter.',
           ),
-          style: const TextStyle(color: Colors.white54),
+          style: const TextStyle(color: Colors.white54, height: 1.35),
         ),
         const SizedBox(height: 14),
         _panel(
@@ -4001,36 +4045,35 @@ class _DriverShellScreenState extends State<DriverShellScreen>
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               FilledButton.icon(
-                onPressed: _openCmrScanner,
-                icon: const Icon(Icons.document_scanner_rounded, size: 26),
+                key: const Key('flow-smart-document-scanner'),
+                onPressed: _openSmartDocumentScanner,
+                icon: const Icon(Icons.auto_awesome_rounded, size: 27),
                 label: Text(
-                  _l('CMR / DOKUMENTUM', 'CMR / DOCUMENT', 'CMR / DOKUMENT'),
+                  _l('SMART SCANNER', 'SMART SCANNER', 'SMART SCANNER'),
                 ),
                 style: FilledButton.styleFrom(
-                  minimumSize: const Size.fromHeight(62),
+                  minimumSize: const Size.fromHeight(66),
                   backgroundColor: _blue,
                   foregroundColor: const Color(0xFF00131F),
                   textStyle: const TextStyle(
                     fontWeight: FontWeight.w900,
-                    fontSize: 15,
+                    fontSize: 17,
+                    letterSpacing: .5,
                   ),
                 ),
               ),
               const SizedBox(height: 10),
-              OutlinedButton.icon(
-                onPressed: _openInvoiceScanner,
-                icon: const Icon(Icons.document_scanner_outlined),
-                label: Text(
-                  _l(
-                    'SZÁMLA SCANNER',
-                    'INVOICE SCANNER',
-                    'RECHNUNGSSCANNER',
-                  ),
+              Text(
+                _l(
+                  'CMR • POD • számla • tankolás • útdíj • parkolás • vám • raklap • szállítólevél • egyéb',
+                  'CMR • POD • invoice • fuel • toll • parking • customs • pallet • delivery note • other',
+                  'CMR • POD • Rechnung • Kraftstoff • Maut • Parken • Zoll • Palette • Lieferschein • Sonstiges',
                 ),
-                style: OutlinedButton.styleFrom(
-                  minimumSize: const Size.fromHeight(60),
-                  foregroundColor: Colors.white,
-                  side: const BorderSide(color: _blue),
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Colors.white54,
+                  fontSize: 11,
+                  height: 1.35,
                 ),
               ),
             ],
