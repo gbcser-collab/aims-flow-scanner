@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:path_provider/path_provider.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
 
 import '../models/scan_models.dart';
 import '../models/tracking_models.dart';
@@ -59,6 +61,8 @@ class ScanRepository {
 
   Future<ScannedDocument> saveNew({
     required String sourceImagePath,
+    String? signatureImagePath,
+    double signatureConfidence = 0,
     required CmrData cmr,
     required ScanQuality quality,
     LocationStamp? location,
@@ -67,6 +71,10 @@ class ScanRepository {
     final createdAt = DateTime.now();
     final id = createdAt.microsecondsSinceEpoch.toString();
     final destination = File('${directory.path}/cmr_$id.jpg');
+    final pdfDestination = File('${directory.path}/cmr_$id.pdf');
+    final signatureDestination = signatureImagePath == null
+        ? null
+        : File('${directory.path}/cmr_${id}_signature.jpg');
     final source = File(sourceImagePath);
 
     if (!await source.exists()) {
@@ -76,10 +84,38 @@ class ScanRepository {
       await source.copy(destination.path);
     }
 
+    if (signatureDestination != null) {
+      final signatureSource = File(signatureImagePath!);
+      if (await signatureSource.exists()) {
+        if (signatureSource.absolute.path != signatureDestination.absolute.path) {
+          await signatureSource.copy(signatureDestination.path);
+        }
+      }
+    }
+
+    final documentPdf = pw.Document(compress: true);
+    final pageImage = pw.MemoryImage(await destination.readAsBytes());
+    documentPdf.addPage(
+      pw.Page(
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.all(14),
+        build: (_) => pw.Center(
+          child: pw.Image(pageImage, fit: pw.BoxFit.contain),
+        ),
+      ),
+    );
+    await pdfDestination.writeAsBytes(await documentPdf.save(), flush: true);
+
     final document = ScannedDocument(
       id: id,
       createdAt: createdAt,
       imagePath: destination.path,
+      pdfPath: pdfDestination.path,
+      signatureImagePath: signatureDestination != null &&
+              await signatureDestination.exists()
+          ? signatureDestination.path
+          : null,
+      signatureConfidence: signatureConfidence,
       cmr: cmr,
       quality: quality,
       location: location,
@@ -109,6 +145,16 @@ class ScanRepository {
     try {
       final image = File(document.imagePath);
       if (await image.exists()) await image.delete();
+      final pdfPath = document.pdfPath;
+      if (pdfPath != null) {
+        final pdf = File(pdfPath);
+        if (await pdf.exists()) await pdf.delete();
+      }
+      final signaturePath = document.signatureImagePath;
+      if (signaturePath != null) {
+        final signature = File(signaturePath);
+        if (await signature.exists()) await signature.delete();
+      }
     } catch (_) {
       // The index is already clean even if the old image cannot be deleted.
     }
@@ -127,6 +173,16 @@ class ScanRepository {
       try {
         final image = File(document.imagePath);
         if (await image.exists()) await image.delete();
+        final pdfPath = document.pdfPath;
+        if (pdfPath != null) {
+          final pdf = File(pdfPath);
+          if (await pdf.exists()) await pdf.delete();
+        }
+        final signaturePath = document.signatureImagePath;
+        if (signaturePath != null) {
+          final signature = File(signaturePath);
+          if (await signature.exists()) await signature.delete();
+        }
       } catch (_) {}
     }
     all.removeWhere((item) => expired.any((expiredItem) => expiredItem.id == item.id));
