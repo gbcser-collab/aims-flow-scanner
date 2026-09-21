@@ -264,3 +264,21 @@ Leállítás:
 Nyitott külön feladat:
 - pihenő/alvó sofőr felismerése vagy sofőr által kapcsolható PIHENŐ MÓD, hogy a jogos pihenést a rendszer ne értelmezze hibás várakozásként;
 - ezt külön UX/szabályként kell megtervezni a Driver Mode véglegesítése előtt.
+
+
+### 16.5 Dokumentum-kapu / lezárási feltétel — MÁR KORÁBBAN FEJLESZTVE, R92-BEN MEGTARTANDÓ
+- Lerakás után a következő munkafázis a szükséges CMR/POD/delivery dokumentum kezelése.
+- A fuvar ne legyen véglegesen lezárható, amíg a szükséges dokumentum nincs rögzítve/feltöltve.
+- CMR esetén az aláírás/pecsét megléte külön ellenőrzési pont.
+- Hiányzó kötelező dokumentum vagy bizonytalan aláírás/pecsét esetén a Flow jelezzen a sofőrnek.
+- Offline mentés és háttérszinkron megmarad.
+- Admin jóváhagyási lánc megmarad.
+- R92 feladat: a már meglévő gatinget a Smart Document Intelligence rendszerrel egységesíteni és regressziósan ellenőrizni, nem újra feltalálni.
+
+### 16.6 Egykezes sofőrmód — ELFOGADVA
+- A fő műveleti gombok a képernyő alsó, könnyen elérhető részén legyenek.
+- A legfontosabb következő művelet nagy, teljes szélességű gomb.
+- Másodlagos műveletek ne versenyezzenek a fő lépéssel.
+- Kritikus akcióhoz ne kelljen apró ikonra célozni.
+- A BAJ VAN, MEGÉRKEZTEM, REGISZTRÁCIÓ, KÉSZ és dokumentum-scan műveletek egy kézzel kényelmesen kezelhetők legyenek.
+- A végleges UX-et a teljes Driver Mode átbeszélése után zárjuk le.
