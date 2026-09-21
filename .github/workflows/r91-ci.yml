@@ -127,6 +127,12 @@ jobs:
           g.write_text(text)
           PY
 
+          mkdir -p android/app/src/main/res/raw
+          base64 -d native/android/raw/aims_new_job.mp3.b64 > android/app/src/main/res/raw/aims_new_job.mp3
+          base64 -d native/android/raw/aims_new_message.mp3.b64 > android/app/src/main/res/raw/aims_new_message.mp3
+          test -s android/app/src/main/res/raw/aims_new_job.mp3
+          test -s android/app/src/main/res/raw/aims_new_message.mp3
+
       - name: Dependencies
         run: flutter pub get
 
