@@ -1421,9 +1421,129 @@ class _DriverShellScreenState extends State<DriverShellScreen>
     }
   }
 
+  bool _needsRegistration(DriverStop stop) =>
+      _isStopArrived(stop) && !stop.registrationChecked;
+
+  List<String> _registrationReferences(DriverJob? job, DriverStop stop) {
+    if (job == null) return const [];
+    final data = job.orderData;
+    final keys = stop.type == 'pickup'
+        ? const ['pickup_reference', 'customer_reference']
+        : const ['delivery_reference', 'customer_reference'];
+    final values = <String>[];
+    for (final key in keys) {
+      final value = data[key]?.toString().trim() ?? '';
+      if (value.isNotEmpty && !values.contains(value)) values.add(value);
+    }
+    if (job.reference.trim().isNotEmpty && !values.contains(job.reference.trim())) {
+      values.add(job.reference.trim());
+    }
+    return values;
+  }
+
+  Future<void> _openRegistrationMaps(DriverStop stop) async {
+    final lat = stop.registrationLatitude;
+    final lng = stop.registrationLongitude;
+    if (lat == null || lng == null) {
+      await _openMapsForStop(stop);
+      return;
+    }
+    final destination = '$lat,$lng';
+    final nativeUri = Uri.parse('geo:$destination?q=$destination');
+    try {
+      if (await launchUrl(nativeUri, mode: LaunchMode.externalApplication)) {
+        return;
+      }
+    } catch (_) {}
+    final webUri = Uri.parse(
+      'https://www.google.com/maps/dir/?api=1&destination=${Uri.encodeQueryComponent(destination)}&travelmode=driving',
+    );
+    try {
+      if (await launchUrl(webUri, mode: LaunchMode.externalApplication)) {
+        return;
+      }
+    } catch (_) {}
+    _snack(
+      _l(
+        'A regisztrációs pont navigációja nem nyitható meg.',
+        'Registration-point navigation could not be opened.',
+        'Die Navigation zum Registrierungspunkt konnte nicht geöffnet werden.',
+      ),
+    );
+  }
+
+  Future<void> _registerCurrentStop(DriverJob job, DriverStop stop) async {
+    if (_actionBusy) return;
+    setState(() => _actionBusy = true);
+    try {
+      final position = await _tracking.currentPositionForAction();
+      if (position == null) {
+        if (mounted) {
+          _snack(
+            _l(
+              'Nem kaptam használható GPS-jelet. Menj a regisztrációhoz, majd próbáld újra.',
+              'No usable GPS position is available. Go to registration and try again.',
+              'Keine brauchbare GPS-Position verfügbar. Gehe zur Anmeldung und versuche es erneut.',
+            ),
+          );
+        }
+        return;
+      }
+      final saved = await _api.saveRegistrationPoint(
+        plate: _plate,
+        jobId: job.id,
+        stopId: stop.id,
+        latitude: position.latitude,
+        longitude: position.longitude,
+        accuracy: position.accuracy,
+      );
+      final confirmations = (saved['confirmations'] as num?)?.toInt() ?? 1;
+      await _refreshJobs(showLoading: false);
+      final message = _l(
+        'Köszönöm. A regisztrációs pontot elmentettem. Ezzel a következő sofőr munkáját is megkönnyítetted.',
+        'Thank you. I saved the registration point. This will also make the next driver’s job easier.',
+        'Danke. Ich habe den Registrierungspunkt gespeichert. Damit wird auch die Arbeit des nächsten Fahrers leichter.',
+      );
+      unawaited(_voice.announce(message));
+      if (mounted) {
+        _snack(
+          confirmations > 1
+              ? _l(
+                  'Regisztráció rögzítve. A pontot már $confirmations alkalommal erősítették meg.',
+                  'Registration saved. This point has now been confirmed $confirmations times.',
+                  'Registrierung gespeichert. Dieser Punkt wurde bereits $confirmations-mal bestätigt.',
+                )
+              : _l(
+                  'Regisztráció rögzítve. Új regisztrációs GPS-pontot tanult a Flow.',
+                  'Registration saved. Flow learned a new registration GPS point.',
+                  'Registrierung gespeichert. Flow hat einen neuen Registrierungs-GPS-Punkt gelernt.',
+                ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        _snack(
+          _l(
+            'A regisztrációs pont mentése nem sikerült: $e',
+            'Could not save the registration point: $e',
+            'Registrierungspunkt konnte nicht gespeichert werden: $e',
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _actionBusy = false);
+    }
+  }
+
   Future<void> _runPrimaryStopAction() async {
     final stop = _stop;
-    if (stop == null || _actionBusy) return;
+    final job = _job;
+    if (stop == null || job == null || _actionBusy) return;
+
+    if (_needsRegistration(stop)) {
+      await _registerCurrentStop(job, stop);
+      return;
+    }
 
     if (_isStopArrived(stop)) {
       final confirmed = await showDialog<bool>(
@@ -1478,6 +1598,17 @@ class _DriverShellScreenState extends State<DriverShellScreen>
       );
       if (!mounted) return;
       _snack(message);
+      if (action == 'arrived') {
+        unawaited(
+          _voice.announce(
+            _l(
+              'Megérkeztél. Kérlek, menj a regisztrációhoz. A bejelentkezéshez szükséges referenciaszámokat a regisztrációs gomb alatt találod.',
+              'You have arrived. Please go to registration. The required reference numbers are shown below the registration button.',
+              'Du bist angekommen. Bitte gehe zur Anmeldung. Die benötigten Referenznummern stehen unter der Registrierungstaste.',
+            ),
+          ),
+        );
+      }
       setState(() => _index = 0);
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (_homeScrollController.hasClients) {
@@ -2029,19 +2160,25 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                 ),
                 const SizedBox(height: 5),
                 Text(
-                  _isStopArrived(stop)
-                      ? (stop.type == 'delivery'
-                          ? _l(
-                              'Lerakás befejezése',
-                              'Finish delivery',
-                              'Entladung abschließen',
-                            )
-                          : _l(
-                              'Felrakás befejezése',
-                              'Finish pickup',
-                              'Beladung abschließen',
-                            ))
-                      : (stop.type == 'delivery'
+                  _needsRegistration(stop)
+                      ? _l(
+                          'Bejelentkezés a regisztrációhoz',
+                          'Check in at registration',
+                          'Bei der Anmeldung einchecken',
+                        )
+                      : _isStopArrived(stop)
+                          ? (stop.type == 'delivery'
+                              ? _l(
+                                  'Lerakás befejezése',
+                                  'Finish delivery',
+                                  'Entladung abschließen',
+                                )
+                              : _l(
+                                  'Felrakás befejezése',
+                                  'Finish pickup',
+                                  'Beladung abschließen',
+                                ))
+                          : (stop.type == 'delivery'
                           ? _l(
                               'Indulás a lerakóra',
                               'Go to delivery',
@@ -2071,14 +2208,24 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                 const SizedBox(height: 16),
                 FilledButton.icon(
                   key: const Key('flow-primary-navigation'),
-                  onPressed: _actionBusy ? null : _openMaps,
+                  onPressed: _actionBusy
+                      ? null
+                      : () => _needsRegistration(stop) && stop.hasKnownRegistrationPoint
+                          ? unawaited(_openRegistrationMaps(stop))
+                          : unawaited(_openMaps()),
                   icon: const Icon(Icons.navigation_rounded, size: 26),
                   label: Text(
-                    _l(
-                      'NAVIGÁCIÓ INDÍTÁSA',
-                      'START NAVIGATION',
-                      'NAVIGATION STARTEN',
-                    ),
+                    _needsRegistration(stop) && stop.hasKnownRegistrationPoint
+                        ? _l(
+                            'NAVIGÁCIÓ A REGISZTRÁCIÓHOZ',
+                            'NAVIGATE TO REGISTRATION',
+                            'NAVIGATION ZUR ANMELDUNG',
+                          )
+                        : _l(
+                            'NAVIGÁCIÓ INDÍTÁSA',
+                            'START NAVIGATION',
+                            'NAVIGATION STARTEN',
+                          ),
                   ),
                   style: FilledButton.styleFrom(
                     minimumSize: const Size.fromHeight(64),
@@ -2091,6 +2238,65 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                     ),
                   ),
                 ),
+                if (_needsRegistration(stop)) ...[
+                  const SizedBox(height: 12),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF0A1D2C),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: const Color(0xFF24557D)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _l(
+                            'REGISZTRÁCIÓS REFERENCIÁK',
+                            'REGISTRATION REFERENCES',
+                            'REGISTRIERUNGSREFERENZEN',
+                          ),
+                          style: const TextStyle(
+                            color: _blue,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: .9,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        for (final ref in _registrationReferences(job, stop))
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 4),
+                            child: SelectableText(
+                              ref,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 18,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ),
+                        if (stop.hasKnownRegistrationPoint)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 7),
+                            child: Text(
+                              _l(
+                                '✓ Ismert regisztrációs pont · ${stop.registrationConfirmations} megerősítés',
+                                '✓ Known registration point · ${stop.registrationConfirmations} confirmations',
+                                '✓ Bekannter Registrierungspunkt · ${stop.registrationConfirmations} Bestätigungen',
+                              ),
+                              style: const TextStyle(
+                                color: _green,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
                 if (stop.phone.trim().isNotEmpty) ...[
                   const SizedBox(height: 9),
                   OutlinedButton.icon(
@@ -2120,35 +2326,49 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                       ? null
                       : () => unawaited(_runPrimaryStopAction()),
                   icon: Icon(
-                    _isStopArrived(stop)
-                        ? Icons.task_alt_rounded
-                        : Icons.location_on_rounded,
+                    _needsRegistration(stop)
+                        ? Icons.how_to_reg_rounded
+                        : _isStopArrived(stop)
+                            ? Icons.task_alt_rounded
+                            : Icons.location_on_rounded,
                   ),
                   label: Text(
-                    _isStopArrived(stop)
-                        ? (stop.type == 'delivery'
-                            ? _l(
-                                'LERAKÁS KÉSZ',
-                                'DELIVERY COMPLETE',
-                                'ENTLADUNG FERTIG',
-                              )
+                    _needsRegistration(stop)
+                        ? _l(
+                            'BEJELENTKEZTEM A REGISZTRÁCIÓN',
+                            'I CHECKED IN AT REGISTRATION',
+                            'ICH HABE MICH ANGEMELDET',
+                          )
+                        : _isStopArrived(stop)
+                            ? (stop.type == 'delivery'
+                                ? _l(
+                                    'LERAKÁS KÉSZ',
+                                    'DELIVERY COMPLETE',
+                                    'ENTLADUNG FERTIG',
+                                  )
+                                : _l(
+                                    'FELRAKÁS KÉSZ',
+                                    'PICKUP COMPLETE',
+                                    'BELADUNG FERTIG',
+                                  ))
                             : _l(
-                                'FELRAKÁS KÉSZ',
-                                'PICKUP COMPLETE',
-                                'BELADUNG FERTIG',
-                              ))
-                        : _l(
-                            'MEGÉRKEZTEM',
-                            'I HAVE ARRIVED',
-                            'ANGEKOMMEN',
-                          ),
+                                'MEGÉRKEZTEM',
+                                'I HAVE ARRIVED',
+                                'ANGEKOMMEN',
+                              ),
                   ),
                   style: FilledButton.styleFrom(
                     minimumSize: const Size.fromHeight(60),
-                    backgroundColor: _isStopArrived(stop) ? _green : const Color(0xFF0F3852),
-                    foregroundColor: _isStopArrived(stop)
-                        ? const Color(0xFF001B12)
-                        : Colors.white,
+                    backgroundColor: _needsRegistration(stop)
+                        ? const Color(0xFFE6B85C)
+                        : _isStopArrived(stop)
+                            ? _green
+                            : const Color(0xFF0F3852),
+                    foregroundColor: _needsRegistration(stop)
+                        ? const Color(0xFF201600)
+                        : _isStopArrived(stop)
+                            ? const Color(0xFF001B12)
+                            : Colors.white,
                     textStyle: const TextStyle(
                       fontWeight: FontWeight.w900,
                       fontSize: 15,
