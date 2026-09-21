@@ -108,6 +108,7 @@ class DriverPushService {
         description: 'Sofőr és főnökség közötti üzenetek',
         importance: Importance.max,
         playSound: true,
+        sound: RawResourceAndroidNotificationSound('aims_new_message'),
         enableVibration: true,
       ),
     );
@@ -302,6 +303,7 @@ class DriverPushService {
         description: 'Sofőr és főnökség közötti üzenetek',
         importance: Importance.max,
         playSound: true,
+        sound: RawResourceAndroidNotificationSound('aims_new_message'),
         enableVibration: true,
       ),
     );
@@ -316,6 +318,7 @@ class DriverPushService {
       importance: Importance.max,
       priority: Priority.max,
       playSound: true,
+      sound: RawResourceAndroidNotificationSound('aims_new_message'),
       enableVibration: true,
       category: AndroidNotificationCategory.message,
       visibility: NotificationVisibility.public,
