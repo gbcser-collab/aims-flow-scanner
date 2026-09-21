@@ -307,6 +307,12 @@ function aims_db(): PDO {
     if (!isset($jobColumns['order_payload_json'])) {
         $pdo->exec('ALTER TABLE jobs ADD COLUMN order_payload_json TEXT');
     }
+    if (!isset($jobColumns['deleted_at'])) {
+        $pdo->exec('ALTER TABLE jobs ADD COLUMN deleted_at TEXT');
+    }
+    if (!isset($jobColumns['delete_reason'])) {
+        $pdo->exec('ALTER TABLE jobs ADD COLUMN delete_reason TEXT');
+    }
 
     $stopColumns = [];
     foreach ($pdo->query('PRAGMA table_info(job_stops)')->fetchAll(PDO::FETCH_ASSOC) as $column) {
