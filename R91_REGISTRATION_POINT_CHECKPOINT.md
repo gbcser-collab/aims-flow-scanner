@@ -86,3 +86,30 @@ A sofőr fő folyamata:
 - Legyen audit: link generálva, elküldve, első megnyitás, további megnyitások, lejárat/visszavonás, CMR elküldve/hibás küldés.
 - Adminból lehessen a linket kézzel azonnal visszavonni és új linket generálni.
 - Biztonság: token csak hash formában legyen tárolva; noindex/noarchive; rövid cache tiltás; rate limit; nincs publikus járműlista.
+
+
+## CMR PRO scanner – 2026-09-21
+Appoldali fejlesztés:
+- CMR kamera veryHigh felbontással indul, high/medium fallbackkal.
+- Egyetlen fotóból automatikus dokumentum-crop és perspektíva-korrekció készül.
+- Erősebb papírfehérítés/kontrasztjavítás és magasabb JPEG minőség.
+- A jobb alsó CMR aláírás/pecsét zónából külön bizonyító JPEG készül.
+- Az aláírás-zónán belül tinta/pecsét tartalom keresése és biztonsági ráhagyásos crop működik.
+- A signature crop felismerési confidence értéket kap.
+- Review képernyőn külön látható az aláírás/pecsét előnézet és confidence.
+- Mentéskor automatikus A4 PDF készül a teljes kiegyenesített CMR-ből.
+- A helyi CMR rekord együtt kezeli: teljes JPG + A4 PDF + signature/stamp JPG.
+- Megosztáskor elsődlegesen PDF + külön signature/stamp kép kerül átadásra.
+- CMR sync payload visszafelé kompatibilis teljes JPG-t is tart, plusz PDF, signatureImage és signatureConfidence mezőt.
+
+Még nyitott a CMR PRO-hoz:
+- A live /api/cmr/sync backend oldalon a PDF + signatureImage tartós tárolását és a megbízói e-mail két csatolmányát be kell kötni.
+- Valós CMR mintákkal külön aláírás/pecsét crop pontossági teszt szükséges.
+- Alacsony confidence esetére explicit „ellenőrizd / fotózd újra” UX finomhangolás javasolt.
+
+## Megjelenés / éjszakai mód – felvett prioritás
+- AUTOmata / VILÁGOS / SÖTÉT mód.
+- Automatikus módban GPS + helyi idő alapján nappal/éjszaka megkülönböztetés.
+- GPS nélkül időalapú fallback.
+- Éjszaka az alkalmazás fényereje legfeljebb kb. 35%, a rendszer egészének fényerejét nem írja át.
+- Nappal az alkalmazás visszaadja a fényerő-kezelést a rendszernek.
