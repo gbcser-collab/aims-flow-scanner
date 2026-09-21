@@ -124,7 +124,10 @@ if($action==='arrived'){
         $remaining=$pdo->prepare('SELECT COUNT(*) FROM job_stops WHERE job_id=:job AND completed_at IS NULL');
         $remaining->execute([':job'=>$stop['job_id']]);
         if((int)$remaining->fetchColumn()===0){
-            $done=$pdo->prepare('UPDATE jobs SET status="completed",updated_at=:now WHERE id=:job');
+            // R92 document gate: completing the final stop does not close the
+            // transport yet. Keep it visible to the driver until the required
+            // CMR/document has been captured locally.
+            $done=$pdo->prepare('UPDATE jobs SET status="document_pending",updated_at=:now WHERE id=:job AND status="active"');
             $done->execute([':now'=>$updatedStamp,':job'=>$stop['job_id']]);
         }else{
             $touch=$pdo->prepare('UPDATE jobs SET updated_at=:now WHERE id=:job');
