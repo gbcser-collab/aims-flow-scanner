@@ -155,11 +155,13 @@ jobs:
       - name: Document gate lifecycle E2E
         run: python3 ci/r92_document_gate_test.py
 
-      - name: Build debug APK
+      - name: Build installable R92 APK
+        env:
+          AIMS_TRACKING_TOKEN: ${{ secrets.AIMS_TRACKING_TOKEN }}
         run: |
           flutter build apk --debug \
-            --dart-define=AIMS_E2E_TEST=true \
-            --dart-define=AIMS_TRACKING_TOKEN=ci-test-token
+            --dart-define=AIMS_TRACKING_BASE_URL=https://logistic-aims.hu/api/aims-tracking \
+            --dart-define=AIMS_TRACKING_TOKEN="${AIMS_TRACKING_TOKEN}"
 
       - name: APK integrity
         run: |
