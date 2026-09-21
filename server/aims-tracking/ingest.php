@@ -140,14 +140,145 @@ function aims_process_arrivals(
         );
         $events++;
 
-        $remaining = $pdo->prepare('SELECT COUNT(*) FROM job_stops WHERE job_id = :job AND arrival_notified_at IS NULL');
-        $remaining->execute([':job' => $stop['job_id']]);
-        if ((int)$remaining->fetchColumn() === 0) {
-            $done = $pdo->prepare('UPDATE jobs SET status = "completed", updated_at = :updated WHERE id = :id');
-            $done->execute([':updated' => gmdate(DateTimeInterface::ATOM), ':id' => $stop['job_id']]);
-        }
     }
     return $events;
+}
+
+
+function aims_process_job_waiting(
+    PDO $pdo,
+    array $vehicle,
+    float $lat,
+    float $lng,
+    ?float $accuracy,
+    DateTimeImmutable $captured,
+    bool $emitNotifications = true
+): int {
+    if (!$emitNotifications) return 0;
+
+    $stmt = $pdo->prepare('SELECT s.*, j.reference, j.order_payload_json
+        FROM job_stops s
+        JOIN jobs j ON j.id = s.job_id
+        WHERE j.vehicle_id = :vehicle
+          AND j.status = "active"
+          AND s.arrival_notified_at IS NOT NULL
+          AND s.completed_at IS NULL
+        ORDER BY j.id ASC, s.stop_order ASC');
+    $stmt->execute([':vehicle' => $vehicle['id']]);
+
+    $candidate = null;
+    $candidateDistance = null;
+    foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $stop) {
+        $distance = aims_distance_m(
+            $lat,
+            $lng,
+            (float)$stop['latitude'],
+            (float)$stop['longitude']
+        );
+        $radius = max(
+            500.0,
+            aims_geofence_radius_m((float)$stop['radius_m'], $accuracy) + 250.0
+        );
+        if ($distance > $radius) continue;
+        if ($candidate === null || $distance < $candidateDistance) {
+            $candidate = $stop;
+            $candidateDistance = $distance;
+        }
+    }
+
+    if ($candidate === null) return 0;
+
+    try {
+        $arrivedAt = new DateTimeImmutable((string)$candidate['arrival_notified_at']);
+    } catch (Throwable) {
+        return 0;
+    }
+
+    $waitingSeconds = max(
+        0,
+        $captured->getTimestamp() - $arrivedAt->getTimestamp()
+    );
+    $lastSlot = (int)($candidate['waiting_alert_slot'] ?? 0);
+    $due = aims_due_job_waiting_slot($waitingSeconds, $lastSlot);
+    if ($due === null) return 0;
+
+    $orderData = [];
+    if (!empty($candidate['order_payload_json'])) {
+        $decoded = json_decode((string)$candidate['order_payload_json'], true);
+        if (is_array($decoded)) $orderData = $decoded;
+    }
+
+    $referenceKeys = $candidate['stop_type'] === 'pickup'
+        ? ['pickup_reference', 'customer_reference']
+        : ['delivery_reference', 'customer_reference'];
+    $displayReference = '';
+    foreach ($referenceKeys as $key) {
+        $value = trim((string)($orderData[$key] ?? ''));
+        if ($value !== '') {
+            $displayReference = $value;
+            break;
+        }
+    }
+    if ($displayReference === '') {
+        $displayReference = trim((string)$candidate['reference']);
+    }
+
+    $minutes = (int)$due['minutes'];
+    $slot = (int)$due['slot'];
+    $plate = trim((string)($vehicle['label'] ?? '')) !== ''
+        ? (string)$vehicle['label']
+        : (string)$vehicle['plate'];
+    $company = trim((string)($candidate['company'] ?? ''));
+    $address = trim((string)($candidate['address'] ?? ''));
+    $kind = $candidate['stop_type'] === 'pickup' ? 'felrakón' : 'lerakón';
+
+    $title = "$plate még várakozik a $kind";
+    $bodyParts = [];
+    if ($company !== '') $bodyParts[] = $company;
+    if ($address !== '') $bodyParts[] = $address;
+    $bodyParts[] = 'Referencia: ' . $displayReference;
+    $bodyParts[] = 'Várakozás: ' . $minutes . ' perc';
+    $body = implode(' • ', $bodyParts);
+
+    aims_notify(
+        $pdo,
+        (int)$vehicle['admin_user_id'],
+        (int)$vehicle['id'],
+        'job_waiting',
+        $minutes >= 60 ? 'warning' : 'info',
+        $title,
+        $body,
+        'job_waiting:' . (int)$candidate['id'] . ':' . $slot,
+        [
+            'jobId' => (int)$candidate['job_id'],
+            'jobReference' => (string)$candidate['reference'],
+            'displayReference' => $displayReference,
+            'stopId' => (int)$candidate['id'],
+            'stopType' => (string)$candidate['stop_type'],
+            'company' => $company,
+            'address' => $address,
+            'arrivedAt' => $arrivedAt->format(DateTimeInterface::ATOM),
+            'waitingMinutes' => $minutes,
+            'latitude' => $lat,
+            'longitude' => $lng,
+            'accuracy' => $accuracy,
+            'distanceMeters' => $candidateDistance === null
+                ? null
+                : round((float)$candidateDistance, 1),
+        ]
+    );
+
+    $update = $pdo->prepare('UPDATE job_stops
+        SET waiting_alert_slot = :slot, waiting_alert_last_at = :at
+        WHERE id = :id AND waiting_alert_slot < :slot2');
+    $update->execute([
+        ':slot' => $slot,
+        ':at' => $captured->format(DateTimeInterface::ATOM),
+        ':id' => $candidate['id'],
+        ':slot2' => $slot,
+    ]);
+
+    return 1;
 }
 
 function aims_process_stationary(
@@ -293,11 +424,15 @@ try {
 
     $duplicatePoint = $pointKey !== '' && $stmt->rowCount() === 0;
     $arrivalEvents = 0;
+    $waitingEvents = 0;
     $stationaryEvents = 0;
     $borderEvents = 0;
     if ($vehicle !== null && !$duplicatePoint) {
         $arrivalEvents = aims_process_arrivals(
             $pdo, $vehicle, (float)$lat, (float)$lng, $accuracy, $speedMps, $captured, !$delayedReplay
+        );
+        $waitingEvents = aims_process_job_waiting(
+            $pdo, $vehicle, (float)$lat, (float)$lng, $accuracy, $captured, !$delayedReplay
         );
         $stationaryEvents = aims_process_stationary(
             $pdo, $vehicle, (float)$lat, (float)$lng, $accuracy, $speedMps, $captured, !$delayedReplay
@@ -359,6 +494,7 @@ aims_json([
     'registeredVehicle' => $vehicle !== null,
     'duplicatePoint' => $duplicatePoint,
     'arrivalEvents' => $arrivalEvents,
+    'waitingEvents' => $waitingEvents,
     'stationaryEvents' => $stationaryEvents,
     'borderEvents' => $borderEvents,
     'countryCode' => $countryCode !== '' ? $countryCode : null,
