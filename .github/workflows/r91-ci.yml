@@ -5,6 +5,7 @@ on:
     branches:
       - aims-flow-driver-v1-r91-invoice-scanner
       - aims-flow-driver-v1-r92-driver-first-all-in-one
+      - aims-flow-r93-stability-hardening
   workflow_dispatch:
 
 concurrency:
@@ -141,6 +142,9 @@ jobs:
 
       - name: Unit tests
         run: flutter test --reporter expanded
+
+      - name: R93 signal and message crash regression
+        run: flutter test test/r93_signal_message_regression_test.dart --reporter expanded
 
       - name: PHP syntax
         run: |
