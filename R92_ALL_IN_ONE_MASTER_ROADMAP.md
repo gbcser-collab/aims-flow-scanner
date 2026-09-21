@@ -300,3 +300,19 @@ R92-ben bezárandó offline rések:
 
 Végső cél:
 A sofőrnek ne kelljen eldöntenie, van-e internet. Minden érvényes műveletet azonnal helyben elfogad a Flow, és a hálózat visszatérésekor idempotensen szinkronizál.
+
+
+### 16.8 Érkezés előtti briefing — ELFOGADVA / MÓDOSÍTVA
+A Flow a cél előtt rövid, vezetés közben is könnyen érthető hangos briefinget adjon.
+
+Példa:
+„BMW Dingolfing következik. Ismert regisztrációs pont áll rendelkezésre. A bejelentkezéshez szükséges referenciaszámokat a megérkezés és a bejelentkezés megerősítése után mutatom.”
+
+Szabályok:
+- vezetés közben ne olvasson fel hosszú referenciaszámokat;
+- előre csak azt jelezze, hogy ismert regisztrációs pont van;
+- a konkrét referenciaszámok csak a megfelelő munkafázisban jelenjenek meg;
+- a briefing tartalmazhatja a cég nevét, várost és azt, hogy ismert-e a regisztrációs pont;
+- ha nincs tanult regisztrációs pont, ezt ne állítsa;
+- a briefing ne takarja el a Waze/navigációt, csak hangos jelzés legyen;
+- a referenciaszám megjelenítése a megérkezési/regisztrációs folyamat kontrollált lépéséhez kötődjön.
