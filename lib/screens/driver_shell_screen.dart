@@ -106,6 +106,59 @@ class _PendingDriverSignal {
   }
 }
 
+
+class _PendingRegistrationPoint {
+  const _PendingRegistrationPoint({
+    required this.jobId,
+    required this.stopId,
+    required this.latitude,
+    required this.longitude,
+    required this.createdAt,
+    this.accuracy,
+  });
+
+  final int jobId;
+  final int stopId;
+  final double latitude;
+  final double longitude;
+  final double? accuracy;
+  final DateTime createdAt;
+
+  Map<String, dynamic> toJson() => {
+        'jobId': jobId,
+        'stopId': stopId,
+        'latitude': latitude,
+        'longitude': longitude,
+        'accuracy': accuracy,
+        'createdAt': createdAt.toUtc().toIso8601String(),
+      };
+
+  static _PendingRegistrationPoint? fromJson(Object? value) {
+    if (value is! Map) return null;
+    final jobId = (value['jobId'] as num?)?.toInt() ?? 0;
+    final stopId = (value['stopId'] as num?)?.toInt() ?? 0;
+    final latitude = (value['latitude'] as num?)?.toDouble();
+    final longitude = (value['longitude'] as num?)?.toDouble();
+    final accuracy = (value['accuracy'] as num?)?.toDouble();
+    final createdAt = DateTime.tryParse(value['createdAt']?.toString() ?? '');
+    if (jobId < 1 ||
+        stopId < 1 ||
+        latitude == null ||
+        longitude == null ||
+        createdAt == null) {
+      return null;
+    }
+    return _PendingRegistrationPoint(
+      jobId: jobId,
+      stopId: stopId,
+      latitude: latitude,
+      longitude: longitude,
+      accuracy: accuracy,
+      createdAt: createdAt.toUtc(),
+    );
+  }
+}
+
 enum _SignalDelivery { sent, queued, failed }
 
 class DriverShellScreen extends StatefulWidget {
@@ -127,6 +180,8 @@ class _DriverShellScreenState extends State<DriverShellScreen>
   static const _prefsJobsCachePrefix = 'aims_driver_jobs_cache_v1_';
   static const _prefsJobsCacheAtPrefix = 'aims_driver_jobs_cache_at_v1_';
   static const _prefsPendingSignalPrefix = 'aims_pending_driver_signals_v1_';
+  static const _prefsPendingRegistrationPrefix =
+      'aims_pending_registration_points_v1_';
   static const _prefsJobCmrPrefix = 'aims_job_cmr_v1_';
 
   final _api = const DriverApiService();
@@ -167,6 +222,9 @@ class _DriverShellScreenState extends State<DriverShellScreen>
   bool _pendingSignalFlushBusy = false;
   Timer? _pendingSignalRetryTimer;
   int _signalNonce = 0;
+  final List<_PendingRegistrationPoint> _pendingRegistrationPoints = [];
+  bool _pendingRegistrationFlushBusy = false;
+  Timer? _pendingRegistrationRetryTimer;
   final TextEditingController _officeMessageController =
       TextEditingController();
   List<DriverChatMessage> _officeMessages = const [];
@@ -251,6 +309,9 @@ class _DriverShellScreenState extends State<DriverShellScreen>
 
   String _jobCmrPrefsKey([String? plate]) =>
       '$_prefsJobCmrPrefix${_normalizedPlateKey(plate)}';
+
+  String _pendingRegistrationPrefsKey([String? plate]) =>
+      '$_prefsPendingRegistrationPrefix${_normalizedPlateKey(plate)}';
 
   bool _hasJobCmr(DriverJob job) => _jobCmrIds.containsKey(job.id);
 
@@ -398,6 +459,157 @@ class _DriverShellScreenState extends State<DriverShellScreen>
     );
   }
 
+
+
+  Future<void> _loadPendingRegistrationPoints(
+    SharedPreferences prefs,
+    String plate,
+  ) async {
+    _pendingRegistrationPoints.clear();
+    final raw = prefs.getString(_pendingRegistrationPrefsKey(plate));
+    if (raw == null || raw.trim().isEmpty) return;
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) return;
+      for (final item in decoded) {
+        final point = _PendingRegistrationPoint.fromJson(item);
+        if (point != null &&
+            !_pendingRegistrationPoints.any(
+              (existing) => existing.stopId == point.stopId,
+            )) {
+          _pendingRegistrationPoints.add(point);
+        }
+      }
+      _pendingRegistrationPoints.sort(
+        (a, b) => a.createdAt.compareTo(b.createdAt),
+      );
+    } catch (_) {
+      await prefs.remove(_pendingRegistrationPrefsKey(plate));
+    }
+  }
+
+  Future<void> _savePendingRegistrationPoints() async {
+    if (_plate.isEmpty) return;
+    final prefs = await SharedPreferences.getInstance();
+    final key = _pendingRegistrationPrefsKey();
+    if (_pendingRegistrationPoints.isEmpty) {
+      await prefs.remove(key);
+      return;
+    }
+    await prefs.setString(
+      key,
+      jsonEncode([
+        for (final point in _pendingRegistrationPoints) point.toJson(),
+      ]),
+    );
+  }
+
+  Future<void> _queueRegistrationPoint(
+    _PendingRegistrationPoint point,
+  ) async {
+    if (_pendingRegistrationPoints.any(
+      (existing) => existing.stopId == point.stopId,
+    )) {
+      return;
+    }
+    if (mounted) {
+      setState(() => _pendingRegistrationPoints.add(point));
+    } else {
+      _pendingRegistrationPoints.add(point);
+    }
+    _pendingRegistrationPoints.sort(
+      (a, b) => a.createdAt.compareTo(b.createdAt),
+    );
+    await _savePendingRegistrationPoints();
+    _schedulePendingRegistrationFlush();
+  }
+
+  void _schedulePendingRegistrationFlush({
+    Duration delay = const Duration(seconds: 30),
+  }) {
+    if (_pendingRegistrationPoints.isEmpty ||
+        _pendingRegistrationFlushBusy ||
+        _pendingRegistrationRetryTimer?.isActive == true) {
+      return;
+    }
+    _pendingRegistrationRetryTimer = Timer(delay, () {
+      _pendingRegistrationRetryTimer = null;
+      unawaited(_flushPendingRegistrationPoints());
+    });
+  }
+
+  Future<void> _flushPendingRegistrationPoints() async {
+    if (_pendingRegistrationFlushBusy ||
+        _pendingRegistrationPoints.isEmpty ||
+        _plate.isEmpty) {
+      return;
+    }
+
+    _pendingRegistrationFlushBusy = true;
+    _pendingRegistrationRetryTimer?.cancel();
+    _pendingRegistrationRetryTimer = null;
+    final deliveredStopIds = <int>[];
+    var retryNeeded = false;
+
+    try {
+      for (final point
+          in List<_PendingRegistrationPoint>.from(_pendingRegistrationPoints)) {
+        try {
+          await _api.saveRegistrationPoint(
+            plate: _plate,
+            jobId: point.jobId,
+            stopId: point.stopId,
+            latitude: point.latitude,
+            longitude: point.longitude,
+            accuracy: point.accuracy,
+          );
+          deliveredStopIds.add(point.stopId);
+        } on DriverApiException catch (error) {
+          // Arrival can itself still be in the offline stop queue. In that
+          // case registration must wait behind it instead of being discarded.
+          if (error.code == 'arrival_required') {
+            retryNeeded = true;
+            break;
+          }
+          if (const {400, 404, 409, 410, 422}.contains(error.statusCode)) {
+            deliveredStopIds.add(point.stopId);
+            continue;
+          }
+          retryNeeded = true;
+          break;
+        } on StateError {
+          retryNeeded = true;
+          break;
+        } catch (_) {
+          retryNeeded = true;
+          break;
+        }
+      }
+
+      if (deliveredStopIds.isNotEmpty) {
+        if (mounted) {
+          setState(() {
+            _pendingRegistrationPoints.removeWhere(
+              (point) => deliveredStopIds.contains(point.stopId),
+            );
+          });
+        } else {
+          _pendingRegistrationPoints.removeWhere(
+            (point) => deliveredStopIds.contains(point.stopId),
+          );
+        }
+        await _savePendingRegistrationPoints();
+        await _refreshJobs(showLoading: false);
+      }
+    } finally {
+      _pendingRegistrationFlushBusy = false;
+      if (_pendingRegistrationPoints.isNotEmpty) {
+        _schedulePendingRegistrationFlush(
+          delay: Duration(seconds: retryNeeded ? 60 : 20),
+        );
+      }
+    }
+  }
 
   Future<void> _loadPendingSignals(
     SharedPreferences prefs,
