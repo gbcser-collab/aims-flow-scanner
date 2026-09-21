@@ -70,11 +70,15 @@ class ScanProcessingResult {
     required this.outputPath,
     required this.corners,
     required this.quality,
+    this.signatureImagePath,
+    this.signatureConfidence = 0,
   });
 
   final String outputPath;
   final DocumentCorners corners;
   final ScanQuality quality;
+  final String? signatureImagePath;
+  final double signatureConfidence;
 }
 
 class CmrData {
@@ -150,6 +154,9 @@ class ScannedDocument {
     required this.imagePath,
     required this.cmr,
     required this.quality,
+    this.pdfPath,
+    this.signatureImagePath,
+    this.signatureConfidence = 0,
     this.location,
     this.syncState = CmrSyncState.pending,
     this.serverDocumentId,
@@ -165,6 +172,9 @@ class ScannedDocument {
   final String imagePath;
   final CmrData cmr;
   final ScanQuality quality;
+  final String? pdfPath;
+  final String? signatureImagePath;
+  final double signatureConfidence;
   final LocationStamp? location;
   final CmrSyncState syncState;
   final String? serverDocumentId;
@@ -178,6 +188,9 @@ class ScannedDocument {
 
   ScannedDocument copyWith({
     CmrData? cmr,
+    String? pdfPath,
+    String? signatureImagePath,
+    double? signatureConfidence,
     LocationStamp? location,
     bool clearLocation = false,
     CmrSyncState? syncState,
@@ -195,6 +208,9 @@ class ScannedDocument {
         imagePath: imagePath,
         cmr: cmr ?? this.cmr,
         quality: quality,
+        pdfPath: pdfPath ?? this.pdfPath,
+        signatureImagePath: signatureImagePath ?? this.signatureImagePath,
+        signatureConfidence: signatureConfidence ?? this.signatureConfidence,
         location: clearLocation ? null : (location ?? this.location),
         syncState: syncState ?? this.syncState,
         serverDocumentId: serverDocumentId ?? this.serverDocumentId,
@@ -209,6 +225,9 @@ class ScannedDocument {
         'id': id,
         'createdAt': createdAt.toIso8601String(),
         'imagePath': imagePath,
+        'pdfPath': pdfPath,
+        'signatureImagePath': signatureImagePath,
+        'signatureConfidence': signatureConfidence,
         'cmr': cmr.toJson(),
         'quality': {
           'brightness': quality.brightness,
@@ -241,6 +260,9 @@ class ScannedDocument {
       id: json['id'] as String,
       createdAt: DateTime.parse(json['createdAt'] as String),
       imagePath: json['imagePath'] as String,
+      pdfPath: json['pdfPath'] as String?,
+      signatureImagePath: json['signatureImagePath'] as String?,
+      signatureConfidence: (json['signatureConfidence'] as num?)?.toDouble() ?? 0,
       cmr: CmrData.fromJson(Map<String, dynamic>.from(json['cmr'] as Map)),
       quality: ScanQuality(
         brightness: (q['brightness'] as num).toDouble(),
