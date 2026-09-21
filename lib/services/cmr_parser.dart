@@ -27,6 +27,7 @@ class CmrParser {
         lines,
         3,
         const [
+          'place of delivery of the goods',
           'place of delivery',
           'lerakóhely',
           'lieu prévu pour la livraison',
@@ -39,6 +40,7 @@ class CmrParser {
         lines,
         4,
         const [
+          'place and date of taking over the goods',
           'place and date of taking over',
           'place of taking over',
           'felrakóhely',
@@ -235,6 +237,15 @@ class CmrParser {
       }
     }
     if (promptHits >= 2) return false;
+
+    const promptFragments = <String>[
+      'of the goods',
+      'the goods',
+      'des marchandises',
+      'der güter',
+      'towaru',
+    ];
+    if (promptFragments.any((fragment) => lower == fragment)) return false;
 
     return RegExp(r'[A-Za-zÀ-ž0-9]').hasMatch(v);
   }
