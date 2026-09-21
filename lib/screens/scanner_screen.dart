@@ -55,9 +55,11 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
     final generation = ++_cameraGeneration;
     await _disposeCamera();
 
-    // Samsung devices were visibly slower when veryHigh was tried first. High
-    // is still plenty for OCR and avoids a costly failed/slow first startup.
+    // CMR Pro prioritizes document detail: signatures, stamps and small
+    // reference numbers must survive perspective correction. Fall back only
+    // when the device cannot initialize the higher capture preset reliably.
     const presets = <ResolutionPreset>[
+      ResolutionPreset.veryHigh,
       ResolutionPreset.high,
       ResolutionPreset.medium,
     ];
