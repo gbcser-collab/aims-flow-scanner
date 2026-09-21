@@ -13,7 +13,7 @@ $v=$pdo->prepare('SELECT * FROM vehicles WHERE plate=:plate AND enabled=1 LIMIT 
 $v->execute([':plate'=>$plate]);
 $vehicle=$v->fetch(PDO::FETCH_ASSOC);
 if (!$vehicle) aims_json(['ok'=>true,'jobs'=>[]]);
-$j=$pdo->prepare('SELECT * FROM jobs WHERE vehicle_id=:vehicle AND status="active" ORDER BY id DESC');
+$j=$pdo->prepare('SELECT * FROM jobs WHERE vehicle_id=:vehicle AND status IN ("active","document_pending") ORDER BY id DESC');
 $j->execute([':vehicle'=>$vehicle['id']]);
 $normalizeRegistrationKey=function(string $value): string {
     $value=mb_strtolower(trim($value),'UTF-8');
