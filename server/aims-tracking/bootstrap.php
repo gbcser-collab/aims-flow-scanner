@@ -205,6 +205,26 @@ function aims_db(): PDO {
     )');
     $pdo->exec('CREATE INDEX IF NOT EXISTS idx_job_stops_job ON job_stops(job_id, stop_order)');
 
+    $pdo->exec('CREATE TABLE IF NOT EXISTS registration_points (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        company_key TEXT NOT NULL,
+        company_name TEXT NOT NULL DEFAULT "",
+        address_key TEXT NOT NULL,
+        address TEXT NOT NULL DEFAULT "",
+        stop_type TEXT NOT NULL,
+        latitude REAL NOT NULL,
+        longitude REAL NOT NULL,
+        accuracy REAL,
+        confirmations INTEGER NOT NULL DEFAULT 1,
+        last_vehicle_id INTEGER,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE(company_key, address_key, stop_type),
+        FOREIGN KEY(last_vehicle_id) REFERENCES vehicles(id) ON DELETE SET NULL
+    )');
+    $pdo->exec('CREATE INDEX IF NOT EXISTS idx_registration_points_lookup
+        ON registration_points(company_key, address_key, stop_type)');
+
     $pdo->exec('CREATE TABLE IF NOT EXISTS geocode_cache (
         address_hash TEXT PRIMARY KEY,
         address TEXT NOT NULL,
@@ -303,6 +323,12 @@ function aims_db(): PDO {
     }
     if (!isset($stopColumns['completion_source'])) {
         $pdo->exec('ALTER TABLE job_stops ADD COLUMN completion_source TEXT');
+    }
+    if (!isset($stopColumns['registration_checked_at'])) {
+        $pdo->exec('ALTER TABLE job_stops ADD COLUMN registration_checked_at TEXT');
+    }
+    if (!isset($stopColumns['registration_point_id'])) {
+        $pdo->exec('ALTER TABLE job_stops ADD COLUMN registration_point_id INTEGER');
     }
 
     $pdo->exec('CREATE TABLE IF NOT EXISTS driver_push_devices (
