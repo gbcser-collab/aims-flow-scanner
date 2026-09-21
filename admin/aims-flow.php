@@ -10,6 +10,10 @@ if($sourceId!==''){$sourceJob=portal_job_by_id($sourceId);}
 $flowPdo=aims_db();
 $flowPhoneCount=(int)$flowPdo->query('SELECT COUNT(*) FROM driver_push_devices WHERE enabled=1')->fetchColumn();
 $flowActiveJobs=(int)$flowPdo->query('SELECT COUNT(*) FROM jobs WHERE status="active"')->fetchColumn();
+$flowActiveJobRows=$flowPdo->query('SELECT j.id,j.reference,j.driver_seen_at,j.driver_accepted_at,j.updated_at,v.plate,v.label
+  FROM jobs j JOIN vehicles v ON v.id=j.vehicle_id
+  WHERE j.status="active"
+  ORDER BY j.id DESC LIMIT 100')->fetchAll(PDO::FETCH_ASSOC);
 $flowRegistrationPoints=$flowPdo->query('SELECT id,company_name,address,stop_type,latitude,longitude,accuracy,confirmations,updated_at FROM registration_points ORDER BY updated_at DESC LIMIT 200')->fetchAll(PDO::FETCH_ASSOC);
 $flowPhones=$flowPdo->query('SELECT d.device_id,d.platform,d.updated_at,d.enabled,v.plate FROM driver_push_devices d JOIN vehicles v ON v.id=d.vehicle_id ORDER BY d.updated_at DESC LIMIT 50')->fetchAll(PDO::FETCH_ASSOC);
 $flowDriverVehicles=$flowPdo->query('SELECT plate,label,enabled,created_at,driver_email,driver_language,driver_code_hash,driver_code_is_temp,driver_code_expires_at,driver_reset_status,driver_reset_requested_at FROM vehicles ORDER BY plate ASC')->fetchAll(PDO::FETCH_ASSOC);
@@ -36,6 +40,18 @@ $flowResetSignature=hash('sha256',json_encode($flowResetSnapshot,JSON_UNESCAPED_
 <button class="dispatchsend" type="submit">FUVAR KÜLDÉSE A FLOW-BA + PUSH →</button>
 </form>
 <p class="muted">Első küldéskor a rendszám automatikusan bekerül a Flow járművei közé. Ha az adott telefon már regisztrálta a rendszámot és az FCM tokent, a push azonnal megérkezik; visszaigazolásig a szerver ismételni tudja.</p></section>
+<section class="panel"><div class="panelhead"><div><small>AKTÍV FLOW-FUVAROK • TÖRLÉS</small><h2>Aktív munkák</h2></div><span class="chip <?=$flowActiveJobs?'wait':'ok'?>"><?=$flowActiveJobs?> aktív</span></div>
+<div class="table"><table><thead><tr><th>Fuvar</th><th>Jármű</th><th>Látta</th><th>Elfogadta</th><th>Frissült</th><th>Művelet</th></tr></thead><tbody>
+<?php if(!$flowActiveJobRows):?><tr><td colspan="6" class="empty">Nincs aktív Flow-fuvar.</td></tr>
+<?php else:foreach($flowActiveJobRows as $fj):?><tr>
+<td><b><?=portal_h($fj['reference'])?></b><div class="muted">#<?=intval($fj['id'])?></div></td>
+<td><b><?=portal_h(trim((string)$fj['label'])!==''?$fj['label']:$fj['plate'])?></b></td>
+<td><?=$fj['driver_seen_at']?'<span class="chip ok">LÁTTA</span>':'<span class="chip wait">NEM LÁTTA</span>'?></td>
+<td><?=$fj['driver_accepted_at']?'<span class="chip ok">ELFOGADTA</span>':'<span class="chip wait">NINCS ELFOGADVA</span>'?></td>
+<td><?=portal_h($fj['updated_at'])?></td>
+<td><form method="post" action="aims-flow-job-delete.php" onsubmit="return confirm('Biztosan törlöd ezt a Flow-fuvart? A sofőr alkalmazásából eltűnik, az auditnyom megmarad.');"><input type="hidden" name="csrf" value="<?=portal_h($csrf)?>"><input type="hidden" name="job_id" value="<?=intval($fj['id'])?>"><button class="danger" type="submit">TÖRLÉS</button></form></td>
+</tr><?php endforeach;endif;?></tbody></table></div>
+<p class="muted">A törlés soft delete: a fuvar eltűnik a sofőr aktív munkái közül, de az audit és a korábbi adatok megmaradnak.</p></section>
 <section class="panel"><div class="panelhead"><div><small>SOFŐR ↔ FŐNÖKSÉG • ÉLŐ ÜZENET</small><h2>Azonnali üzenetváltás</h2></div><span class="chip ok" id="flowMsgState">ÉLŐ</span></div>
 <div class="dispatchgrid">
 <label>Rendszám<select id="flowMsgPlate" style="width:100%;min-height:45px;border:1px solid #333;background:#090b0d;color:#fff;border-radius:10px;padding:0 12px">
