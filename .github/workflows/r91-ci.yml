@@ -138,7 +138,10 @@ jobs:
 
       - name: PHP syntax
         run: |
-          find server/aims-tracking admin -type f -name '*.php' -print0 | xargs -0 -n1 php -l
+          find server/aims-tracking admin api -type f -name '*.php' -print0 | xargs -0 -n1 php -l
+
+      - name: Job waiting rules
+        run: php server/aims-tracking/test_job_waiting.php
 
       - name: Build debug APK
         run: |
