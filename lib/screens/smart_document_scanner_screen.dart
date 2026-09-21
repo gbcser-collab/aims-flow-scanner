@@ -19,10 +19,12 @@ class SmartDocumentScannerScreen extends StatefulWidget {
   const SmartDocumentScannerScreen({
     super.key,
     required this.camera,
+    required this.plate,
     this.contextHint = '',
   });
 
   final CameraDescription camera;
+  final String plate;
   final String contextHint;
 
   @override
@@ -263,6 +265,7 @@ class _SmartDocumentScannerScreenState
           rawText: rawText,
           initialType: type,
           confidence: classification.confidence,
+          plate: widget.plate,
         ),
       ),
     );
