@@ -10,6 +10,8 @@ function assert_same(mixed $expected, mixed $actual, string $label): void {
     }
 }
 
+assert_same(20 * 60, aims_effective_waiting_seconds(80 * 60, 60 * 60), 'rest time excluded from waiting');
+assert_same(0, aims_effective_waiting_seconds(20 * 60, 30 * 60), 'rest cannot produce negative waiting');
 assert_same(null, aims_due_job_waiting_slot(19 * 60 + 59, 0), 'no alert before 20 minutes');
 assert_same(['slot' => 1, 'minutes' => 20], aims_due_job_waiting_slot(20 * 60, 0), '20 minute alert');
 assert_same(null, aims_due_job_waiting_slot(39 * 60 + 59, 1), 'no duplicate before 40 minutes');
