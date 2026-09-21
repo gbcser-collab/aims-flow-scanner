@@ -435,7 +435,14 @@ function aims_send_driver_direct_push(
                 'data' => $data,
                 'android' => [
                     'priority' => 'high',
-                    'notification' => ['sound' => 'default'],
+                    'notification' => [
+                        'sound' => (($payload['type'] ?? '') === 'admin_message')
+                            ? 'aims_new_message'
+                            : 'default',
+                        'channel_id' => (($payload['type'] ?? '') === 'admin_message')
+                            ? 'aims_driver_messages'
+                            : 'aims_admin_alerts',
+                    ],
                 ],
                 'apns' => [
                     'headers' => ['apns-priority' => '10'],
