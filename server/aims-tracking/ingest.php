@@ -195,9 +195,9 @@ function aims_process_job_waiting(
     }
 
     $pausedSeconds = max(0, (int)($candidate['waiting_paused_seconds'] ?? 0));
-    $waitingSeconds = max(
-        0,
-        $captured->getTimestamp() - $arrivedAt->getTimestamp() - $pausedSeconds
+    $waitingSeconds = aims_effective_waiting_seconds(
+        $captured->getTimestamp() - $arrivedAt->getTimestamp(),
+        $pausedSeconds
     );
     $lastSlot = (int)($candidate['waiting_alert_slot'] ?? 0);
     $due = aims_due_job_waiting_slot($waitingSeconds, $lastSlot);
