@@ -76,6 +76,17 @@ function aims_db(): PDO {
         created_at TEXT NOT NULL,
         FOREIGN KEY(admin_user_id) REFERENCES admin_users(id)
     )');
+    $vehicleColumns = [];
+    foreach ($pdo->query('PRAGMA table_info(vehicles)')->fetchAll(PDO::FETCH_ASSOC) as $column) {
+        $vehicleColumns[(string)$column['name']] = true;
+    }
+    if (!isset($vehicleColumns['rest_mode_started_at'])) {
+        $pdo->exec('ALTER TABLE vehicles ADD COLUMN rest_mode_started_at TEXT');
+    }
+    if (!isset($vehicleColumns['rest_mode_until'])) {
+        $pdo->exec('ALTER TABLE vehicles ADD COLUMN rest_mode_until TEXT');
+    }
+
     $pdo->exec('CREATE TABLE IF NOT EXISTS points (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         device_id TEXT NOT NULL,
@@ -350,6 +361,12 @@ function aims_db(): PDO {
     }
     if (!isset($stopColumns['waiting_alert_last_at'])) {
         $pdo->exec('ALTER TABLE job_stops ADD COLUMN waiting_alert_last_at TEXT');
+    }
+    if (!isset($stopColumns['waiting_pause_started_at'])) {
+        $pdo->exec('ALTER TABLE job_stops ADD COLUMN waiting_pause_started_at TEXT');
+    }
+    if (!isset($stopColumns['waiting_paused_seconds'])) {
+        $pdo->exec('ALTER TABLE job_stops ADD COLUMN waiting_paused_seconds INTEGER NOT NULL DEFAULT 0');
     }
 
     $pdo->exec('CREATE TABLE IF NOT EXISTS driver_messages (
