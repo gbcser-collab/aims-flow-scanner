@@ -221,4 +221,3 @@ aims_rate_limit('flow-native-login',$key,6,900,true);
 usleep(250000);
 flow_reply(['ok'=>false,'error'=>'invalid_credentials'],401);
 
-[executed on device: GABOR-PC (4f5060cc-3a10-4200-947d-55b7a0fc1e22)]
