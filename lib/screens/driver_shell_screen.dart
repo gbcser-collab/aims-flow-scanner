@@ -161,7 +161,6 @@ class _DriverShellScreenState extends State<DriverShellScreen>
   final Map<int, String> _jobCmrIds = {};
   final Map<int, CmrSyncState> _jobCmrStates = {};
   bool _documentRefreshBusy = false;
-  bool _networkOnline = true;
   bool _pendingStopFlushBusy = false;
   Timer? _pendingStopRetryTimer;
   final List<_PendingDriverSignal> _pendingSignals = [];
@@ -265,9 +264,6 @@ class _DriverShellScreenState extends State<DriverShellScreen>
         !_hasOpenStop(job) &&
         !_hasJobCmr(job);
   }
-
-  bool get _hasQueuedJobCmr =>
-      _jobCmrStates.values.any(_isQueuedCmrState);
 
   Future<void> _loadJobCmrLinks(
     SharedPreferences prefs,
@@ -1005,7 +1001,6 @@ class _DriverShellScreenState extends State<DriverShellScreen>
       setState(() {
         _jobs = jobs;
         _loading = false;
-        _networkOnline = true;
         _message = null;
       });
       await _refreshJobCmrStates();
@@ -1014,7 +1009,6 @@ class _DriverShellScreenState extends State<DriverShellScreen>
       if (!mounted || generation != _refreshGeneration) return;
       setState(() {
         _loading = false;
-        _networkOnline = false;
         _message = _jobs.isNotEmpty
             ? _l(
                 'Nincs stabil kapcsolat. A legutóbbi mentett fuvaradatot mutatom.',
