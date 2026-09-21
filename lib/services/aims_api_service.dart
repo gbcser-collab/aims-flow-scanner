@@ -69,6 +69,17 @@ class AimsApiService {
     final image = File(document.imagePath);
     if (!await image.exists()) throw const FileSystemException('A mentett CMR-kép nem található.');
     final bytes = await image.readAsBytes();
+
+    Map<String, dynamic>? encodeOptionalFile(String? path, String mimeType) {
+      if (path == null || path.trim().isEmpty) return null;
+      final file = File(path);
+      if (!file.existsSync()) return null;
+      return {
+        'mimeType': mimeType,
+        'base64': base64Encode(file.readAsBytesSync()),
+      };
+    }
+
     final payload = <String, dynamic>{
       'localId': document.id,
       'deviceId': identity.deviceId,
@@ -76,7 +87,14 @@ class AimsApiService {
       'cmr': document.cmr.toJson(),
       'qualityScore': document.quality.score,
       'location': document.location?.toJson(),
+      // Backwards-compatible full-page JPEG.
       'image': {'mimeType': 'image/jpeg', 'base64': base64Encode(bytes)},
+      'pdf': encodeOptionalFile(document.pdfPath, 'application/pdf'),
+      'signatureImage': encodeOptionalFile(
+        document.signatureImagePath,
+        'image/jpeg',
+      ),
+      'signatureConfidence': document.signatureConfidence,
     };
     final response = await http
         .post(
