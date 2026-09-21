@@ -1,0 +1,171 @@
+# AIMS Flow R92 – DRIVER FIRST ALL-IN-ONE MASTER ROADMAP
+
+Dátum: 2026-09-21
+Alap: R91 teljes aktuális fejlesztési állapota
+Cél: egyetlen összefogott, production-ready, sofőrbarát Flow ág.
+
+## 1. Fuvarmegbízás → Flow
+- Partner/Flow Portálból PDF/megbízás adatainak kiküldése a Flow appba.
+- Dupla kattintás ne hozzon létre új munkát.
+- Sofőr push: új fuvar érkezett.
+- Pushból közvetlenül a konkrét fuvar nyíljon meg.
+- Fuvar elfogadása után NAVIGÁCIÓ A FELRAKÓRA.
+- Felrakó cég + város + cím, lerakó cég + város + cím jól látható.
+- GPS-koordináta + olvasható cím együtt jelenjen meg.
+- Fuvar törölhető legyen adminból/Flow Portálból, naplózott soft delete-tel.
+- Régi/hibás 3 munka ne maradjon örökké a sofőrnél.
+
+## 2. Fuvarmegbízás e-mail visszaigazolás
+- A külső címzett először ELOLVASOM, utána ELFOGADOM lépést kap.
+- A dokumentum/munka csak ezen a kontrollált folyamaton keresztül nyíljon meg.
+- Mindkét művelet menjen vissza e-mail/audit eseményként.
+- Nyitás, olvasás, elfogadás időpontja legyen naplózva.
+
+## 3. Registration Point Learning – PRIORITÁS
+- GPS érzékeli, hogy a sofőr a felrakó/lerakó környezetében van.
+- MEGÉRKEZTEM megerősítés.
+- Következő kötelező képernyő: BEJELENTKEZÉS A REGISZTRÁCIÓHOZ.
+- A szükséges pickup/delivery/customer referencia jól látható.
+- BEJELENTKEZTEM A REGISZTRÁCIÓN gombnál aktuális GPS mentése.
+- Cég + cím + pickup/delivery típus alapján tanult regisztrációs pont.
+- Több sofőr/megerősítés finomítja a pontot.
+- Következő azonos telephelyes fuvarnál NAVIGÁCIÓ A REGISZTRÁCIÓHOZ.
+- Flow adminban pont, megerősítések száma, utolsó frissítés látható.
+
+## 4. Sofőrbarát hangos folyamat
+- Új fuvar push: férfi gépi hang.
+- Navigáció indításakor hangos visszajelzés.
+- Érkezési zónában hangos kérés: erősítse meg az érkezést.
+- MEGÉRKEZTEM után hangos regisztrációs utasítás.
+- Felrakás/lerakás végén köszönő hang.
+- Ha van további munka: további jó utat / következő feladat.
+- Ha nincs további munka: kulturált záróüzenet.
+- A fontos gombnyomások emberi, rövid visszajelzést kapjanak.
+
+## 5. GPS / navigáció finomhangolás
+- Koordinátára navigálás, cím mindig látható alatta.
+- Ismert regisztrációs pont külön célpont.
+- Partnerenként/telephelyenként tanult pontok.
+- Offline/gyenge adatkapcsolat esetén is a már letöltött cím/koordináta elérhető.
+- Navigációs fallback natív térkép → Google Maps web.
+- Cél: a sofőrnek ne kelljen címet másolnia vagy keresnie.
+
+## 6. Smart Document Intelligence – EGYETLEN SMART SCANNER
+- A dokumentum menüben egyetlen SMART SCANNER főgomb.
+- Egy fotó → négy sarok felismerés → perspektíva-korrekció → fehérítés → élesítés → OCR.
+- Automatikus dokumentumtípus-besorolás több jelből, confidence értékkel.
+- Típusok:
+  - CMR
+  - POD / átvételi igazolás
+  - szállítólevél
+  - számla
+  - tankolási bizonylat
+  - útdíj / matrica
+  - parkolási bizonylat
+  - vámokmány
+  - raklapcsere-papír
+  - egyéb dokumentum
+- Fuvar állapota/kontekstuksa segítse a besorolást.
+- Bizonytalan felismerésnél sofőr egy érintéssel kiválasztja a típust.
+- Felismert típus mindig kézzel módosítható.
+
+## 7. CMR PRO
+- veryHigh kamera, high/medium fallback.
+- Teljes CMR kiegyenesítve, javítva.
+- A4 PDF automatikus generálás.
+- Teljes javított JPG megőrzése.
+- Jobb alsó aláírás/pecsét zóna külön felismerése.
+- Tinta/pecsét tartalom alapján biztonsági ráhagyásos külön JPEG.
+- Signature confidence.
+- Previewban külön ellenőrizhető.
+- CMR csomag: PDF + signature/stamp JPEG + kompatibilitási teljes JPG.
+- Alacsony confidence esetén sofőr figyelmeztetés / újrafotózás lehetőség.
+
+## 8. Számla/bizonylat scanner
+- OCR.
+- Kibocsátó, dátum, végösszeg, pénznem, bizonylatszám.
+- Tankolás: liter + egységár.
+- Útdíj/matrica felismerés + ország + érvényesség.
+- Partner járműhöz automatikus feltöltés.
+- Havi mappázás.
+- Offline queue/retry fejlesztendő.
+
+## 9. Megbízói egyszeri live tracking link
+- Egyedi, hosszú tokenes link csak az adott fuvarhoz.
+- Címzett e-mail automatikusan a fuvarmegbízás e-mailjéből, küldés előtt módosítható.
+- Csak az adott fuvar pozíciója/státusza/ETA.
+- Másik munka/jármű nem látható.
+- Megnyitások naplózása.
+- Admin kézzel visszavonhatja/újragenerálhatja.
+- Utolsó munka lezárásakor token azonnal lejár.
+- Lezárás után nincs élő koordináta.
+- Végleges CMR automatikusan ugyanarra az ellenőrzött megbízói e-mailre.
+- Ha CMR később szinkronizál, küldés várakozó sorból automatikusan megtörténik.
+
+## 10. Megjelenés / Night Driver Mode
+- AUTOMATIKUS / VILÁGOS / SÖTÉT.
+- Választható már a belépőképernyőn és később a beállításokban.
+- Auto: GPS + helyi idő szerinti nappal/éjszaka; GPS nélkül időalapú fallback.
+- Éjszaka app-fényerő legfeljebb kb. 35%, nem a telefon teljes rendszerfényereje.
+- Ha rendszerfényerő 35% alatt van, ne emelje fel.
+- Nappal vissza a rendszer fényerőkezelésére.
+- Éjszakai UI ne vakítsa a sofőrt: sötétebb panelek, visszafogott kiemelések.
+
+## 11. Sofőr belépés / használhatóság
+- Rendszám felhasználónév.
+- 3 betű + 3 szám sofőrkód.
+- Sofőrnév bekérése és név szerinti hangos megszólítás.
+- Appos regisztráció.
+- Országkereső.
+- Elfelejtett kód admin jóváhagyással.
+- Admin 2FA változatlanul külön és erős.
+- Chrome/back navigáció webes partner loginban kezelve.
+
+## 12. Push / értesítések
+- Elfogadás után push törlődjön.
+- Új fuvar / új üzenet külön hangos szöveg.
+- Admin értesítési központ.
+- Járműmozgás/állás jelzések.
+- „Következő feladat” logika.
+
+## 13. Flow Portál / partner admin
+- Flow Portál branding.
+- Partner járművek, számlák, havi csoportosítás, vignette/útdíj.
+- Partner e-mail canonical account logika.
+- Törölt fiók újraregisztrálható kontrolláltan.
+- Admin értesítési harang.
+- Tanult regisztrációs pontok listája.
+- Live tracking link vezérlés.
+- CMR státusz és kiküldés állapota.
+
+## 14. Főoldali térkép – külön, szigorú scope
+- Csak térképkód/CSS módosítható.
+- Belgium/országpontok valós helyükön.
+- Semmilyen marker/label ne fedje egymást.
+- Más főoldali rész ugyanebben a térképes módosításban nem érinthető.
+
+## 15. Stabilitás / offline / QA
+- Offline stop action queue.
+- Offline driver signal queue.
+- Automatikus újraküldés.
+- Cache-elt fuvaradatok.
+- Push/fuvar idempotencia.
+- Flutter Analyze PASS.
+- Unit + fuzz.
+- PHP syntax.
+- APK build + integrity.
+- Emulator/device E2E.
+- Éles E2E külön csak kontrollált deploy után.
+
+## R92 fejlesztési sorrend
+1. Smart Document Intelligence + egységes scanner.
+2. CMR PRO teljes end-to-end.
+3. Night Driver Mode.
+4. Registration Point Learning végső teszt.
+5. Live tracking link + CMR handoff.
+6. Fuvar lifecycle/hangos UX finomhangolás.
+7. Portál/admin integráció.
+8. Teljes regresszió + APK.
+9. Célzott live deploy és éles E2E.
+
+Ez a fájl az R92 master scope. Új Flow-feladatot ehhez kell hozzáadni, hogy ne vesszen el.
