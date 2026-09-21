@@ -5,6 +5,7 @@ on:
     branches:
       - aims-flow-driver-v1-r91-invoice-scanner
       - aims-flow-driver-v1-r92-driver-first-all-in-one
+      - r92-hotfix-signals-messages-clean
   workflow_dispatch:
 
 concurrency:
