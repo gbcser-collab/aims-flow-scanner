@@ -39,6 +39,28 @@ if (!$stop) aims_json(['ok'=>false,'error'=>'stop_not_found'],404);
 if (($stop['status'] ?? '') !== 'active') aims_json(['ok'=>false,'error'=>'job_not_active'],409);
 if (empty($stop['arrival_notified_at'])) aims_json(['ok'=>false,'error'=>'arrival_required'],409);
 
+// Idempotent retry: a registration check belongs to one stop and must only
+// contribute one confirmation. Offline replay therefore returns the already
+// saved point instead of counting the same driver action again.
+if (!empty($stop['registration_checked_at']) && !empty($stop['registration_point_id'])) {
+    $existingPoint=$pdo->prepare('SELECT id,latitude,longitude,confirmations FROM registration_points WHERE id=:id LIMIT 1');
+    $existingPoint->execute([':id'=>(int)$stop['registration_point_id']]);
+    $point=$existingPoint->fetch(PDO::FETCH_ASSOC);
+    if ($point) {
+        aims_json([
+            'ok'=>true,
+            'duplicate'=>true,
+            'registrationPoint'=>[
+                'id'=>(int)$point['id'],
+                'latitude'=>(float)$point['latitude'],
+                'longitude'=>(float)$point['longitude'],
+                'confirmations'=>(int)$point['confirmations'],
+                'checkedAt'=>(string)$stop['registration_checked_at'],
+            ],
+        ]);
+    }
+}
+
 $normalizeStatic=function(string $value): string {
     $value=mb_strtolower(trim($value),'UTF-8');
     $value=preg_replace('/\s+/u',' ',$value) ?: '';
