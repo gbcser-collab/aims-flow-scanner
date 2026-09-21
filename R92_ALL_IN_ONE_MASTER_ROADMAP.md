@@ -282,3 +282,21 @@ Nyitott külön feladat:
 - Kritikus akcióhoz ne kelljen apró ikonra célozni.
 - A BAJ VAN, MEGÉRKEZTEM, REGISZTRÁCIÓ, KÉSZ és dokumentum-scan műveletek egy kézzel kényelmesen kezelhetők legyenek.
 - A végleges UX-et a teljes Driver Mode átbeszélése után zárjuk le.
+
+
+### 16.7 Offline garancia — KÓDBAN ELLENŐRIZVE / MEGLÉVŐ ALAP
+Ellenőrzött meglévő funkciók:
+- GPS tracking pontok tartós helyi queue-ban tárolódnak és kapcsolat visszatérésekor automatikusan feltöltődnek.
+- Stop események (MEGÉRKEZTEM / KÉSZ) SharedPreferences-alapú tartós queue-val és automatikus retry-val rendelkeznek.
+- Sofőrjelzések / BAJ VAN események tartós offline queue-ba kerülnek és automatikusan újraküldődnek.
+- Fuvarlista helyi cache-ből visszatölthető kapcsolat nélkül.
+- CMR scanner dokumentumok pending/failed állapotban helyben maradnak és a SyncCoordinator automatikusan újrapróbálja őket.
+
+R92-ben bezárandó offline rések:
+- Registration Point Learning GPS-mentés kapjon ugyanilyen tartós offline queue + retry mechanizmust.
+- Smart Document / számla / egyéb dokumentum feltöltés kapjon tartós offline queue + retry mechanizmust.
+- A UI egységesen mutassa: ELMENTVE A TELEFONON / SZINKRONRA VÁR / ELKÜLDVE.
+- App újraindítás után se vesszen el egyetlen függő művelet vagy dokumentum sem.
+
+Végső cél:
+A sofőrnek ne kelljen eldöntenie, van-e internet. Minden érvényes műveletet azonnal helyben elfogad a Flow, és a hálózat visszatérésekor idempotensen szinkronizál.
