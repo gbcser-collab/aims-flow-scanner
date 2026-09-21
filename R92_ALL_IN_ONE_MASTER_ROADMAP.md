@@ -316,3 +316,19 @@ Szabályok:
 - ha nincs tanult regisztrációs pont, ezt ne állítsa;
 - a briefing ne takarja el a Waze/navigációt, csak hangos jelzés legyen;
 - a referenciaszám megjelenítése a megérkezési/regisztrációs folyamat kontrollált lépéséhez kötődjön.
+
+
+### 16.9 Telephely-emlékezet / tanult regisztrációs GPS — MÁR KIFEJLESZTVE, INTEGRÁCIÓ ELLENŐRIZENDŐ
+Már elkészült:
+- a sofőr a BEJELENTKEZTEM A REGISZTRÁCIÓN gombbal rögzíti az aktuális GPS-pontot;
+- a pont cég + cím + stop-típus (felrakó/lerakó) szerint tárolódik;
+- ugyanazon telephely következő fuvarjánál a backend visszaadja a korábban tanult regisztrációs pontot;
+- az app ismert pont esetén NAVIGÁCIÓ A REGISZTRÁCIÓHOZ lehetőséget ad;
+- több megerősítés finomítja a pontot;
+- Flow adminban a tanult pontok és megerősítésszám megjeleníthető.
+
+R92-ben ellenőrizendő portálintegráció:
+- a fuvarszervező a cég/cím gépelésekor felismeri-e a már ismert telephelyet;
+- az ismert regisztrációs GPS-pont automatikusan bekerül-e az új fuvar kiküldött adatai közé;
+- a kiküldött munkában egyszerre maradjon meg az olvasható postai cím és a pontos regisztrációs GPS-koordináta;
+- eltérő felrakó/lerakó regisztrációs pontokat ne keverjen össze.
