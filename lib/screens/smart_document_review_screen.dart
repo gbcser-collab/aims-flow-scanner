@@ -143,7 +143,7 @@ class _SmartDocumentReviewScreenState extends State<SmartDocumentReviewScreen> {
                 SmartDocumentType.pod,
                 SmartDocumentType.deliveryNote,
                 SmartDocumentType.customs,
-                SmartDocumentType.pallet,
+                SmartDocumentType.palletExchange,
                 SmartDocumentType.other,
               ]
                   .map(
