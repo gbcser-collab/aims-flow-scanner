@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
@@ -231,6 +232,8 @@ class _DriverShellScreenState extends State<DriverShellScreen>
   List<DriverChatMessage> _officeMessages = const [];
   bool _officeMessagesBusy = false;
   Timer? _officeMessageTimer;
+  final Set<int> _preArrivalBriefedStops = <int>{};
+  DateTime? _lastPreArrivalCheckAt;
 
   bool _isStopCompleted(DriverStop stop) =>
       stop.completed ||
@@ -1122,8 +1125,81 @@ class _DriverShellScreenState extends State<DriverShellScreen>
     unawaited(_sync.initialize());
     _trackingSub = _tracking.statusStream.listen((status) {
       if (mounted) setState(() => _trackingStatus = status);
+      unawaited(_maybeAnnouncePreArrival(status));
     });
     unawaited(_initialize());
+  }
+
+  double _distanceMeters(
+    double lat1,
+    double lon1,
+    double lat2,
+    double lon2,
+  ) {
+    const earthRadius = 6371000.0;
+    double radians(double degrees) => degrees * math.pi / 180.0;
+    final dLat = radians(lat2 - lat1);
+    final dLon = radians(lon2 - lon1);
+    final a = math.sin(dLat / 2) * math.sin(dLat / 2) +
+        math.cos(radians(lat1)) *
+            math.cos(radians(lat2)) *
+            math.sin(dLon / 2) *
+            math.sin(dLon / 2);
+    return earthRadius * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a));
+  }
+
+  Future<void> _maybeAnnouncePreArrival(
+    VehicleTrackingStatus status,
+  ) async {
+    final now = DateTime.now();
+    final lastCheck = _lastPreArrivalCheckAt;
+    if (lastCheck != null &&
+        now.difference(lastCheck) < const Duration(seconds: 20)) {
+      return;
+    }
+    _lastPreArrivalCheckAt = now;
+
+    final job = _job;
+    final stop = _stop;
+    final position = status.lastPosition;
+    if (job == null ||
+        job.acceptedAt == null ||
+        stop == null ||
+        position == null ||
+        _isStopArrived(stop) ||
+        _preArrivalBriefedStops.contains(stop.id) ||
+        stop.latitude.abs() < 0.000001 ||
+        stop.longitude.abs() < 0.000001) {
+      return;
+    }
+
+    final distance = _distanceMeters(
+      position.latitude,
+      position.longitude,
+      stop.latitude,
+      stop.longitude,
+    );
+    if (distance > 2500 || distance < 80) return;
+
+    _preArrivalBriefedStops.add(stop.id);
+    final company = stop.company.trim().isEmpty
+        ? (stop.type == 'delivery'
+            ? _l('A lerakó', 'The delivery', 'Die Entladestelle')
+            : _l('A felrakó', 'The pickup', 'Die Ladestelle'))
+        : stop.company.trim();
+
+    final message = stop.hasKnownRegistrationPoint
+        ? _l(
+            '$company következik. Ismert regisztrációs pont áll rendelkezésre. A bejelentkezéshez szükséges referenciaszámokat a megérkezés után mutatom.',
+            '$company is next. A known registration point is available. I will show the required references after arrival.',
+            '$company ist als Nächstes dran. Ein bekannter Registrierungspunkt ist verfügbar. Die benötigten Referenzen zeige ich nach der Ankunft.',
+          )
+        : _l(
+            '$company következik. Közeledsz a következő megállóhoz. A bejelentkezéshez szükséges referenciaszámokat a megérkezés után mutatom.',
+            '$company is next. You are approaching the next stop. I will show the required references after arrival.',
+            '$company ist als Nächstes dran. Du näherst dich dem nächsten Stopp. Die benötigten Referenzen zeige ich nach der Ankunft.',
+          );
+    await _voice.announce(message);
   }
 
   Future<void> _initialize() async {
