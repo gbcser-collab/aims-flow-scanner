@@ -13,6 +13,8 @@ const _jobChannelId = 'aims_jobs';
 const _jobChannelName = 'AIMS Flow fuvarok';
 const _adminChannelId = 'aims_admin_alerts';
 const _adminChannelName = 'AIMS Flow admin értesítések';
+const _messageChannelId = 'aims_driver_messages';
+const _messageChannelName = 'AIMS Flow üzenetek';
 
 class DriverPushEvent {
   const DriverPushEvent({
@@ -35,7 +37,14 @@ Future<void> aimsDriverMessagingBackgroundHandler(RemoteMessage message) async {
   if (options != null && Firebase.apps.isEmpty) {
     await Firebase.initializeApp(options: options);
   }
-  await DriverPushService.showJobNotification(message);
+  final type = message.data['type']?.toString() ?? '';
+  if (type == 'driver_job') {
+    await DriverPushService.showJobNotification(message);
+  } else if (type == 'admin_message') {
+    await DriverPushService.showDriverMessageNotification(message);
+  } else {
+    await DriverPushService.showAdminNotification(message);
+  }
 }
 
 class DriverPushService {
@@ -92,6 +101,17 @@ class DriverPushService {
       ),
     );
 
+    await android?.createNotificationChannel(
+      const AndroidNotificationChannel(
+        _messageChannelId,
+        _messageChannelName,
+        description: 'Sofőr és főnökség közötti üzenetek',
+        importance: Importance.max,
+        playSound: true,
+        enableVibration: true,
+      ),
+    );
+
     final launch = await _notifications.getNotificationAppLaunchDetails();
     final response = launch?.notificationResponse;
     if (launch?.didNotificationLaunchApp == true && response != null) {
@@ -119,8 +139,11 @@ class DriverPushService {
     );
 
     _messageSub = FirebaseMessaging.onMessage.listen((message) async {
-      if (message.data['type']?.toString() == 'driver_job') {
+      final type = message.data['type']?.toString() ?? '';
+      if (type == 'driver_job') {
         await showJobNotification(message);
+      } else if (type == 'admin_message') {
+        await showDriverMessageNotification(message);
       } else {
         await showAdminNotification(message);
       }
@@ -251,6 +274,58 @@ class DriverPushService {
     await _notifications.show(
       notificationId,
       title.isEmpty ? 'AIMS Flow' : title,
+      body,
+      const NotificationDetails(android: details),
+      payload: jsonEncode(Map<String, dynamic>.from(message.data)),
+    );
+  }
+
+  static Future<void> showDriverMessageNotification(
+    RemoteMessage message,
+  ) async {
+    final notification = message.notification;
+    final body = notification?.body?.trim().isNotEmpty == true
+        ? notification!.body!.trim()
+        : (message.data['message']?.toString().trim() ?? '');
+    if (body.isEmpty) return;
+
+    const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
+    await _notifications.initialize(
+      const InitializationSettings(android: androidInit),
+    );
+    final android = _notifications.resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>();
+    await android?.createNotificationChannel(
+      const AndroidNotificationChannel(
+        _messageChannelId,
+        _messageChannelName,
+        description: 'Sofőr és főnökség közötti üzenetek',
+        importance: Importance.max,
+        playSound: true,
+        enableVibration: true,
+      ),
+    );
+
+    final notificationId =
+        int.tryParse(message.data['messageId']?.toString() ?? '') ??
+            (DateTime.now().millisecondsSinceEpoch ~/ 1000);
+    const details = AndroidNotificationDetails(
+      _messageChannelId,
+      _messageChannelName,
+      channelDescription: 'Sofőr és főnökség közötti üzenetek',
+      importance: Importance.max,
+      priority: Priority.max,
+      playSound: true,
+      enableVibration: true,
+      category: AndroidNotificationCategory.message,
+      visibility: NotificationVisibility.public,
+    );
+
+    await _notifications.show(
+      notificationId,
+      notification?.title?.trim().isNotEmpty == true
+          ? notification!.title!.trim()
+          : 'Főnökség · új üzenet',
       body,
       const NotificationDetails(android: details),
       payload: jsonEncode(Map<String, dynamic>.from(message.data)),
