@@ -1157,6 +1157,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
     final cachedJobs = await _loadCachedJobs(prefs, plate);
     await _loadPendingStopActions(prefs, plate);
     await _loadPendingSignals(prefs, plate);
+    await _loadPendingRegistrationPoints(prefs, plate);
     await _loadJobCmrLinks(prefs, plate);
 
     if (!mounted) return;
@@ -1234,6 +1235,9 @@ class _DriverShellScreenState extends State<DriverShellScreen>
     }
     if (_pendingSignals.isNotEmpty) {
       await _flushPendingSignals();
+    }
+    if (_pendingRegistrationPoints.isNotEmpty) {
+      await _flushPendingRegistrationPoints();
     }
     await _refreshJobs();
 
@@ -2115,14 +2119,78 @@ class _DriverShellScreenState extends State<DriverShellScreen>
         }
         return;
       }
-      final saved = await _api.saveRegistrationPoint(
-        plate: _plate,
-        jobId: job.id,
-        stopId: stop.id,
-        latitude: position.latitude,
-        longitude: position.longitude,
-        accuracy: position.accuracy,
-      );
+      Map<String, dynamic> saved;
+      try {
+        saved = await _api.saveRegistrationPoint(
+          plate: _plate,
+          jobId: job.id,
+          stopId: stop.id,
+          latitude: position.latitude,
+          longitude: position.longitude,
+          accuracy: position.accuracy,
+        );
+      } on DriverApiException catch (error) {
+        if (const {400, 404, 409, 410, 422}.contains(error.statusCode) &&
+            error.code != 'arrival_required') {
+          rethrow;
+        }
+        await _queueRegistrationPoint(
+          _PendingRegistrationPoint(
+            jobId: job.id,
+            stopId: stop.id,
+            latitude: position.latitude,
+            longitude: position.longitude,
+            accuracy: position.accuracy,
+            createdAt: DateTime.now().toUtc(),
+          ),
+        );
+        final queuedMessage = _l(
+          'Nincs stabil kapcsolat. A regisztrációs pontot elmentettem a telefonon, és automatikusan elküldöm.',
+          'No stable connection. I saved the registration point on the phone and will upload it automatically.',
+          'Keine stabile Verbindung. Der Registrierungspunkt wurde auf dem Telefon gespeichert und wird automatisch übertragen.',
+        );
+        unawaited(_voice.announce(queuedMessage));
+        if (mounted) _snack(queuedMessage);
+        return;
+      } on StateError {
+        await _queueRegistrationPoint(
+          _PendingRegistrationPoint(
+            jobId: job.id,
+            stopId: stop.id,
+            latitude: position.latitude,
+            longitude: position.longitude,
+            accuracy: position.accuracy,
+            createdAt: DateTime.now().toUtc(),
+          ),
+        );
+        final queuedMessage = _l(
+          'Nincs stabil kapcsolat. A regisztrációs pontot elmentettem a telefonon, és automatikusan elküldöm.',
+          'No stable connection. I saved the registration point on the phone and will upload it automatically.',
+          'Keine stabile Verbindung. Der Registrierungspunkt wurde auf dem Telefon gespeichert und wird automatisch übertragen.',
+        );
+        unawaited(_voice.announce(queuedMessage));
+        if (mounted) _snack(queuedMessage);
+        return;
+      } catch (_) {
+        await _queueRegistrationPoint(
+          _PendingRegistrationPoint(
+            jobId: job.id,
+            stopId: stop.id,
+            latitude: position.latitude,
+            longitude: position.longitude,
+            accuracy: position.accuracy,
+            createdAt: DateTime.now().toUtc(),
+          ),
+        );
+        final queuedMessage = _l(
+          'Nincs stabil kapcsolat. A regisztrációs pontot elmentettem a telefonon, és automatikusan elküldöm.',
+          'No stable connection. I saved the registration point on the phone and will upload it automatically.',
+          'Keine stabile Verbindung. Der Registrierungspunkt wurde auf dem Telefon gespeichert und wird automatisch übertragen.',
+        );
+        unawaited(_voice.announce(queuedMessage));
+        if (mounted) _snack(queuedMessage);
+        return;
+      }
       final confirmations = (saved['confirmations'] as num?)?.toInt() ?? 1;
       await _refreshJobs(showLoading: false);
       final message = _l(
