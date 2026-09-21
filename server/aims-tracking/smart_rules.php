@@ -72,3 +72,38 @@ function aims_inside_geofence(
     return aims_distance_m($lat, $lng, $stopLat, $stopLng)
         <= aims_geofence_radius_m($configuredRadius, $accuracy);
 }
+
+function aims_geocode_address_candidates(string $address): array {
+    $original = trim(preg_replace('/\s+/u', ' ', $address) ?: '');
+    if ($original === '') return [];
+
+    $candidates = [$original];
+
+    // Many European addresses arrive as "street house, 123 45 City".
+    // Nominatim can reject that exact shape even when the street + city is
+    // valid, so retry without only the postal-code token.
+    $withoutPostal = preg_replace(
+        '/,\s*[0-9]{3}\s?[0-9]{2}\s+(?=\S)/u',
+        ', ',
+        $original
+    );
+    $withoutPostal = trim((string)$withoutPostal);
+    if ($withoutPostal !== '' && !in_array($withoutPostal, $candidates, true)) {
+        $candidates[] = $withoutPostal;
+    }
+
+    // Accentless fallback is useful for partner PDFs and foreign keyboards,
+    // but keep the street + house number + city intact to avoid city-only
+    // false positives.
+    foreach (array_values($candidates) as $candidate) {
+        $ascii = @iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $candidate);
+        if (!is_string($ascii)) continue;
+        $ascii = trim(preg_replace('/\s+/', ' ', $ascii) ?: '');
+        if ($ascii !== '' && !in_array($ascii, $candidates, true)) {
+            $candidates[] = $ascii;
+        }
+    }
+
+    return $candidates;
+}
+
