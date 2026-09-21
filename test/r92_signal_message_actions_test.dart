@@ -48,7 +48,7 @@ void main() {
 
     await tester.dragUntilVisible(
       input,
-      find.byType(ListView).at(2),
+      find.byType(ListView),
       const Offset(0, -260),
     );
     await tester.pump(const Duration(milliseconds: 250));
