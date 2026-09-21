@@ -19,6 +19,7 @@ import '../services/scan_repository.dart';
 import '../services/sync_coordinator.dart';
 import '../services/vehicle_tracking_service.dart';
 import '../widgets/aims_flow_logo.dart';
+import 'flow_login_screen.dart';
 import 'invoice_scanner_screen.dart';
 import 'scanner_screen.dart';
 import 'smart_document_scanner_screen.dart';
@@ -56,6 +57,37 @@ class _PendingStopAction {
       action: action,
       source: source,
       occurredAt: occurredAt.toUtc(),
+    );
+  }
+}
+
+class _PendingOfficeMessage {
+  const _PendingOfficeMessage({
+    required this.id,
+    required this.body,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String body;
+  final DateTime createdAt;
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'body': body,
+        'createdAt': createdAt.toUtc().toIso8601String(),
+      };
+
+  static _PendingOfficeMessage? fromJson(Object? value) {
+    if (value is! Map) return null;
+    final id = value['id']?.toString().trim() ?? '';
+    final body = value['body']?.toString().trim() ?? '';
+    final createdAt = DateTime.tryParse(value['createdAt']?.toString() ?? '');
+    if (id.isEmpty || body.isEmpty || createdAt == null) return null;
+    return _PendingOfficeMessage(
+      id: id,
+      body: body,
+      createdAt: createdAt.toUtc(),
     );
   }
 }
@@ -183,6 +215,8 @@ class _DriverShellScreenState extends State<DriverShellScreen>
   static const _prefsJobsCachePrefix = 'aims_driver_jobs_cache_v1_';
   static const _prefsJobsCacheAtPrefix = 'aims_driver_jobs_cache_at_v1_';
   static const _prefsPendingSignalPrefix = 'aims_pending_driver_signals_v1_';
+  static const _prefsPendingOfficeMessagePrefix =
+      'aims_pending_office_messages_v1_';
   static const _prefsPendingRegistrationPrefix =
       'aims_pending_registration_points_v1_';
   static const _prefsJobCmrPrefix = 'aims_job_cmr_v1_';
@@ -232,6 +266,11 @@ class _DriverShellScreenState extends State<DriverShellScreen>
       TextEditingController();
   List<DriverChatMessage> _officeMessages = const [];
   bool _officeMessagesBusy = false;
+  bool _officeMessageSendBusy = false;
+  final List<_PendingOfficeMessage> _pendingOfficeMessages = [];
+  bool _pendingOfficeMessageFlushBusy = false;
+  Timer? _pendingOfficeMessageRetryTimer;
+  int _officeMessageNonce = 0;
   Timer? _officeMessageTimer;
   final Set<int> _preArrivalBriefedStops = <int>{};
   DateTime? _lastPreArrivalCheckAt;
@@ -313,6 +352,9 @@ class _DriverShellScreenState extends State<DriverShellScreen>
 
   String _pendingSignalPrefsKey([String? plate]) =>
       '$_prefsPendingSignalPrefix${_normalizedPlateKey(plate)}';
+
+  String _pendingOfficeMessagePrefsKey([String? plate]) =>
+      '$_prefsPendingOfficeMessagePrefix${_normalizedPlateKey(plate)}';
 
   String _jobCmrPrefsKey([String? plate]) =>
       '$_prefsJobCmrPrefix${_normalizedPlateKey(plate)}';
@@ -989,6 +1031,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
 
     _pendingSignalFlushBusy = true;
     _pendingSignalRetryTimer?.cancel();
+    _pendingOfficeMessageRetryTimer?.cancel();
     _pendingSignalRetryTimer = null;
     _officeMessageTimer?.cancel();
     _officeMessageTimer = null;
@@ -1222,6 +1265,15 @@ class _DriverShellScreenState extends State<DriverShellScreen>
 
     final status = await _tracking.currentStatus();
 
+    if (role != 'admin' && plate.isEmpty) {
+      if (!mounted) return;
+      await Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const FlowLoginScreen()),
+        (_) => false,
+      );
+      return;
+    }
+
     // Admin phones must never inherit a stale driver plate or start driver GPS.
     if (role == 'admin') {
       if (!mounted) return;
@@ -1247,6 +1299,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
     await _loadPendingStopActions(prefs, plate);
     await _loadPendingSignals(prefs, plate);
     await _loadPendingRegistrationPoints(prefs, plate);
+    await _loadPendingOfficeMessages(prefs, plate);
     await _loadJobCmrLinks(prefs, plate);
 
     if (!mounted) return;
@@ -1837,6 +1890,137 @@ class _DriverShellScreenState extends State<DriverShellScreen>
     }
   }
 
+  Future<bool> _ensureDriverIdentity() async {
+    if (_plate.trim().isNotEmpty) return true;
+    if (!mounted) return false;
+
+    _snack(
+      _l(
+        'Nincs bejelentkezett rendszám. Újra megnyitom a belépést.',
+        'No signed-in plate. Reopening sign in.',
+        'Kein angemeldetes Kennzeichen. Anmeldung wird erneut geöffnet.',
+      ),
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 250));
+    if (!mounted) return false;
+    await Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const FlowLoginScreen()),
+      (_) => false,
+    );
+    return false;
+  }
+
+  String _newOfficeMessageId(DateTime occurredAt) {
+    _officeMessageNonce = (_officeMessageNonce + 1) % 1000000;
+    return '${occurredAt.microsecondsSinceEpoch}-$_officeMessageNonce';
+  }
+
+  Future<void> _loadPendingOfficeMessages(
+    SharedPreferences prefs,
+    String plate,
+  ) async {
+    _pendingOfficeMessages.clear();
+    final raw = prefs.getString(_pendingOfficeMessagePrefsKey(plate));
+    if (raw == null || raw.trim().isEmpty) return;
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) return;
+      for (final item in decoded) {
+        final pending = _PendingOfficeMessage.fromJson(item);
+        if (pending != null) _pendingOfficeMessages.add(pending);
+      }
+      _pendingOfficeMessages.sort(
+        (a, b) => a.createdAt.compareTo(b.createdAt),
+      );
+    } catch (_) {
+      await prefs.remove(_pendingOfficeMessagePrefsKey(plate));
+    }
+  }
+
+  Future<void> _savePendingOfficeMessages() async {
+    if (_plate.isEmpty) return;
+    final prefs = await SharedPreferences.getInstance();
+    final key = _pendingOfficeMessagePrefsKey();
+    if (_pendingOfficeMessages.isEmpty) {
+      await prefs.remove(key);
+      return;
+    }
+    await prefs.setString(
+      key,
+      jsonEncode([
+        for (final message in _pendingOfficeMessages) message.toJson(),
+      ]),
+    );
+  }
+
+  Future<void> _queueOfficeMessage(_PendingOfficeMessage message) async {
+    if (_pendingOfficeMessages.any((item) => item.id == message.id)) return;
+    _pendingOfficeMessages.add(message);
+    _pendingOfficeMessages.sort(
+      (a, b) => a.createdAt.compareTo(b.createdAt),
+    );
+    await _savePendingOfficeMessages();
+    _schedulePendingOfficeMessageFlush();
+  }
+
+  void _schedulePendingOfficeMessageFlush({
+    Duration delay = const Duration(seconds: 20),
+  }) {
+    if (_pendingOfficeMessages.isEmpty ||
+        _pendingOfficeMessageFlushBusy ||
+        _pendingOfficeMessageRetryTimer?.isActive == true) {
+      return;
+    }
+    _pendingOfficeMessageRetryTimer = Timer(delay, () {
+      _pendingOfficeMessageRetryTimer = null;
+      unawaited(_flushPendingOfficeMessages());
+    });
+  }
+
+  Future<void> _flushPendingOfficeMessages() async {
+    if (_pendingOfficeMessageFlushBusy ||
+        _pendingOfficeMessages.isEmpty ||
+        _plate.isEmpty) {
+      return;
+    }
+    _pendingOfficeMessageFlushBusy = true;
+    _pendingOfficeMessageRetryTimer?.cancel();
+    _pendingOfficeMessageRetryTimer = null;
+    final delivered = <String>{};
+    var retryNeeded = false;
+    try {
+      for (final pending
+          in List<_PendingOfficeMessage>.from(_pendingOfficeMessages)) {
+        try {
+          await _api.sendMessage(plate: _plate, message: pending.body);
+          delivered.add(pending.id);
+        } on DriverApiException catch (error) {
+          if (const {400, 404, 409, 410, 422}.contains(error.statusCode)) {
+            delivered.add(pending.id);
+            continue;
+          }
+          retryNeeded = true;
+          break;
+        } catch (_) {
+          retryNeeded = true;
+          break;
+        }
+      }
+      if (delivered.isNotEmpty) {
+        _pendingOfficeMessages.removeWhere(
+          (item) => delivered.contains(item.id),
+        );
+        await _savePendingOfficeMessages();
+        unawaited(_refreshOfficeMessages(silent: true));
+      }
+    } finally {
+      _pendingOfficeMessageFlushBusy = false;
+    }
+    if (retryNeeded && _pendingOfficeMessages.isNotEmpty) {
+      _schedulePendingOfficeMessageFlush(delay: const Duration(seconds: 30));
+    }
+  }
+
   Future<void> _refreshOfficeMessages({
     bool silent = false,
   }) async {
@@ -1882,17 +2066,36 @@ class _DriverShellScreenState extends State<DriverShellScreen>
   }
 
   Future<void> _sendOfficeMessage() async {
-    if (_plate.isEmpty || _officeMessagesBusy) return;
-    final text = _officeMessageController.text.trim();
-    if (text.isEmpty) return;
+    if (!await _ensureDriverIdentity()) return;
+    if (_officeMessageSendBusy) return;
 
-    setState(() => _officeMessagesBusy = true);
+    final text = _officeMessageController.text.trim();
+    if (text.isEmpty) {
+      _snack(
+        _l(
+          'Írj be egy üzenetet a küldéshez.',
+          'Type a message before sending.',
+          'Schreibe vor dem Senden eine Nachricht.',
+        ),
+      );
+      return;
+    }
+
+    final occurredAt = DateTime.now().toUtc();
+    final pending = _PendingOfficeMessage(
+      id: _newOfficeMessageId(occurredAt),
+      body: text,
+      createdAt: occurredAt,
+    );
+
+    setState(() => _officeMessageSendBusy = true);
     try {
-      await _api.sendMessage(plate: _plate, message: text);
+      final sent = await _api.sendMessage(plate: _plate, message: text);
       _officeMessageController.clear();
-      final messages = await _api.fetchMessages(_plate);
       if (!mounted) return;
-      setState(() => _officeMessages = messages);
+      setState(() {
+        _officeMessages = [..._officeMessages, sent];
+      });
       _snack(
         _l(
           'Üzenet elküldve a főnökségnek.',
@@ -1900,21 +2103,70 @@ class _DriverShellScreenState extends State<DriverShellScreen>
           'Nachricht an die Disposition gesendet.',
         ),
       );
-    } catch (e) {
+      unawaited(_refreshOfficeMessages(silent: true));
+    } on DriverApiException catch (error) {
+      if (const {400, 404, 409, 410, 422}.contains(error.statusCode)) {
+        if (mounted) {
+          _snack(
+            _l(
+              'Az üzenet nem küldhető el. Ellenőrizd a bejelentkezést.',
+              'Message cannot be sent. Check sign in.',
+              'Nachricht kann nicht gesendet werden. Anmeldung prüfen.',
+            ),
+          );
+        }
+        return;
+      }
+      await _queueOfficeMessage(pending);
+      _officeMessageController.clear();
       if (mounted) {
+        setState(() {
+          _officeMessages = [
+            ..._officeMessages,
+            DriverChatMessage(
+              id: -occurredAt.microsecondsSinceEpoch,
+              sender: 'driver',
+              body: text,
+              createdAt: occurredAt.toLocal(),
+            ),
+          ];
+        });
         _snack(
           _l(
-            'Az üzenet nem ment el: $e',
-            'Message could not be sent: $e',
-            'Nachricht konnte nicht gesendet werden: $e',
+            'Nincs stabil kapcsolat. Az üzenetet elmentettem, és automatikusan elküldöm.',
+            'No stable connection. The message was saved and will be sent automatically.',
+            'Keine stabile Verbindung. Die Nachricht wurde gespeichert und automatisch gesendet.',
+          ),
+        );
+      }
+    } catch (_) {
+      await _queueOfficeMessage(pending);
+      _officeMessageController.clear();
+      if (mounted) {
+        setState(() {
+          _officeMessages = [
+            ..._officeMessages,
+            DriverChatMessage(
+              id: -occurredAt.microsecondsSinceEpoch,
+              sender: 'driver',
+              body: text,
+              createdAt: occurredAt.toLocal(),
+            ),
+          ];
+        });
+        _snack(
+          _l(
+            'Az üzenetet elmentettem. Kapcsolat esetén automatikusan elküldöm.',
+            'The message was saved and will send automatically when connection returns.',
+            'Die Nachricht wurde gespeichert und bei Verbindung automatisch gesendet.',
           ),
         );
       }
     } finally {
       if (mounted) {
-        setState(() => _officeMessagesBusy = false);
+        setState(() => _officeMessageSendBusy = false);
       } else {
-        _officeMessagesBusy = false;
+        _officeMessageSendBusy = false;
       }
     }
   }
@@ -1925,7 +2177,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
     String? message,
     bool showFeedback = true,
   }) async {
-    if (_plate.isEmpty) return _SignalDelivery.failed;
+    if (!await _ensureDriverIdentity()) return _SignalDelivery.failed;
     if (mounted) setState(() => _actionBusy = true);
 
     double? latitude;
@@ -4113,7 +4365,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
               const SizedBox(height: 8),
               FilledButton.icon(
                 key: const Key('flow-office-message-send'),
-                onPressed: _officeMessagesBusy ? null : _sendOfficeMessage,
+                onPressed: _officeMessageSendBusy ? null : _sendOfficeMessage,
                 icon: const Icon(Icons.send_rounded),
                 label: Text(
                   _l(
