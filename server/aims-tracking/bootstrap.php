@@ -206,8 +206,8 @@ function aims_db(): PDO {
         stop_order INTEGER NOT NULL,
         company TEXT,
         address TEXT NOT NULL,
-        latitude REAL NOT NULL,
-        longitude REAL NOT NULL,
+        latitude REAL,
+        longitude REAL,
         radius_m REAL NOT NULL DEFAULT 180,
         inside_since TEXT,
         arrival_notified_at TEXT,
@@ -382,6 +382,75 @@ function aims_db(): PDO {
     }
     if (!isset($stopColumns['waiting_paused_seconds'])) {
         $pdo->exec('ALTER TABLE job_stops ADD COLUMN waiting_paused_seconds INTEGER NOT NULL DEFAULT 0');
+    }
+
+    // R94: a temporary geocoder failure must not make a transport order
+    // impossible to assign. Existing databases used NOT NULL coordinates,
+    // so migrate once to nullable coordinates while preserving all stop state.
+    $stopSchema = $pdo->query('PRAGMA table_info(job_stops)')->fetchAll(PDO::FETCH_ASSOC);
+    $coordinateNotNull = false;
+    foreach ($stopSchema as $column) {
+        if (in_array((string)$column['name'], ['latitude', 'longitude'], true)
+            && (int)$column['notnull'] === 1) {
+            $coordinateNotNull = true;
+        }
+    }
+    if ($coordinateNotNull) {
+        $pdo->exec('PRAGMA foreign_keys = OFF');
+        $pdo->beginTransaction();
+        try {
+            $pdo->exec('CREATE TABLE job_stops_r94 (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                job_id INTEGER NOT NULL,
+                stop_type TEXT NOT NULL,
+                stop_order INTEGER NOT NULL,
+                company TEXT,
+                address TEXT NOT NULL,
+                latitude REAL,
+                longitude REAL,
+                radius_m REAL NOT NULL DEFAULT 180,
+                inside_since TEXT,
+                arrival_notified_at TEXT,
+                created_at TEXT NOT NULL,
+                contact_phone TEXT,
+                arrival_source TEXT,
+                completed_at TEXT,
+                completion_source TEXT,
+                registration_checked_at TEXT,
+                registration_point_id INTEGER,
+                waiting_alert_slot INTEGER NOT NULL DEFAULT 0,
+                waiting_alert_last_at TEXT,
+                waiting_pause_started_at TEXT,
+                waiting_paused_seconds INTEGER NOT NULL DEFAULT 0,
+                FOREIGN KEY(job_id) REFERENCES jobs(id) ON DELETE CASCADE
+            )');
+            $pdo->exec('INSERT INTO job_stops_r94 (
+                id, job_id, stop_type, stop_order, company, address,
+                latitude, longitude, radius_m, inside_since, arrival_notified_at,
+                created_at, contact_phone, arrival_source, completed_at,
+                completion_source, registration_checked_at, registration_point_id,
+                waiting_alert_slot, waiting_alert_last_at,
+                waiting_pause_started_at, waiting_paused_seconds
+            )
+            SELECT
+                id, job_id, stop_type, stop_order, company, address,
+                latitude, longitude, radius_m, inside_since, arrival_notified_at,
+                created_at, contact_phone, arrival_source, completed_at,
+                completion_source, registration_checked_at, registration_point_id,
+                waiting_alert_slot, waiting_alert_last_at,
+                waiting_pause_started_at, waiting_paused_seconds
+            FROM job_stops');
+            $pdo->exec('DROP TABLE job_stops');
+            $pdo->exec('ALTER TABLE job_stops_r94 RENAME TO job_stops');
+            $pdo->exec('CREATE INDEX IF NOT EXISTS idx_job_stops_job
+                ON job_stops(job_id, stop_order)');
+            $pdo->commit();
+        } catch (Throwable $error) {
+            if ($pdo->inTransaction()) $pdo->rollBack();
+            $pdo->exec('PRAGMA foreign_keys = ON');
+            throw $error;
+        }
+        $pdo->exec('PRAGMA foreign_keys = ON');
     }
 
     $pdo->exec('CREATE TABLE IF NOT EXISTS driver_messages (
