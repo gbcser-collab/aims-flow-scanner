@@ -88,11 +88,14 @@ class CmrParser {
     var result = value.trim();
     for (final label in labels) {
       final lower = result.toLowerCase();
-      final index = lower.indexOf(label.toLowerCase());
-      if (index < 0) continue;
-      final before = result.substring(0, index).trim();
-      final after = result.substring(index + label.length).trim();
-      result = after.length >= before.length ? after : before;
+      final needle = label.toLowerCase();
+      if (!lower.startsWith(needle)) continue;
+      if (result.length > label.length) {
+        final next = result.substring(label.length, label.length + 1);
+        if (!RegExp(r'[\s:;,.\-()]').hasMatch(next)) continue;
+      }
+      result = result.substring(label.length).trim();
+      break;
     }
     return result.replaceFirst(RegExp(r'^\s*[:;,.\-]+\s*'), '').trim();
   }
@@ -164,8 +167,10 @@ class CmrParser {
   }
 
   double? _weight(List<String> lines, String raw) {
-    final field11 = _afterFieldNumber(lines, 11, const ['gross weight', 'gross weight in kg', 'bruttó tömeg', 'bruttogewicht', 'poids brut', 'waga brutto']);
-    for (final source in [field11, raw]) {
+    const labels = ['gross weight', 'gross weight in kg', 'bruttó tömeg', 'bruttogewicht', 'poids brut', 'waga brutto'];
+    final field11 = _afterFieldNumber(lines, 11, labels);
+    final labelled = _afterLabel(lines, labels);
+    for (final source in [field11, labelled]) {
       if (source == null) continue;
       final match = RegExp(r'\b(\d{1,6}(?:[.,]\d{1,3})?)\s*(?:kg|kgs|kilogram)?\b', caseSensitive: false).firstMatch(source);
       if (match != null) {
@@ -173,18 +178,30 @@ class CmrParser {
         if (value != null && value > 0) return value;
       }
     }
+    final explicit = RegExp(r'\b(\d{1,6}(?:[.,]\d{1,3})?)\s*(?:kg|kgs|kilogram)\b', caseSensitive: false).firstMatch(raw);
+    if (explicit != null) {
+      final value = double.tryParse(explicit.group(1)!.replaceAll(',', '.'));
+      if (value != null && value > 0) return value;
+    }
     return null;
   }
 
   int? _packageCount(List<String> lines, String raw) {
-    final field7 = _afterFieldNumber(lines, 7, const ['number of packages', 'darabszám', 'anzahl der packstücke', 'ilość sztuk', 'nombre de colis']);
-    for (final source in [field7, raw]) {
+    const labels = ['number of packages', 'darabszám', 'anzahl der packstücke', 'ilość sztuk', 'nombre de colis'];
+    final field7 = _afterFieldNumber(lines, 7, labels);
+    final labelled = _afterLabel(lines, labels);
+    for (final source in [field7, labelled]) {
       if (source == null) continue;
       final match = RegExp(r'\b(\d{1,5})\s*(?:pcs|pc|db|colli|pal(?:let)?s?)?\b', caseSensitive: false).firstMatch(source);
       if (match != null) {
         final value = int.tryParse(match.group(1)!);
         if (value != null && value > 0) return value;
       }
+    }
+    final explicit = RegExp(r'\b(\d{1,5})\s*(?:pcs|pc|db|colli|pal(?:let)?s?)\b', caseSensitive: false).firstMatch(raw);
+    if (explicit != null) {
+      final value = int.tryParse(explicit.group(1)!);
+      if (value != null && value > 0) return value;
     }
     return null;
   }
