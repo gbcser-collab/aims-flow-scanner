@@ -43,7 +43,12 @@ void main() {
       expect(find.text('Késés'), findsOneWidget);
 
       await tester.tap(find.text('Késés'));
-      await tester.pump(const Duration(milliseconds: 600));
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.text('KÉSÉS OKA'), findsOneWidget);
+      expect(find.text('FORGALOM'), findsOneWidget);
+      expect(find.text('CSÚSZÁS'), findsOneWidget);
+      Navigator.of(tester.element(find.text('KÉSÉS OKA'))).pop();
+      await tester.pump(const Duration(milliseconds: 300));
       expect(tester.takeException(), isNull);
 
       // The office message panel sits below the quick-signal grid in a
