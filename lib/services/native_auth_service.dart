@@ -91,12 +91,25 @@ class NativeAuthService {
     if (response.statusCode >= 200 &&
         response.statusCode < 300 &&
         body['ok'] == true) {
+      final role = body['role']?.toString().trim() ?? '';
+      if (role != 'driver' && role != 'admin') {
+        throw StateError(AimsLocaleController.instance.t('server_unavailable'));
+      }
+      final plate = body['plate']?.toString().trim().toUpperCase() ?? '';
+      if (role == 'driver' && plate.isEmpty) {
+        throw StateError(AimsLocaleController.instance.t('server_unavailable'));
+      }
+      final rawLanguage = body['language']?.toString() ?? 'hu';
+      final language =
+          const {'hu', 'en', 'de'}.contains(rawLanguage) ? rawLanguage : 'hu';
       return NativeAuthResult(
-        role: body['role']?.toString() ?? 'driver',
-        displayName: body['displayName']?.toString() ?? login.trim(),
-        plate: body['plate']?.toString() ?? '',
+        role: role,
+        displayName: body['displayName']?.toString().trim().isNotEmpty == true
+            ? body['displayName'].toString().trim()
+            : (role == 'driver' ? plate : login.trim()),
+        plate: plate,
         forceCodeChange: body['forceCodeChange'] == true,
-        language: body['language']?.toString() ?? 'hu',
+        language: language,
         adminPushRegistered: body['adminPushRegistered'] == true,
       );
     }
