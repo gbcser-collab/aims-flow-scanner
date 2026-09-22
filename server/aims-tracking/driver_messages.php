@@ -72,52 +72,100 @@ if ($method === 'GET') {
 
 if ($method === 'POST') {
     $message = trim((string)($data['message'] ?? ''));
+    $clientMessageId = trim((string)($data['clientMessageId'] ?? ''));
     if ($message === '') aims_json(['ok' => false, 'error' => 'message_required'], 422);
     if (mb_strlen($message) > 1000) {
         aims_json(['ok' => false, 'error' => 'message_too_long'], 422);
     }
+    if ($clientMessageId !== '' && preg_match('/^[A-Za-z0-9._:-]{1,180}$/', $clientMessageId) !== 1) {
+        aims_json(['ok' => false, 'error' => 'invalid_client_message_id'], 422);
+    }
 
     $now = gmdate(DateTimeInterface::ATOM);
-    $insert = $pdo->prepare('INSERT INTO driver_messages
-        (vehicle_id, admin_user_id, sender, body, created_at)
-        VALUES (:vehicle, :admin, "driver", :body, :created)');
-    $insert->execute([
-        ':vehicle' => $vehicleId,
-        ':admin' => $adminId,
-        ':body' => $message,
-        ':created' => $now,
-    ]);
-    $id = (int)$pdo->lastInsertId();
+    $created = false;
+    $id = 0;
+    $createdAt = $now;
+    $storedBody = $message;
 
-    $label = trim((string)$vehicle['label']) !== ''
-        ? trim((string)$vehicle['label'])
-        : $plate;
+    if ($clientMessageId !== '') {
+        $insert = $pdo->prepare('INSERT OR IGNORE INTO driver_messages
+            (vehicle_id, admin_user_id, sender, body, created_at, client_message_id)
+            VALUES (:vehicle, :admin, "driver", :body, :created, :client)');
+        $insert->execute([
+            ':vehicle' => $vehicleId,
+            ':admin' => $adminId,
+            ':body' => $message,
+            ':created' => $now,
+            ':client' => $clientMessageId,
+        ]);
+        $created = $insert->rowCount() === 1;
+        if ($created) {
+            $id = (int)$pdo->lastInsertId();
+        } else {
+            $existing = $pdo->prepare('SELECT id, body, created_at
+                FROM driver_messages
+                WHERE vehicle_id = :vehicle AND client_message_id = :client
+                LIMIT 1');
+            $existing->execute([
+                ':vehicle' => $vehicleId,
+                ':client' => $clientMessageId,
+            ]);
+            $row = $existing->fetch(PDO::FETCH_ASSOC);
+            if (!$row) aims_json(['ok' => false, 'error' => 'message_dedupe_lookup_failed'], 500);
+            if (!hash_equals((string)$row['body'], $message)) {
+                aims_json(['ok' => false, 'error' => 'client_message_id_conflict'], 409);
+            }
+            $id = (int)$row['id'];
+            $storedBody = (string)$row['body'];
+            $createdAt = (string)$row['created_at'];
+        }
+    } else {
+        $insert = $pdo->prepare('INSERT INTO driver_messages
+            (vehicle_id, admin_user_id, sender, body, created_at)
+            VALUES (:vehicle, :admin, "driver", :body, :created)');
+        $insert->execute([
+            ':vehicle' => $vehicleId,
+            ':admin' => $adminId,
+            ':body' => $message,
+            ':created' => $now,
+        ]);
+        $id = (int)$pdo->lastInsertId();
+        $created = true;
+    }
 
-    aims_notify(
-        $pdo,
-        $adminId,
-        $vehicleId,
-        'driver_message',
-        'info',
-        $label . ' · üzenet',
-        $message,
-        'driver_message:' . $vehicleId . ':' . $id,
-        [
-            'messageId' => $id,
-            'plate' => $plate,
-            'message' => $message,
-            'type' => 'driver_message',
-        ]
-    );
-    aims_try_push($pdo, 12);
+    if ($created) {
+        $label = trim((string)$vehicle['label']) !== ''
+            ? trim((string)$vehicle['label'])
+            : $plate;
+
+        aims_notify(
+            $pdo,
+            $adminId,
+            $vehicleId,
+            'driver_message',
+            'info',
+            $label . ' · üzenet',
+            $storedBody,
+            'driver_message:' . $vehicleId . ':' . $id,
+            [
+                'messageId' => $id,
+                'clientMessageId' => $clientMessageId !== '' ? $clientMessageId : null,
+                'plate' => $plate,
+                'message' => $storedBody,
+                'type' => 'driver_message',
+            ]
+        );
+        aims_try_push($pdo, 12);
+    }
 
     aims_json([
         'ok' => true,
+        'deduplicated' => !$created,
         'message' => [
             'id' => $id,
             'sender' => 'driver',
-            'body' => $message,
-            'createdAt' => $now,
+            'body' => $storedBody,
+            'createdAt' => $createdAt,
             'readAt' => null,
         ],
     ]);
