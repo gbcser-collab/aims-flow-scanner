@@ -8,6 +8,8 @@ import tempfile
 import time
 import urllib.error
 import urllib.request
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -17,6 +19,18 @@ def free_port():
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
         return s.getsockname()[1]
+
+class EmptyGeocoderHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        body = b"[]"
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, format, *args):
+        return
 
 def request(port, path, payload=None, method="POST"):
     body = None if payload is None else json.dumps(payload).encode()
@@ -56,9 +70,14 @@ with tempfile.TemporaryDirectory(prefix="aims-r94-") as temp:
     '''
     subprocess.run(["php", "-r", seed], cwd=ROOT, env=env, check=True)
 
+    geocoder_port = free_port()
+    geocoder = ThreadingHTTPServer(("127.0.0.1", geocoder_port), EmptyGeocoderHandler)
+    geocoder_thread = threading.Thread(target=geocoder.serve_forever, daemon=True)
+    geocoder_thread.start()
+
     port = free_port()
     env["AIMS_ADMIN_TRACKING_TOKEN"] = TOKEN
-    env["AIMS_GEOCODER_URL"] = f"http://127.0.0.1:{port}/ci/r94_empty_geocoder.php"
+    env["AIMS_GEOCODER_URL"] = f"http://127.0.0.1:{geocoder_port}/search"
     server = subprocess.Popen(
         ["php", "-S", f"127.0.0.1:{port}", "-t", str(ROOT)],
         cwd=ROOT,
@@ -244,3 +263,5 @@ with tempfile.TemporaryDirectory(prefix="aims-r94-") as temp:
             server.wait(timeout=3)
         except subprocess.TimeoutExpired:
             server.kill()
+        geocoder.shutdown()
+        geocoder.server_close()
