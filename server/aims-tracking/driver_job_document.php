@@ -24,7 +24,10 @@ if (mb_strlen($documentId) > 160) {
     aims_json(['ok' => false, 'error' => 'document_id_too_long'], 422);
 }
 if (!in_array($syncState, ['pending','failed','uploaded','approved','emailed'], true)) {
-    $syncState = 'pending';
+    aims_json(['ok' => false, 'error' => 'invalid_sync_state'], 422);
+}
+if (in_array($syncState, ['pending','failed'], true)) {
+    aims_json(['ok' => false, 'error' => 'document_not_synced'], 409);
 }
 
 $pdo = aims_db();
