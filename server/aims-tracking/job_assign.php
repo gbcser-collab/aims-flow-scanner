@@ -136,28 +136,33 @@ foreach (['pickups' => 'pickup', 'deliveries' => 'delivery'] as $key => $type) {
 if (!$rawStops) aims_json(['ok' => false, 'error' => 'no_stops'], 422);
 
 $resolved = [];
-$errors = [];
+$geocodeWarnings = [];
 foreach ($rawStops as $stop) {
     $lat = $stop['latitude'];
     $lng = $stop['longitude'];
-    if ($lat === null || $lng === null) {
+    $validProvided = $lat !== null && $lng !== null
+        && $lat >= -90 && $lat <= 90
+        && $lng >= -180 && $lng <= 180;
+
+    if (!$validProvided) {
         $geo = aims_geocode($pdo, $stop['address']);
-        if ($geo === null) {
-            $errors[] = ['address' => $stop['address'], 'error' => 'geocode_not_found'];
-            continue;
+        if ($geo !== null) {
+            $lat = $geo['latitude'];
+            $lng = $geo['longitude'];
+        } else {
+            $lat = null;
+            $lng = null;
+            $geocodeWarnings[] = [
+                'address' => $stop['address'],
+                'warning' => 'geocode_unavailable_address_navigation_only',
+            ];
         }
-        $lat = $geo['latitude'];
-        $lng = $geo['longitude'];
     }
-    if ($lat < -90 || $lat > 90 || $lng < -180 || $lng > 180) {
-        $errors[] = ['address' => $stop['address'], 'error' => 'invalid_coordinates'];
-        continue;
-    }
+
     $stop['latitude'] = $lat;
     $stop['longitude'] = $lng;
     $resolved[] = $stop;
 }
-if ($errors) aims_json(['ok' => false, 'error' => 'stop_geocode_failed', 'stops' => $errors], 422);
 
 $now = gmdate(DateTimeInterface::ATOM);
 $createdNew = false;
@@ -244,6 +249,7 @@ aims_json([
     'reference' => $reference,
     'plate' => $plate,
     'stops' => $resolved,
+    'geocodeWarnings' => $geocodeWarnings,
     'created' => $createdNew,
     'duplicate' => $duplicateAssignment,
     'driverPush' => $driverPush,
