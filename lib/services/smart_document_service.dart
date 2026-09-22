@@ -77,9 +77,15 @@ class SmartDocumentService {
       );
     }
 
+    final documentId = body['documentId']?.toString().trim() ?? '';
+    final state = body['state']?.toString().trim() ?? '';
+    if (documentId.isEmpty || state != 'uploaded') {
+      throw StateError('invalid_smart_document_success_response');
+    }
+
     return SmartDocumentUploadResult(
-      documentId: body['documentId']?.toString() ?? '',
-      state: body['state']?.toString() ?? 'uploaded',
+      documentId: documentId,
+      state: state,
     );
   }
 }
