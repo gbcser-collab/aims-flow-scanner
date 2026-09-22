@@ -155,7 +155,21 @@ jobs:
       - name: Document gate lifecycle E2E
         run: python3 ci/r92_document_gate_test.py
 
-      - name: Build installable R92 APK
+      - name: Runtime configuration contract
+        env:
+          AIMS_TRACKING_TOKEN: ${{ secrets.AIMS_TRACKING_TOKEN }}
+        run: |
+          if [ -z "${AIMS_TRACKING_TOKEN}" ]; then
+            echo "::error::AIMS_TRACKING_TOKEN is missing; refusing to build a runtime-broken APK."
+            exit 1
+          fi
+          if [ "${#AIMS_TRACKING_TOKEN}" -lt 16 ]; then
+            echo "::error::AIMS_TRACKING_TOKEN is unexpectedly short; refusing to build."
+            exit 1
+          fi
+          echo "AIMS runtime tracking configuration: PASS"
+
+      - name: Build installable R94 APK
         env:
           AIMS_TRACKING_TOKEN: ${{ secrets.AIMS_TRACKING_TOKEN }}
         run: |
