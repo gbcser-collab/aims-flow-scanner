@@ -155,15 +155,25 @@ class DriverPushService {
       }
 
       _tokenSub ??= FirebaseMessaging.instance.onTokenRefresh.listen((_) {
-        if (_registeredPlate.isNotEmpty) {
-          unawaited(registerForPlate(_registeredPlate));
+        final plate = _registeredPlate;
+        if (plate.isNotEmpty) {
+          unawaited(_refreshPushRegistration(plate));
         }
       });
+      _initialized = true;
     } catch (error) {
       _lastInitializationError = error;
-      // Driver login/jobs/GPS must stay usable even when FCM is unavailable.
-    } finally {
-      _initialized = true;
+      _initialized = Firebase.apps.isNotEmpty;
+      // Driver login/jobs/GPS stay usable. A later registration call retries
+      // Firebase initialization when this was only a transient failure.
+    }
+  }
+
+  Future<void> _refreshPushRegistration(String plate) async {
+    try {
+      await registerForPlate(plate);
+    } catch (error) {
+      _lastInitializationError = error;
     }
   }
 
