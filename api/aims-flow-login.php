@@ -10,6 +10,60 @@ header('Content-Type: application/json; charset=UTF-8');
 header('Cache-Control: no-store');
 
 
+function flow_client_ip_safe(): string {
+  if(function_exists('aims_client_ip')){
+    try{
+      $value=trim((string)aims_client_ip());
+      if($value!=='') return $value;
+    }catch(Throwable $e){
+      error_log('AIMS Flow login client-ip helper: '.$e->getMessage());
+    }
+  }
+  return trim((string)($_SERVER['REMOTE_ADDR']??'unknown'));
+}
+
+function flow_lower_safe(string $value): string {
+  if(function_exists('portal_lower')){
+    try{return (string)portal_lower($value);}
+    catch(Throwable $e){
+      error_log('AIMS Flow login lowercase helper: '.$e->getMessage());
+    }
+  }
+  return function_exists('mb_strtolower')
+    ? mb_strtolower($value,'UTF-8')
+    : strtolower($value);
+}
+
+function flow_rate_limit_safe(
+  string $bucket,
+  string $key,
+  int $limit,
+  int $window,
+  bool $consume=false
+): array {
+  if(!function_exists('aims_rate_limit')){
+    error_log('AIMS Flow login rate limiter helper missing');
+    return ['allowed'=>true,'remaining'=>$limit,'resetAt'=>time()+$window];
+  }
+  try{
+    $result=aims_rate_limit($bucket,$key,$limit,$window,$consume);
+    return is_array($result)
+      ? $result
+      : ['allowed'=>true,'remaining'=>$limit,'resetAt'=>time()+$window];
+  }catch(Throwable $e){
+    error_log('AIMS Flow login rate limiter: '.$e->getMessage());
+    return ['allowed'=>true,'remaining'=>$limit,'resetAt'=>time()+$window];
+  }
+}
+
+function flow_rate_limit_clear_safe(string $bucket,string $key): void {
+  if(!function_exists('aims_rate_limit_clear')) return;
+  try{aims_rate_limit_clear($bucket,$key);}
+  catch(Throwable $e){
+    error_log('AIMS Flow login rate-limit clear: '.$e->getMessage());
+  }
+}
+
 function flow_normalize_driver_code(string $value): string {
   return strtoupper(preg_replace('/[^A-Za-z0-9]/','',trim($value)) ?? '');
 }
@@ -66,8 +120,8 @@ $fcmToken=trim((string)($data['fcmToken']??''));
 $pushPlatform=strtolower(trim((string)($data['pushPlatform']??'android')));
 if($login===''||$password==='') flow_reply(['ok'=>false,'error'=>'missing_credentials'],422);
 
-$key=aims_client_ip().'|'.portal_lower($login);
-$rate=aims_rate_limit('flow-native-login',$key,6,900,false);
+$key=flow_client_ip_safe().'|'.flow_lower_safe($login);
+$rate=flow_rate_limit_safe('flow-native-login',$key,6,900,false);
 if(!$rate['allowed']) flow_reply(['ok'=>false,'error'=>'rate_limited'],429);
 
 // Admin login remains separate and keeps TOTP.
@@ -82,7 +136,7 @@ try{
 }catch(Throwable $e){}
 
 if($admin){
-  aims_rate_limit_clear('flow-native-login',$key);
+  flow_rate_limit_clear_safe('flow-native-login',$key);
 
   $adminPushRegistered=false;
   $adminPushError='missing_push_identity';
@@ -186,7 +240,7 @@ $plate=aims_normalize_plate($login);
 $driverCode=flow_normalize_driver_code($password);
 
 if($plate!==''&&flow_driver_code_format_valid($driverCode)){
-  $plateRate=aims_rate_limit('flow-driver-plate',$plate,12,3600,false);
+  $plateRate=flow_rate_limit_safe('flow-driver-plate',$plate,12,3600,false);
   if(!$plateRate['allowed']) flow_reply(['ok'=>false,'error'=>'rate_limited'],429);
 
   try{
@@ -197,8 +251,8 @@ if($plate!==''&&flow_driver_code_format_valid($driverCode)){
     $reason='invalid';
 
     if($vehicle&&!empty($vehicle['enabled'])&&flow_vehicle_driver_code_valid($vehicle,$driverCode,$reason)){
-      aims_rate_limit_clear('flow-native-login',$key);
-      aims_rate_limit_clear('flow-driver-plate',$plate);
+      flow_rate_limit_clear_safe('flow-native-login',$key);
+      flow_rate_limit_clear_safe('flow-driver-plate',$plate);
       aims_audit('flow_native_login',['actor'=>'driver','detail'=>$plate,'result'=>'ok']);
       flow_reply([
         'ok'=>true,
@@ -210,12 +264,12 @@ if($plate!==''&&flow_driver_code_format_valid($driverCode)){
       ]);
     }
 
-    aims_rate_limit('flow-driver-plate',$plate,12,3600,true);
+    flow_rate_limit_safe('flow-driver-plate',$plate,12,3600,true);
     if($reason==='temp_expired') flow_reply(['ok'=>false,'error'=>'temp_expired'],401);
   }catch(Throwable $e){}
 }
 
-aims_rate_limit('flow-native-login',$key,6,900,true);
+flow_rate_limit_safe('flow-native-login',$key,6,900,true);
 usleep(250000);
 flow_reply(['ok'=>false,'error'=>'invalid_credentials'],401);
 
