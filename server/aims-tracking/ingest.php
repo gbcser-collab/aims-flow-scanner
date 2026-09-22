@@ -49,6 +49,7 @@ function aims_active_stop_context(PDO $pdo, int $vehicleId, float $lat, float $l
     $stmt->execute([':vehicle' => $vehicleId]);
     $nearest = null;
     foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $stop) {
+        if ($stop['latitude'] === null || $stop['longitude'] === null) continue;
         $distance = aims_distance_m($lat, $lng, (float)$stop['latitude'], (float)$stop['longitude']);
         $radius = aims_geofence_radius_m((float)$stop['radius_m'], $accuracy);
         if ($distance <= $radius && ($nearest === null || $distance < $nearest['distance'])) {
@@ -78,6 +79,7 @@ function aims_process_arrivals(
     $events = 0;
 
     foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $stop) {
+        if ($stop['latitude'] === null || $stop['longitude'] === null) continue;
         $distance = aims_distance_m($lat, $lng, (float)$stop['latitude'], (float)$stop['longitude']);
         $radius = aims_geofence_radius_m((float)$stop['radius_m'], $accuracy);
         $inside = $distance <= $radius;
@@ -169,6 +171,7 @@ function aims_process_job_waiting(
     $candidate = null;
     $candidateDistance = null;
     foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $stop) {
+        if ($stop['latitude'] === null || $stop['longitude'] === null) continue;
         $distance = aims_distance_m(
             $lat,
             $lng,
