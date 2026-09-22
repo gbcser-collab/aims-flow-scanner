@@ -66,10 +66,7 @@ jobs:
               'android.permission.POST_NOTIFICATIONS',
               'android.permission.VIBRATE',
           ]
-          block = '\n'.join(
-              f'    <uses-permission android:name="{name}" />'
-              for name in permissions
-          )
+          block = '\n'.join(f'    <uses-permission android:name="{name}" />' for name in permissions)
           queries = '\n'.join([
               '    <queries>',
               '        <intent><action android:name="android.speech.RecognitionService" /></intent>',
@@ -78,7 +75,6 @@ jobs:
           ])
           s = s.replace('<application', block + '\n' + queries + '\n    <application', 1)
           s = s.replace('android:label="aims_flow_scanner"', 'android:label="AIMS Flow"')
-
           assist = '\n'.join([
               '            <intent-filter>',
               '                <action android:name="android.intent.action.ASSIST" />',
@@ -90,7 +86,6 @@ jobs:
           if end < 0:
               raise SystemExit('MainActivity closing tag missing')
           s = s[:end] + assist + s[end:]
-
           service = '\n'.join([
               '        <service',
               '            android:name=".AimsHandsFreeService"',
@@ -111,18 +106,10 @@ jobs:
           text = g.read_text()
           text = text.replace('minSdk = flutter.minSdkVersion', 'minSdk = 23')
           if 'isCoreLibraryDesugaringEnabled = true' not in text:
-              text = text.replace(
-                  'compileOptions {',
-                  'compileOptions {\n        isCoreLibraryDesugaringEnabled = true',
-                  1,
-              )
+              text = text.replace('compileOptions {', 'compileOptions {\n        isCoreLibraryDesugaringEnabled = true', 1)
           if 'coreLibraryDesugaring(' not in text:
               if 'dependencies {' in text:
-                  text = text.replace(
-                      'dependencies {',
-                      'dependencies {\n    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")',
-                      1,
-                  )
+                  text = text.replace('dependencies {', 'dependencies {\n    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")', 1)
               else:
                   text += '\n\ndependencies {\n    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")\n}\n'
           g.write_text(text)
@@ -140,14 +127,16 @@ jobs:
       - name: Analyze
         run: flutter analyze
 
-      - name: Unit tests
-        run: flutter test --reporter expanded
-
+      # Run the crash-specific gate before the broad suite so an R93
+      # regression is visible independently from unrelated legacy tests.
       - name: R93 signal/message source guard
         run: python3 ci/r93_signal_message_source_guard.py
 
       - name: R93 signal and message crash regression
         run: flutter test test/r93_signal_message_regression_test.dart --reporter expanded
+
+      - name: Unit tests
+        run: flutter test --reporter expanded
 
       - name: PHP syntax
         run: |
