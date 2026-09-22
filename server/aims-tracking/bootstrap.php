@@ -400,6 +400,17 @@ function aims_db(): PDO {
     $pdo->exec('CREATE INDEX IF NOT EXISTS idx_driver_messages_admin_id
         ON driver_messages(admin_user_id, id DESC)');
 
+    $messageColumns = [];
+    foreach ($pdo->query('PRAGMA table_info(driver_messages)')->fetchAll(PDO::FETCH_ASSOC) as $column) {
+        $messageColumns[(string)$column['name']] = true;
+    }
+    if (!isset($messageColumns['client_message_id'])) {
+        $pdo->exec('ALTER TABLE driver_messages ADD COLUMN client_message_id TEXT');
+    }
+    $pdo->exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_driver_messages_vehicle_client_id
+        ON driver_messages(vehicle_id, client_message_id)
+        WHERE client_message_id IS NOT NULL AND client_message_id <> ""');
+
     $pdo->exec('CREATE TABLE IF NOT EXISTS driver_push_devices (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         vehicle_id INTEGER NOT NULL,
