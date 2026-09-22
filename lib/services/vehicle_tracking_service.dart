@@ -440,6 +440,29 @@ class VehicleTrackingService {
             .timeout(const Duration(seconds: 8));
 
         if (response.statusCode >= 200 && response.statusCode < 300) {
+          Map<String, dynamic>? body;
+          try {
+            final decoded = jsonDecode(response.body);
+            if (decoded is Map) {
+              body = Map<String, dynamic>.from(decoded);
+            }
+          } catch (_) {
+            body = null;
+          }
+          if (body == null || body['ok'] != true) {
+            networkFailed = true;
+            _scheduleRetry(
+              'A nyomkövető szerver hibás választ adott. A GPS-pont helyben marad.',
+            );
+            break;
+          }
+          if (body['registeredVehicle'] != true) {
+            networkFailed = true;
+            _scheduleRetry(
+              'A szerver nem kapcsolta a GPS-pontot a bejelentkezett járműhöz. A pont helyben marad.',
+            );
+            break;
+          }
           consumed.add(line);
           _lastSentAt = DateTime.now();
           _lastError = null;
