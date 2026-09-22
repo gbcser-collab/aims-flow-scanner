@@ -69,13 +69,35 @@ class AimsVoiceService {
   Future<bool> initialize() async {
     if (_initialized) return true;
 
-    final available = await _speech.initialize(
-      onStatus: _onStatus,
-      onError: _onError,
-      debugLogging: false,
-      finalTimeout: const Duration(seconds: 5),
-    );
-    if (!available) {
+    try {
+      final available = await _speech.initialize(
+        onStatus: _onStatus,
+        onError: _onError,
+        debugLogging: false,
+        finalTimeout: const Duration(seconds: 5),
+      );
+      if (!available) {
+        _emit(
+          AimsVoiceState(
+            enabled: false,
+            mode: AimsVoiceMode.error,
+            message: _locale.t('speech_unavailable'),
+          ),
+        );
+        return false;
+      }
+
+      await _applyLanguage();
+
+      _assistantInvocationSub ??=
+          AimsHandsFreePlatform.assistantInvoked.listen((_) {
+        unawaited(_safeTriggerAssistant());
+      });
+
+      _initialized = true;
+      return true;
+    } catch (_) {
+      _initialized = false;
       _emit(
         AimsVoiceState(
           enabled: false,
@@ -85,27 +107,52 @@ class AimsVoiceService {
       );
       return false;
     }
+  }
 
-    await _applyLanguage();
-
-    _assistantInvocationSub ??=
-        AimsHandsFreePlatform.assistantInvoked.listen((_) {
-      unawaited(triggerAssistant());
-    });
-
-    _initialized = true;
-    return true;
+  Future<void> _safeTriggerAssistant() async {
+    try {
+      await triggerAssistant();
+    } catch (_) {
+      _emit(
+        AimsVoiceState(
+          enabled: _enabled,
+          mode: AimsVoiceMode.error,
+          message: _locale.t('command_failed'),
+          lastHeard: _lastHeard,
+        ),
+      );
+    }
   }
 
   Future<bool> enableHandsFree() async {
     final ok = await initialize();
     if (!ok) return false;
 
-    _enabled = true;
-    await AimsHandsFreePlatform.start();
-    _commandMode = false;
-    await _startWakeListening();
-    return true;
+    try {
+      _enabled = true;
+      await AimsHandsFreePlatform.start();
+      _commandMode = false;
+      await _startWakeListening();
+      return true;
+    } catch (_) {
+      _enabled = false;
+      _commandMode = false;
+      try {
+        await _speech.cancel();
+      } catch (_) {}
+      try {
+        await AimsHandsFreePlatform.stop();
+      } catch (_) {}
+      _emit(
+        AimsVoiceState(
+          enabled: false,
+          mode: AimsVoiceMode.error,
+          message: _locale.t('speech_unavailable'),
+          lastHeard: _lastHeard,
+        ),
+      );
+      return false;
+    }
   }
 
   Future<void> disableHandsFree() async {
