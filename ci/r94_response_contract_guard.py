@@ -21,3 +21,16 @@ if text.count("{") != text.count("}"):
     raise SystemExit("R94_RESPONSE_CONTRACT_FAIL Dart brace imbalance")
 
 print("R94_RESPONSE_CONTRACT_GUARD_PASS")
+
+
+smart=Path("lib/services/smart_document_service.dart").read_text(encoding="utf-8")
+for needle in (
+    "final documentId = body['documentId']?.toString().trim() ?? '';",
+    "final state = body['state']?.toString().trim() ?? '';",
+    "documentId.isEmpty || state != 'uploaded'",
+    "invalid_smart_document_success_response",
+):
+    if needle not in smart:
+        raise SystemExit(f"R94_RESPONSE_CONTRACT_FAIL smart document missing: {needle}")
+
+print("R94_SMART_DOCUMENT_RESPONSE_CONTRACT_PASS")
