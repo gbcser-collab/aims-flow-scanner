@@ -146,6 +146,9 @@ jobs:
         run: |
           find server/aims-tracking admin api -type f -name '*.php' -print0 | xargs -0 -n1 php -l
 
+      - name: R94 backend idempotency E2E
+        run: python3 ci/r94_backend_idempotency_test.py
+
       - name: Job waiting rules
         run: php server/aims-tracking/test_job_waiting.php
 
