@@ -18,12 +18,12 @@ def free_port():
         s.bind(("127.0.0.1", 0))
         return s.getsockname()[1]
 
-def request(port, path, payload):
-    body = json.dumps(payload).encode()
+def request(port, path, payload=None, method="POST"):
+    body = None if payload is None else json.dumps(payload).encode()
     req = urllib.request.Request(
         f"http://127.0.0.1:{port}/{path}",
         data=body,
-        method="POST",
+        method=method,
         headers={
             "Authorization": f"Bearer {TOKEN}",
             "Content-Type": "application/json",
@@ -57,6 +57,8 @@ with tempfile.TemporaryDirectory(prefix="aims-r94-") as temp:
     subprocess.run(["php", "-r", seed], cwd=ROOT, env=env, check=True)
 
     port = free_port()
+    env["AIMS_ADMIN_TRACKING_TOKEN"] = TOKEN
+    env["AIMS_GEOCODER_URL"] = f"http://127.0.0.1:{port}/ci/r94_empty_geocoder.php"
     server = subprocess.Popen(
         ["php", "-S", f"127.0.0.1:{port}", "-t", str(ROOT)],
         cwd=ROOT,
@@ -75,6 +77,50 @@ with tempfile.TemporaryDirectory(prefix="aims-r94-") as temp:
                 time.sleep(.05)
         else:
             raise AssertionError("PHP test server did not start")
+
+        address_only_job = {
+            "plate": "SIP-115",
+            "driverJob": {
+                "reference": "R94-GEOCODE-FALLBACK",
+                "sourceOrderId": "r94-geocode-fallback-001",
+                "pickups": [
+                    {
+                        "company": "R94 Pickup",
+                        "address": "Unresolvable Test Address 1",
+                    }
+                ],
+                "deliveries": [
+                    {
+                        "company": "R94 Delivery",
+                        "address": "Unresolvable Test Address 2",
+                    }
+                ],
+            },
+        }
+        sj, job = request(port, "server/aims-tracking/job_assign.php", address_only_job)
+        assert sj == 200 and job.get("ok") is True, (sj, job)
+        assert len(job.get("geocodeWarnings", [])) == 2, job
+        assert all(stop.get("latitude") is None and stop.get("longitude") is None
+                   for stop in job.get("stops", [])), job
+
+        sf, feed = request(
+            port,
+            "server/aims-tracking/driver_jobs.php?plate=SIP-115",
+            None,
+            method="GET",
+        )
+        assert sf == 200, (sf, feed)
+        fallback_jobs = [
+            item for item in feed.get("jobs", [])
+            if item.get("reference") == "R94-GEOCODE-FALLBACK"
+        ]
+        assert len(fallback_jobs) == 1, feed
+        fallback_stops = fallback_jobs[0].get("stops", [])
+        assert len(fallback_stops) == 2, fallback_jobs[0]
+        assert all(
+            stop.get("latitude") is None and stop.get("longitude") is None
+            for stop in fallback_stops
+        ), fallback_stops
 
         message = {
             "plate": "SIP-115",
@@ -161,6 +207,15 @@ with tempfile.TemporaryDirectory(prefix="aims-r94-") as temp:
         point_count = db.execute(
             "SELECT COUNT(*) FROM points WHERE point_key='gps_r94_001'"
         ).fetchone()[0]
+        fallback_coords = db.execute(
+            """SELECT latitude, longitude, arrival_notified_at
+               FROM job_stops
+               WHERE job_id=(SELECT id FROM jobs WHERE reference='R94-GEOCODE-FALLBACK')
+               ORDER BY stop_order"""
+        ).fetchall()
+        stop_schema = {
+            row[1]: row for row in db.execute("PRAGMA table_info(job_stops)").fetchall()
+        }
         arrival_count = db.execute(
             "SELECT COUNT(*) FROM notifications WHERE vehicle_id=1 AND type='job_arrival'"
         ).fetchone()[0]
@@ -173,6 +228,11 @@ with tempfile.TemporaryDirectory(prefix="aims-r94-") as temp:
         assert message_count == 1, message_count
         assert signal_count == 1, signal_count
         assert point_count == 1, point_count
+        assert stop_schema["latitude"][3] == 0, stop_schema["latitude"]
+        assert stop_schema["longitude"][3] == 0, stop_schema["longitude"]
+        assert len(fallback_coords) == 2, fallback_coords
+        assert all(lat is None and lng is None and arrived is None
+                   for lat, lng, arrived in fallback_coords), fallback_coords
         assert arrival_count == 1, arrival_count
         assert completion_count == 1, completion_count
         assert job_status == "document_pending", job_status
