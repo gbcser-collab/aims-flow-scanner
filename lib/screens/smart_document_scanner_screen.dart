@@ -21,11 +21,13 @@ class SmartDocumentScannerScreen extends StatefulWidget {
     required this.camera,
     required this.plate,
     this.contextHint = '',
+    this.returnCmrDocumentIdOnSave = false,
   });
 
   final CameraDescription camera;
   final String plate;
   final String contextHint;
+  final bool returnCmrDocumentIdOnSave;
 
   @override
   State<SmartDocumentScannerScreen> createState() =>
@@ -220,17 +222,35 @@ class _SmartDocumentScannerScreenState
 
     if (type == SmartDocumentType.cmr) {
       final cmr = const CmrParser().parse(rawText);
-      await Navigator.of(context).pushReplacement(
-        MaterialPageRoute(
-          builder: (_) => ScanReviewScreen(
-            processedImagePath: imagePath,
-            signatureImagePath: scanResult.signatureImagePath,
-            signatureConfidence: scanResult.signatureConfidence,
-            quality: scanResult.quality,
-            cmr: cmr,
+      if (widget.returnCmrDocumentIdOnSave) {
+        final documentId = await Navigator.of(context).push<String>(
+          MaterialPageRoute(
+            builder: (_) => ScanReviewScreen(
+              processedImagePath: imagePath,
+              signatureImagePath: scanResult.signatureImagePath,
+              signatureConfidence: scanResult.signatureConfidence,
+              quality: scanResult.quality,
+              cmr: cmr,
+              closeOnSave: true,
+            ),
           ),
-        ),
-      );
+        );
+        if (mounted && documentId != null && documentId.isNotEmpty) {
+          Navigator.of(context).pop(documentId);
+        }
+      } else {
+        await Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+            builder: (_) => ScanReviewScreen(
+              processedImagePath: imagePath,
+              signatureImagePath: scanResult.signatureImagePath,
+              signatureConfidence: scanResult.signatureConfidence,
+              quality: scanResult.quality,
+              cmr: cmr,
+            ),
+          ),
+        );
+      }
       return;
     }
 
