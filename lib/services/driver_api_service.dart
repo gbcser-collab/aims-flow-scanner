@@ -542,6 +542,7 @@ class DriverApiService {
   Future<DriverChatMessage> sendMessage({
     required String plate,
     required String message,
+    String? clientMessageId,
   }) async {
     _ensureConfigured();
     final text = message.trim();
@@ -554,6 +555,8 @@ class DriverApiService {
           body: jsonEncode({
             'plate': plate.trim().toUpperCase(),
             'message': text,
+            if (clientMessageId?.trim().isNotEmpty == true)
+              'clientMessageId': clientMessageId!.trim(),
           }),
         )
         .timeout(const Duration(seconds: 12));
