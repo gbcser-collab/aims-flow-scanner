@@ -3114,6 +3114,17 @@ class _DriverShellScreenState extends State<DriverShellScreen>
         await _voice.disableHandsFree();
         await prefs.setBool(_prefsHandsFree, false);
       }
+    } catch (_) {
+      await prefs.setBool(_prefsHandsFree, false);
+      if (mounted) {
+        _snack(
+          _l(
+            'A hangvezérlés most nem indítható. Az app többi része tovább működik.',
+            'Voice control cannot start right now. The rest of the app remains available.',
+            'Die Sprachsteuerung kann derzeit nicht gestartet werden. Die übrige App bleibt verfügbar.',
+          ),
+        );
+      }
     } finally {
       if (mounted) setState(() => _handsFreeBusy = false);
     }
@@ -3152,7 +3163,17 @@ class _DriverShellScreenState extends State<DriverShellScreen>
     if (_pendingSignals.isNotEmpty) {
       await _flushPendingSignals();
     }
+    if (_pendingRegistrationPoints.isNotEmpty) {
+      await _flushPendingRegistrationPoints();
+    }
+    if (_pendingOfficeMessages.isNotEmpty) {
+      await _flushPendingOfficeMessages();
+    }
+    await _refreshJobCmrStates();
+    await _finalizeDocumentGateIfPossible();
     await _refreshJobs(showLoading: false);
+    await _refreshRestMode(silent: true);
+    await _refreshOfficeMessages(silent: true);
   }
 
   @override
