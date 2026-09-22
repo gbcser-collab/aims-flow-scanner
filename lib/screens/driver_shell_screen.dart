@@ -227,6 +227,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
   static const _prefsPendingRegistrationPrefix =
       'aims_pending_registration_points_v1_';
   static const _prefsJobCmrPrefix = 'aims_job_cmr_v1_';
+  static const _prefsStateQuarantine = 'aims_driver_state_quarantine_v1';
 
   final _api = const DriverApiService();
   final _tracking = VehicleTrackingService.instance;
@@ -283,6 +284,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
   DateTime? _lastPreArrivalCheckAt;
   DriverRestModeState _restMode = const DriverRestModeState(active: false);
   bool _restModeBusy = false;
+  bool _stateRecoveryWarning = false;
 
   bool _isStopCompleted(DriverStop stop) =>
       stop.completed ||
@@ -387,6 +389,42 @@ class _DriverShellScreenState extends State<DriverShellScreen>
         !_isServerBackedCmrState(_jobCmrStates[job.id]);
   }
 
+  Future<void> _quarantineLocalState(
+    SharedPreferences prefs, {
+    required String key,
+    required String raw,
+    required String reason,
+  }) async {
+    final entries = <Map<String, dynamic>>[];
+    final existing = prefs.getString(_prefsStateQuarantine);
+    if (existing != null && existing.trim().isNotEmpty) {
+      try {
+        final decoded = jsonDecode(existing);
+        if (decoded is List) {
+          for (final item in decoded) {
+            if (item is Map) {
+              entries.add(Map<String, dynamic>.from(item));
+            }
+          }
+        }
+      } catch (_) {
+        // A corrupt quarantine must never prevent preserving the new payload.
+      }
+    }
+    entries.add({
+      'quarantinedAt': DateTime.now().toUtc().toIso8601String(),
+      'key': key,
+      'reason': reason,
+      'raw': raw,
+    });
+    final kept = entries.length <= 20
+        ? entries
+        : entries.sublist(entries.length - 20);
+    await prefs.setString(_prefsStateQuarantine, jsonEncode(kept));
+    await prefs.remove(key);
+    _stateRecoveryWarning = true;
+  }
+
   Future<void> _loadJobCmrLinks(
     SharedPreferences prefs,
     String plate,
@@ -396,7 +434,14 @@ class _DriverShellScreenState extends State<DriverShellScreen>
     if (raw != null && raw.trim().isNotEmpty) {
       try {
         final decoded = jsonDecode(raw);
-        if (decoded is Map) {
+        if (decoded is! Map) {
+          await _quarantineLocalState(
+            prefs,
+            key: _jobCmrPrefsKey(plate),
+            raw: raw,
+            reason: 'cmr_links_wrong_shape',
+          );
+        } else {
           for (final entry in decoded.entries) {
             final jobId = int.tryParse(entry.key.toString());
             final documentId = entry.value?.toString() ?? '';
@@ -405,8 +450,13 @@ class _DriverShellScreenState extends State<DriverShellScreen>
             }
           }
         }
-      } catch (_) {
-        await prefs.remove(_jobCmrPrefsKey(plate));
+      } catch (error) {
+        await _quarantineLocalState(
+          prefs,
+          key: _jobCmrPrefsKey(plate),
+          raw: raw,
+          reason: 'cmr_links_invalid_json:$error',
+        );
       }
     }
     await _refreshJobCmrStates();
@@ -584,7 +634,15 @@ class _DriverShellScreenState extends State<DriverShellScreen>
     if (raw == null || raw.trim().isEmpty) return;
     try {
       final decoded = jsonDecode(raw);
-      if (decoded is! List) return;
+      if (decoded is! List) {
+        await _quarantineLocalState(
+          prefs,
+          key: _pendingRegistrationPrefsKey(plate),
+          raw: raw,
+          reason: 'registration_queue_wrong_shape',
+        );
+        return;
+      }
       for (final item in decoded) {
         final point = _PendingRegistrationPoint.fromJson(item);
         if (point != null &&
@@ -597,8 +655,13 @@ class _DriverShellScreenState extends State<DriverShellScreen>
       _pendingRegistrationPoints.sort(
         (a, b) => a.createdAt.compareTo(b.createdAt),
       );
-    } catch (_) {
-      await prefs.remove(_pendingRegistrationPrefsKey(plate));
+    } catch (error) {
+      await _quarantineLocalState(
+        prefs,
+        key: _pendingRegistrationPrefsKey(plate),
+        raw: raw,
+        reason: 'registration_queue_invalid_json:$error',
+      );
     }
   }
 
@@ -734,14 +797,27 @@ class _DriverShellScreenState extends State<DriverShellScreen>
     if (raw == null || raw.trim().isEmpty) return;
     try {
       final decoded = jsonDecode(raw);
-      if (decoded is! List) return;
+      if (decoded is! List) {
+        await _quarantineLocalState(
+          prefs,
+          key: _pendingSignalPrefsKey(plate),
+          raw: raw,
+          reason: 'signal_queue_wrong_shape',
+        );
+        return;
+      }
       for (final item in decoded) {
         final signal = _PendingDriverSignal.fromJson(item);
         if (signal != null) _pendingSignals.add(signal);
       }
       _pendingSignals.sort((a, b) => a.occurredAt.compareTo(b.occurredAt));
-    } catch (_) {
-      await prefs.remove(_pendingSignalPrefsKey(plate));
+    } catch (error) {
+      await _quarantineLocalState(
+        prefs,
+        key: _pendingSignalPrefsKey(plate),
+        raw: raw,
+        reason: 'signal_queue_invalid_json:$error',
+      );
     }
   }
 
@@ -842,7 +918,15 @@ class _DriverShellScreenState extends State<DriverShellScreen>
     if (raw == null || raw.trim().isEmpty) return;
     try {
       final decoded = jsonDecode(raw);
-      if (decoded is! Map) return;
+      if (decoded is! Map) {
+        await _quarantineLocalState(
+          prefs,
+          key: _pendingStopPrefsKey(plate),
+          raw: raw,
+          reason: 'stop_queue_wrong_shape',
+        );
+        return;
+      }
       for (final entry in decoded.entries) {
         final id = int.tryParse(entry.key.toString());
         if (id == null || id <= 0) continue;
@@ -861,8 +945,13 @@ class _DriverShellScreenState extends State<DriverShellScreen>
           _pendingStopActions[id] = actions;
         }
       }
-    } catch (_) {
-      await prefs.remove(_pendingStopPrefsKey(plate));
+    } catch (error) {
+      await _quarantineLocalState(
+        prefs,
+        key: _pendingStopPrefsKey(plate),
+        raw: raw,
+        reason: 'stop_queue_invalid_json:$error',
+      );
     }
   }
 
@@ -1358,6 +1447,19 @@ class _DriverShellScreenState extends State<DriverShellScreen>
     if (handsFree && mounted) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         unawaited(_setHandsFree(true));
+      });
+    }
+
+    if (_stateRecoveryWarning && mounted) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _snack(
+          _l(
+            'Sérült helyi adatot találtam. Nem töröltem: biztonsági karanténba mentettem. Ellenőrizd az offline műveleteket.',
+            'Corrupt local data was found. It was preserved in a safety quarantine. Check pending offline actions.',
+            'Beschädigte lokale Daten wurden gefunden und sicher unter Quarantäne gespeichert. Prüfe ausstehende Offline-Aktionen.',
+          ),
+        );
       });
     }
 
@@ -1981,7 +2083,15 @@ class _DriverShellScreenState extends State<DriverShellScreen>
     if (raw == null || raw.trim().isEmpty) return;
     try {
       final decoded = jsonDecode(raw);
-      if (decoded is! List) return;
+      if (decoded is! List) {
+        await _quarantineLocalState(
+          prefs,
+          key: _pendingOfficeMessagePrefsKey(plate),
+          raw: raw,
+          reason: 'office_message_queue_wrong_shape',
+        );
+        return;
+      }
       for (final item in decoded) {
         final pending = _PendingOfficeMessage.fromJson(item);
         if (pending != null) _pendingOfficeMessages.add(pending);
@@ -1989,8 +2099,13 @@ class _DriverShellScreenState extends State<DriverShellScreen>
       _pendingOfficeMessages.sort(
         (a, b) => a.createdAt.compareTo(b.createdAt),
       );
-    } catch (_) {
-      await prefs.remove(_pendingOfficeMessagePrefsKey(plate));
+    } catch (error) {
+      await _quarantineLocalState(
+        prefs,
+        key: _pendingOfficeMessagePrefsKey(plate),
+        raw: raw,
+        reason: 'office_message_queue_invalid_json:$error',
+      );
     }
   }
 
