@@ -4249,13 +4249,27 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                 'Traffic / delay',
                 'Verkehr / Verzögerung',
               ),
-              () => _sendSignal('Késés'),
+              () => _showSignalChoice(
+                type: 'Késés',
+                title: _l('KÉSÉS OKA', 'DELAY REASON', 'GRUND DER VERSPÄTUNG'),
+                options: [
+                  (_l('FORGALOM', 'TRAFFIC', 'VERKEHR'), 'Forgalom'),
+                  (_l('CSÚSZÁS', 'DELAY', 'VERZÖGERUNG'), 'Csúszás'),
+                ],
+              ),
             ),
             _signal(
               Icons.timer_outlined,
               _l('Várakozás', 'Waiting', 'Warten'),
               _l('Rakodás / telephely', 'Loading / site', 'Beladung / Standort'),
-              () => _sendSignal('Várakozás'),
+              () => _showSignalChoice(
+                type: 'Várakozás',
+                title: _l('MIÉRT VÁRSZ?', 'WHY ARE YOU WAITING?', 'WARUM WARTEST DU?'),
+                options: [
+                  (_l('RAKODÁSRA VÁROK', 'WAITING FOR LOADING', 'WARTE AUF BELADUNG'), 'Rakodásra várok'),
+                  (_l('TELEPHELYEN VÁROK', 'WAITING AT SITE', 'WARTE AM STANDORT'), 'Telephelyen várok'),
+                ],
+              ),
             ),
             _signal(
               Icons.location_off_outlined,
@@ -4265,13 +4279,28 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                 'Cannot find it / no entry',
                 'Nicht auffindbar / kein Zutritt',
               ),
-              () => _sendSignal('Cím / rakodás'),
+              () => _showSignalChoice(
+                type: 'Cím / rakodás',
+                title: _l('MI A PROBLÉMA?', 'WHAT IS THE PROBLEM?', 'WAS IST DAS PROBLEM?'),
+                options: [
+                  (_l('NEM TALÁLHATÓ', 'CANNOT FIND IT', 'NICHT AUFFINDBAR'), 'Nem található'),
+                  (_l('NEM ENGEDNEK BE', 'NO ENTRY', 'KEIN ZUTRITT'), 'Nem engednek be'),
+                ],
+              ),
             ),
             _signal(
               Icons.build_outlined,
               _l('Műszaki hiba', 'Technical issue', 'Technisches Problem'),
               _l('Autó / gumi / motor', 'Vehicle / tyre / engine', 'Fahrzeug / Reifen / Motor'),
-              () => _sendSignal('Műszaki hiba'),
+              () => _showSignalChoice(
+                type: 'Műszaki hiba',
+                title: _l('MI HIBÁSODOTT MEG?', 'WHAT FAILED?', 'WAS IST DEFEKT?'),
+                options: [
+                  (_l('AUTÓ', 'VEHICLE', 'FAHRZEUG'), 'Autó'),
+                  (_l('GUMI', 'TYRE', 'REIFEN'), 'Gumi'),
+                  (_l('MOTOR', 'ENGINE', 'MOTOR'), 'Motor'),
+                ],
+              ),
             ),
             _signal(
               Icons.sos_outlined,
@@ -4281,7 +4310,15 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                 'Accident / immediate attention',
                 'Unfall / sofortige Aufmerksamkeit',
               ),
-              () => _sendSignal('Baleset / sürgős', urgent: true),
+              () => _showSignalChoice(
+                type: 'Baleset / sürgős',
+                title: _l('SOS / SÜRGŐS', 'SOS / URGENT', 'SOS / DRINGEND'),
+                urgent: true,
+                options: [
+                  (_l('SOS – AZONNALI SEGÍTSÉG', 'SOS – IMMEDIATE HELP', 'SOS – SOFORTIGE HILFE'), 'SOS – azonnali segítség'),
+                  (_l('BALESET', 'ACCIDENT', 'UNFALL'), 'Baleset'),
+                ],
+              ),
               danger: true,
             ),
             _signal(
@@ -4761,6 +4798,68 @@ class _DriverShellScreenState extends State<DriverShellScreen>
     }
   }
 
+  Future<void> _showSignalChoice({
+    required String type,
+    required String title,
+    required List<(String, String)> options,
+    bool urgent = false,
+  }) async {
+    if (_actionBusy) return;
+    final selected = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: const Color(0xFF06131F),
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 18, 16, 22),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                title,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: urgent ? Colors.redAccent : _blue,
+                  fontSize: 22,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 14),
+              for (final option in options)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 9),
+                  child: FilledButton(
+                    onPressed: () => Navigator.pop(context, option.$2),
+                    style: FilledButton.styleFrom(
+                      minimumSize: const Size.fromHeight(58),
+                      backgroundColor: urgent
+                          ? const Color(0xFFD93232)
+                          : const Color(0xFF0B3B62),
+                      foregroundColor: Colors.white,
+                      side: BorderSide(
+                        color: urgent ? Colors.redAccent : _blue,
+                        width: 1.5,
+                      ),
+                    ),
+                    child: Text(
+                      option.$1,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (!mounted || selected == null) return;
+    await _sendSignal(type, urgent: urgent, message: selected);
+  }
+
   Future<void> _otherSignal() async {
     final controller = TextEditingController();
     final text = await showDialog<String>(
@@ -4885,15 +4984,23 @@ class _DriverShellScreenState extends State<DriverShellScreen>
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
             color: danger
-                ? Colors.redAccent.withValues(alpha: .08)
-                : _panelColor,
+                ? Colors.redAccent.withValues(alpha: .15)
+                : _blue.withValues(alpha: .14),
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
               color: danger
-                  ? Colors.redAccent.withValues(alpha: .65)
-                  : const Color(0xFF173B54),
-              width: danger ? 2 : 1,
+                  ? Colors.redAccent.withValues(alpha: .90)
+                  : _blue.withValues(alpha: .78),
+              width: 2,
             ),
+            boxShadow: [
+              BoxShadow(
+                color: (danger ? Colors.redAccent : _blue)
+                    .withValues(alpha: .13),
+                blurRadius: 14,
+                spreadRadius: 1,
+              ),
+            ],
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
