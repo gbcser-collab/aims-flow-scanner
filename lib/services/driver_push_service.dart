@@ -62,13 +62,112 @@ class DriverPushService {
   DriverPushEvent? _pendingLaunch;
   String _registeredPlate = '';
   bool _initialized = false;
+  Future<void>? _initializationFuture;
+  Object? _lastInitializationError;
 
   Stream<DriverPushEvent> get events => _events.stream;
+  Object? get lastInitializationError => _lastInitializationError;
 
-  Future<void> initialize() async {
-    if (_initialized) return;
-    _initialized = true;
+  Future<void> initialize() {
+    if (_initialized) return Future<void>.value();
+    final running = _initializationFuture;
+    if (running != null) return running;
+    final future = _initializeInternal();
+    _initializationFuture = future;
+    return future.whenComplete(() {
+      if (identical(_initializationFuture, future)) {
+        _initializationFuture = null;
+      }
+    });
+  }
 
+  Future<void> _initializeInternal() async {
+    _lastInitializationError = null;
+
+    try {
+      await _initializeLocalNotifications();
+    } catch (error) {
+      _lastInitializationError = error;
+      // Push/local-notification setup must never block the entire app startup.
+    }
+
+    final options = RuntimeFirebaseOptions.current;
+    if (options == null) {
+      _initialized = true;
+      return;
+    }
+
+    try {
+      if (Firebase.apps.isEmpty) {
+        await Firebase.initializeApp(options: options);
+      }
+      FirebaseMessaging.onBackgroundMessage(
+        aimsDriverMessagingBackgroundHandler,
+      );
+
+      await FirebaseMessaging.instance.requestPermission(
+        alert: true,
+        badge: true,
+        sound: true,
+        provisional: false,
+      );
+
+      _messageSub ??= FirebaseMessaging.onMessage.listen((message) async {
+        try {
+          final type = message.data['type']?.toString() ?? '';
+          if (type == 'driver_job') {
+            await showJobNotification(message);
+          } else if (type == 'admin_message') {
+            await showDriverMessageNotification(message);
+          } else {
+            await showAdminNotification(message);
+          }
+        } catch (error) {
+          _lastInitializationError = error;
+        } finally {
+          if (!_events.isClosed) {
+            _events.add(DriverPushEvent(
+              data: Map<String, dynamic>.from(message.data),
+              actionId: '',
+              openedFromNotification: false,
+            ));
+          }
+        }
+      });
+
+      _openSub ??= FirebaseMessaging.onMessageOpenedApp.listen((message) {
+        if (!_events.isClosed) {
+          _events.add(DriverPushEvent(
+            data: Map<String, dynamic>.from(message.data),
+            actionId: 'open_job',
+            openedFromNotification: true,
+          ));
+        }
+      });
+
+      final initial = await FirebaseMessaging.instance.getInitialMessage();
+      if (initial != null) {
+        _pendingLaunch = DriverPushEvent(
+          data: Map<String, dynamic>.from(initial.data),
+          actionId: 'open_job',
+          openedFromNotification: true,
+        );
+      }
+
+      _tokenSub ??= FirebaseMessaging.instance.onTokenRefresh.listen((_) {
+        if (_registeredPlate.isNotEmpty) {
+          unawaited(registerForPlate(_registeredPlate));
+        }
+      });
+    } catch (error) {
+      _lastInitializationError = error;
+      // Driver login/jobs/GPS must stay usable even when FCM is unavailable.
+    } finally {
+      _initialized = true;
+    }
+  }
+
+  Future<void> _initializeLocalNotifications() async {
     const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
     await _notifications.initialize(
       const InitializationSettings(android: androidInit),
@@ -123,60 +222,6 @@ class DriverPushService {
       );
     }
 
-    final options = RuntimeFirebaseOptions.current;
-    if (options == null) return;
-    if (Firebase.apps.isEmpty) {
-      await Firebase.initializeApp(options: options);
-    }
-    FirebaseMessaging.onBackgroundMessage(
-      aimsDriverMessagingBackgroundHandler,
-    );
-
-    await FirebaseMessaging.instance.requestPermission(
-      alert: true,
-      badge: true,
-      sound: true,
-      provisional: false,
-    );
-
-    _messageSub = FirebaseMessaging.onMessage.listen((message) async {
-      final type = message.data['type']?.toString() ?? '';
-      if (type == 'driver_job') {
-        await showJobNotification(message);
-      } else if (type == 'admin_message') {
-        await showDriverMessageNotification(message);
-      } else {
-        await showAdminNotification(message);
-      }
-      _events.add(DriverPushEvent(
-        data: Map<String, dynamic>.from(message.data),
-        actionId: '',
-        openedFromNotification: false,
-      ));
-    });
-
-    _openSub = FirebaseMessaging.onMessageOpenedApp.listen((message) {
-      _events.add(DriverPushEvent(
-        data: Map<String, dynamic>.from(message.data),
-        actionId: 'open_job',
-        openedFromNotification: true,
-      ));
-    });
-
-    final initial = await FirebaseMessaging.instance.getInitialMessage();
-    if (initial != null) {
-      _pendingLaunch = DriverPushEvent(
-        data: Map<String, dynamic>.from(initial.data),
-        actionId: 'open_job',
-        openedFromNotification: true,
-      );
-    }
-
-    _tokenSub = FirebaseMessaging.instance.onTokenRefresh.listen((_) {
-      if (_registeredPlate.isNotEmpty) {
-        unawaited(registerForPlate(_registeredPlate));
-      }
-    });
   }
 
   DriverPushEvent? takePendingLaunch() {
