@@ -93,6 +93,29 @@ with tempfile.TemporaryDirectory(prefix="aims-r94-") as temp:
         })
         assert s3 == 409 and c.get("error") == "client_message_id_conflict", (s3, c)
 
+        point = {
+            "pointId": "gps_r94_001",
+            "deviceId": "device_r94_001",
+            "vehicleLabel": "SIP-115",
+            "countryCode": "HU",
+            "timestamp": "2026-09-22T03:00:00Z",
+            "latitude": 47.0,
+            "longitude": 18.0,
+            "accuracy": 5.0,
+            "speedMps": 12.0,
+            "heading": 90.0,
+            "altitude": 120.0,
+            "source": "stream",
+            "delayed": True,
+        }
+        sg1, g1 = request(port, "server/aims-tracking/ingest.php", point)
+        sg2, g2 = request(port, "server/aims-tracking/ingest.php", point)
+        assert sg1 == 200 and sg2 == 200, (sg1, g1, sg2, g2)
+        assert g1.get("registeredVehicle") is True, g1
+        assert g2.get("registeredVehicle") is True, g2
+        assert g1.get("duplicatePoint") is False, g1
+        assert g2.get("duplicatePoint") is True, g2
+
         signal = {
             "plate": "SIP-115",
             "type": "Késés",
@@ -135,6 +158,9 @@ with tempfile.TemporaryDirectory(prefix="aims-r94-") as temp:
         signal_count = db.execute(
             "SELECT COUNT(*) FROM notifications WHERE vehicle_id=1 AND type='driver_signal'"
         ).fetchone()[0]
+        point_count = db.execute(
+            "SELECT COUNT(*) FROM points WHERE point_key='gps_r94_001'"
+        ).fetchone()[0]
         arrival_count = db.execute(
             "SELECT COUNT(*) FROM notifications WHERE vehicle_id=1 AND type='job_arrival'"
         ).fetchone()[0]
@@ -146,6 +172,7 @@ with tempfile.TemporaryDirectory(prefix="aims-r94-") as temp:
         ).fetchone()[0]
         assert message_count == 1, message_count
         assert signal_count == 1, signal_count
+        assert point_count == 1, point_count
         assert arrival_count == 1, arrival_count
         assert completion_count == 1, completion_count
         assert job_status == "document_pending", job_status
