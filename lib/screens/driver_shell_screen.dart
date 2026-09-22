@@ -2028,7 +2028,11 @@ class _DriverShellScreenState extends State<DriverShellScreen>
       for (final pending
           in List<_PendingOfficeMessage>.from(_pendingOfficeMessages)) {
         try {
-          await _api.sendMessage(plate: _plate, message: pending.body);
+          await _api.sendMessage(
+            plate: _plate,
+            message: pending.body,
+            clientMessageId: pending.id,
+          );
           delivered.add(pending.id);
         } on DriverApiException catch (error) {
           if (const {400, 404, 409, 410, 422}.contains(error.statusCode)) {
@@ -2126,7 +2130,11 @@ class _DriverShellScreenState extends State<DriverShellScreen>
 
     setState(() => _officeMessageSendBusy = true);
     try {
-      final sent = await _api.sendMessage(plate: _plate, message: text);
+      final sent = await _api.sendMessage(
+        plate: _plate,
+        message: text,
+        clientMessageId: pending.id,
+      );
       _officeMessageController.clear();
       if (!mounted) return;
       setState(() {
