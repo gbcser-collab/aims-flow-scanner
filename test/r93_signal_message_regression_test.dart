@@ -41,12 +41,24 @@ void main() {
 
       expect(find.text('Gyors jelzés'), findsOneWidget);
       expect(find.text('Késés'), findsOneWidget);
-      expect(find.byKey(const Key('flow-office-message-input')), findsOneWidget);
-      expect(find.byKey(const Key('flow-office-message-send')), findsOneWidget);
 
       await tester.tap(find.text('Késés'));
       await tester.pump(const Duration(milliseconds: 600));
       expect(tester.takeException(), isNull);
+
+      // The office message panel sits below the quick-signal grid in a
+      // lazily-built ListView, so scroll it into the viewport before finding
+      // its controls. This tests the real screen instead of assuming all
+      // off-screen list children are already mounted.
+      await tester.scrollUntilVisible(
+        find.byKey(const Key('flow-office-message-input')),
+        300,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.pump(const Duration(milliseconds: 200));
+
+      expect(find.byKey(const Key('flow-office-message-input')), findsOneWidget);
+      expect(find.byKey(const Key('flow-office-message-send')), findsOneWidget);
 
       await tester.enterText(
         find.byKey(const Key('flow-office-message-input')),
@@ -83,7 +95,8 @@ void main() {
       // keeps the shell mounted and does not tear down the widget tree.
       expect(tester.takeException(), isNull);
       expect(find.byType(DriverShellScreen), findsOneWidget);
-      expect(find.byIcon(Icons.home_outlined), findsOneWidget);
+      // NavigationBar renders the selected destination with selectedIcon.
+      expect(find.byIcon(Icons.home_rounded), findsOneWidget);
     },
   );
 }
