@@ -21,6 +21,7 @@ class ScanReviewScreen extends StatefulWidget {
     required this.quality,
     required this.cmr,
     this.savedDocument,
+    this.closeOnSave = false,
   });
 
   final String processedImagePath;
@@ -29,6 +30,7 @@ class ScanReviewScreen extends StatefulWidget {
   final ScanQuality quality;
   final CmrData cmr;
   final ScannedDocument? savedDocument;
+  final bool closeOnSave;
 
   @override
   State<ScanReviewScreen> createState() => _ScanReviewScreenState();
@@ -178,6 +180,10 @@ class _ScanReviewScreenState extends State<ScanReviewScreen> {
       setState(() => _savedDocument = saved);
       await _sync.refreshPendingCount();
       unawaited(_sync.syncNow());
+      if (widget.closeOnSave) {
+        if (mounted) Navigator.of(context).pop(saved.id);
+        return;
+      }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(saved.location == null
