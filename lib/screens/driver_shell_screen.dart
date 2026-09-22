@@ -574,24 +574,6 @@ class _DriverShellScreenState extends State<DriverShellScreen>
     );
   }
 
-  Future<void> _linkNewestCmrToJob(
-    DriverJob job,
-    DateTime scanStartedAt,
-  ) async {
-    final documents = await _scanRepository.loadAll();
-    final threshold = scanStartedAt.subtract(const Duration(seconds: 30));
-    final candidates = documents
-        .where((document) => !document.createdAt.isBefore(threshold))
-        .toList()
-      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
-    if (candidates.isEmpty) {
-      await _refreshJobCmrStates();
-      return;
-    }
-    await _linkCmrDocumentToJob(job, candidates.first.id);
-  }
-
-
 
   Future<void> _loadPendingRegistrationPoints(
     SharedPreferences prefs,
