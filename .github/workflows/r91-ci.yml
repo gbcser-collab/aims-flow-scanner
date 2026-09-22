@@ -142,6 +142,9 @@ jobs:
       - name: R94 response contract guard
         run: python3 ci/r94_response_contract_guard.py
 
+      - name: R94 document gate guard
+        run: python3 ci/r94_document_gate_guard.py
+
       - name: Unit tests
         run: flutter test --reporter expanded
 
