@@ -374,12 +374,17 @@ class _DriverShellScreenState extends State<DriverShellScreen>
   bool _isQueuedCmrState(CmrSyncState? state) =>
       state == CmrSyncState.pending || state == CmrSyncState.failed;
 
+  bool _isServerBackedCmrState(CmrSyncState? state) =>
+      state == CmrSyncState.uploaded ||
+      state == CmrSyncState.emailed ||
+      state == CmrSyncState.approved;
+
   bool get _documentGateActive {
     final job = _job;
     return job != null &&
         job.acceptedAt != null &&
         !_hasOpenStop(job) &&
-        !_hasJobCmr(job);
+        !_isServerBackedCmrState(_jobCmrStates[job.id]);
   }
 
   Future<void> _loadJobCmrLinks(
@@ -456,7 +461,12 @@ class _DriverShellScreenState extends State<DriverShellScreen>
   }
 
   void _documentSyncChanged() {
-    unawaited(_refreshJobCmrStates());
+    unawaited(_handleDocumentSyncChanged());
+  }
+
+  Future<void> _handleDocumentSyncChanged() async {
+    await _refreshJobCmrStates();
+    await _finalizeDocumentGateIfPossible();
   }
 
   bool _isFinalOpenStop(DriverStop stop) {
@@ -489,7 +499,9 @@ class _DriverShellScreenState extends State<DriverShellScreen>
       }
       final documentId = _jobCmrIds[job.id];
       if (documentId == null || documentId.isEmpty) continue;
-      final syncState = _jobCmrStates[job.id]?.name ?? 'pending';
+      final cmrState = _jobCmrStates[job.id];
+      if (!_isServerBackedCmrState(cmrState)) continue;
+      final syncState = cmrState!.name;
       try {
         await _api.completeDocumentGate(
           plate: _plate,
