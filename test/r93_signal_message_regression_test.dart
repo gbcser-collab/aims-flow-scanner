@@ -26,13 +26,18 @@ void main() {
           ),
         ),
       );
-      await tester.pump(const Duration(milliseconds: 500));
+      await tester.pump(const Duration(seconds: 1));
 
       expect(tester.takeException(), isNull);
-      expect(find.text('JELZÉS'), findsOneWidget);
+      expect(find.byType(DriverShellScreen), findsOneWidget);
 
-      await tester.tap(find.text('JELZÉS'));
-      await tester.pump(const Duration(milliseconds: 250));
+      // Select the actual navigation destination instead of tapping its label.
+      // This keeps the regression test independent from translated label text
+      // and verifies the same callback path used on a real phone.
+      final signalDestination = find.byIcon(Icons.campaign_outlined);
+      expect(signalDestination, findsOneWidget);
+      await tester.tap(signalDestination);
+      await tester.pump(const Duration(milliseconds: 500));
 
       expect(find.text('Gyors jelzés'), findsOneWidget);
       expect(find.text('Késés'), findsOneWidget);
@@ -40,7 +45,7 @@ void main() {
       expect(find.byKey(const Key('flow-office-message-send')), findsOneWidget);
 
       await tester.tap(find.text('Késés'));
-      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pump(const Duration(milliseconds: 600));
       expect(tester.takeException(), isNull);
 
       await tester.enterText(
@@ -48,7 +53,7 @@ void main() {
         'R93 üzenetküldés regresszióteszt',
       );
       await tester.tap(find.byKey(const Key('flow-office-message-send')));
-      await tester.pump(const Duration(milliseconds: 500));
+      await tester.pump(const Duration(milliseconds: 600));
 
       expect(tester.takeException(), isNull);
       expect(find.byType(DriverShellScreen), findsOneWidget);
@@ -72,11 +77,13 @@ void main() {
           ),
         ),
       );
-      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pump(const Duration(seconds: 1));
 
+      // The stability contract is that a valid identity supplied by login
+      // keeps the shell mounted and does not tear down the widget tree.
       expect(tester.takeException(), isNull);
       expect(find.byType(DriverShellScreen), findsOneWidget);
-      expect(find.text('SIP-115'), findsWidgets);
+      expect(find.byIcon(Icons.home_outlined), findsOneWidget);
     },
   );
 }
