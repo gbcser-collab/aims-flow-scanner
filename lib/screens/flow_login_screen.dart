@@ -46,6 +46,31 @@ class _FlowLoginScreenState extends State<FlowLoginScreen> {
     });
   }
 
+  Future<void> _openDriverShell({
+    String initialPlate = '',
+    String initialDriverName = '',
+  }) async {
+    if (!mounted) return;
+
+    // Close the active text input / inherited focus dependencies before
+    // removing the login route. On debug builds Flutter otherwise may briefly
+    // surface an InheritedElement _dependents.isEmpty assertion while the
+    // login route is being deactivated.
+    FocusManager.instance.primaryFocus?.unfocus();
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted) return;
+
+    await Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(
+        builder: (_) => DriverShellScreen(
+          initialPlate: initialPlate,
+          initialDriverName: initialDriverName,
+        ),
+      ),
+      (route) => false,
+    );
+  }
+
   Future<void> _tryDeviceUnlock() async {
     if (_e2e || _autoUnlockTried || !mounted) return;
     _autoUnlockTried = true;
@@ -60,9 +85,7 @@ class _FlowLoginScreenState extends State<FlowLoginScreen> {
     final ok = await DeviceUnlockService.instance.authenticate();
     if (!ok || !mounted) return;
 
-    await Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (_) => const DriverShellScreen()),
-    );
+    await _openDriverShell();
   }
 
   @override
@@ -213,13 +236,9 @@ class _FlowLoginScreenState extends State<FlowLoginScreen> {
       final initialDriverName =
           (prefs.getString('aims_driver_name') ?? '').trim();
 
-      await Navigator.of(context).pushReplacement(
-        MaterialPageRoute(
-          builder: (_) => DriverShellScreen(
-            initialPlate: initialPlate,
-            initialDriverName: initialDriverName,
-          ),
-        ),
+      await _openDriverShell(
+        initialPlate: initialPlate,
+        initialDriverName: initialDriverName,
       );
     } catch (e) {
       if (!mounted) return;
