@@ -32,6 +32,27 @@ def request(path, method="GET", payload=None):
             raise AssertionError(f"{path} returned not-ok: {body}")
         return body
 
+def request_error(path, expected_status, expected_code, payload):
+    data = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(
+        BASE + path,
+        data=data,
+        method="POST",
+        headers={
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {TOKEN}",
+        },
+    )
+    try:
+        urllib.request.urlopen(req, timeout=8)
+    except urllib.error.HTTPError as error:
+        body = json.loads(error.read().decode("utf-8"))
+        assert error.code == expected_status, (error.code, body)
+        assert body.get("error") == expected_code, body
+        return body
+    raise AssertionError(f"{path} unexpectedly succeeded")
+
 
 def main():
     with tempfile.TemporaryDirectory(prefix="aims-r92-document-gate-") as data_dir:
@@ -128,9 +149,10 @@ def main():
             assert jobs[0]["id"] == job_id, jobs
             assert jobs[0]["status"] == "document_pending", jobs
 
-            request(
+            request_error(
                 "/driver_job_document.php",
-                "POST",
+                409,
+                "document_not_synced",
                 {
                     "plate": "SIP-115",
                     "jobId": job_id,
@@ -146,9 +168,34 @@ def main():
                    FROM jobs WHERE id=?""",
                 (job_id,),
             ).fetchone()
+            assert row == ("document_pending", None, None, None), row
+            con.close()
+
+            still_visible = request("/driver_jobs.php?plate=SIP-115")
+            assert len(still_visible.get("jobs", [])) == 1, still_visible
+            assert still_visible["jobs"][0]["status"] == "document_pending", still_visible
+
+            request(
+                "/driver_job_document.php",
+                "POST",
+                {
+                    "plate": "SIP-115",
+                    "jobId": job_id,
+                    "documentId": "local-cmr-ci-1",
+                    "syncState": "uploaded",
+                },
+            )
+
+            con = sqlite3.connect(db_path)
+            row = con.execute(
+                """SELECT status,document_local_id,document_sync_state,
+                          document_received_at
+                   FROM jobs WHERE id=?""",
+                (job_id,),
+            ).fetchone()
             assert row[0] == "completed", row
             assert row[1] == "local-cmr-ci-1", row
-            assert row[2] == "pending", row
+            assert row[2] == "uploaded", row
             assert row[3], row
             con.close()
 
