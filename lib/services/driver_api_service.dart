@@ -251,27 +251,21 @@ class DriverApiService {
         final response = await http
             .get(uri, headers: _headers)
             .timeout(const Duration(seconds: 12));
-        final body = _decode(response);
-        if (response.statusCode >= 200 && response.statusCode < 300) {
-          return (body['jobs'] as List? ?? const [])
-              .whereType<Map>()
-              .map((item) =>
-                  DriverJob.fromJson(Map<String, dynamic>.from(item)))
-              .toList();
+        final body = _decodeResponse(response);
+        final rawJobs = body['jobs'];
+        if (rawJobs is! List) {
+          throw const DriverApiException(502, 'invalid_jobs_response');
         }
-
-        final transient = response.statusCode == 408 ||
-            response.statusCode == 429 ||
-            response.statusCode >= 500;
-        if (!transient || attempt == 2) {
-          throw StateError(
-            body['error']?.toString() ?? 'HTTP ${response.statusCode}',
-          );
-        }
-        lastError = StateError('HTTP ${response.statusCode}');
+        return rawJobs
+            .whereType<Map>()
+            .map((item) => DriverJob.fromJson(Map<String, dynamic>.from(item)))
+            .toList();
+      } on DriverApiException catch (error) {
+        lastError = error;
+        if (!error.retryable || attempt == 2) rethrow;
       } catch (error) {
         lastError = error;
-        if (attempt == 2 || error is StateError) rethrow;
+        if (attempt == 2) rethrow;
       }
       await Future<void>.delayed(Duration(milliseconds: 350 * (attempt + 1)));
     }
@@ -295,10 +289,7 @@ class DriverApiService {
           }),
         )
         .timeout(const Duration(seconds: 12));
-    final body = _decode(response);
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw StateError(body['error']?.toString() ?? 'HTTP ${response.statusCode}');
-    }
+    _decodeResponse(response);
   }
 
   Future<Map<String, dynamic>> saveRegistrationPoint({
@@ -324,13 +315,7 @@ class DriverApiService {
           }),
         )
         .timeout(const Duration(seconds: 12));
-    final body = _decode(response);
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw DriverApiException(
-        response.statusCode,
-        body['error']?.toString() ?? 'HTTP ${response.statusCode}',
-      );
-    }
+    final body = _decodeResponse(response);
     return body['registrationPoint'] is Map
         ? Map<String, dynamic>.from(body['registrationPoint'] as Map)
         : const <String, dynamic>{};
@@ -357,13 +342,7 @@ class DriverApiService {
           }),
         )
         .timeout(const Duration(seconds: 12));
-    final body = _decode(response);
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw DriverApiException(
-        response.statusCode,
-        body['error']?.toString() ?? 'HTTP ${response.statusCode}',
-      );
-    }
+    _decodeResponse(response);
   }
 
   Future<void> completeDocumentGate({
@@ -385,13 +364,7 @@ class DriverApiService {
           }),
         )
         .timeout(const Duration(seconds: 12));
-    final body = _decode(response);
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw DriverApiException(
-        response.statusCode,
-        body['error']?.toString() ?? 'HTTP ${response.statusCode}',
-      );
-    }
+    _decodeResponse(response);
   }
 
   Future<DriverRestModeState> fetchRestMode(String plate) async {
@@ -405,13 +378,7 @@ class DriverApiService {
           headers: _headers,
         )
         .timeout(const Duration(seconds: 12));
-    final body = _decode(response);
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw DriverApiException(
-        response.statusCode,
-        body['error']?.toString() ?? 'HTTP ${response.statusCode}',
-      );
-    }
+    final body = _decodeResponse(response);
     final raw = body['restMode'];
     return DriverRestModeState.fromJson(
       raw is Map ? Map<String, dynamic>.from(raw) : const <String, dynamic>{},
@@ -435,13 +402,7 @@ class DriverApiService {
           }),
         )
         .timeout(const Duration(seconds: 12));
-    final body = _decode(response);
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw DriverApiException(
-        response.statusCode,
-        body['error']?.toString() ?? 'HTTP ${response.statusCode}',
-      );
-    }
+    final body = _decodeResponse(response);
     final raw = body['restMode'];
     return DriverRestModeState.fromJson(
       raw is Map ? Map<String, dynamic>.from(raw) : const <String, dynamic>{},
@@ -466,10 +427,7 @@ class DriverApiService {
           }),
         )
         .timeout(const Duration(seconds: 12));
-    final body = _decode(response);
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw StateError(body['error']?.toString() ?? 'HTTP ${response.statusCode}');
-    }
+    _decodeResponse(response);
   }
 
   Future<void> sendSignal({
@@ -499,13 +457,7 @@ class DriverApiService {
           }),
         )
         .timeout(const Duration(seconds: 12));
-    final body = _decode(response);
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw DriverApiException(
-        response.statusCode,
-        body['error']?.toString() ?? 'HTTP ${response.statusCode}',
-      );
-    }
+    _decodeResponse(response);
   }
 
 
@@ -522,14 +474,12 @@ class DriverApiService {
     final response = await http
         .get(uri, headers: _headers)
         .timeout(const Duration(seconds: 12));
-    final body = _decode(response);
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw DriverApiException(
-        response.statusCode,
-        body['error']?.toString() ?? 'HTTP ${response.statusCode}',
-      );
+    final body = _decodeResponse(response);
+    final rawMessages = body['messages'];
+    if (rawMessages is! List) {
+      throw const DriverApiException(502, 'invalid_messages_response');
     }
-    return (body['messages'] as List? ?? const [])
+    return rawMessages
         .whereType<Map>()
         .map(
           (item) => DriverChatMessage.fromJson(
@@ -560,24 +510,42 @@ class DriverApiService {
           }),
         )
         .timeout(const Duration(seconds: 12));
-    final body = _decode(response);
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw DriverApiException(
-        response.statusCode,
-        body['error']?.toString() ?? 'HTTP ${response.statusCode}',
-      );
-    }
+    final body = _decodeResponse(response);
     final raw = body['message'];
     if (raw is! Map) throw StateError('invalid_message_response');
     return DriverChatMessage.fromJson(Map<String, dynamic>.from(raw));
   }
 
-  Map<String, dynamic> _decode(http.Response response) {
-    if (response.body.trim().isEmpty) return <String, dynamic>{};
-    try {
-      final parsed = jsonDecode(response.body);
-      if (parsed is Map) return Map<String, dynamic>.from(parsed);
-    } catch (_) {}
-    return <String, dynamic>{};
-  }
+  Map<String, dynamic> _decodeResponse(http.Response response) {
+    Map<String, dynamic>? body;
+    final raw = response.body.trim();
+    if (raw.isNotEmpty) {
+      try {
+        final parsed = jsonDecode(raw);
+        if (parsed is Map) {
+          body = Map<String, dynamic>.from(parsed);
+        }
+      } catch (_) {
+        body = null;
+      }
+    }
+
+    final isHttpSuccess =
+        response.statusCode >= 200 && response.statusCode < 300;
+    if (!isHttpSuccess) {
+      throw DriverApiException(
+        response.statusCode,
+        body?['error']?.toString() ?? 'HTTP ${response.statusCode}',
+      );
+    }
+    if (body == null) {
+      throw const DriverApiException(502, 'invalid_json_response');
+    }
+    if (body['ok'] != true) {
+      throw DriverApiException(
+        502,
+        body['error']?.toString() ?? 'invalid_success_response',
+      );
+    }
+    return body;
 }
