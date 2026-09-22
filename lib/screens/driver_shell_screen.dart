@@ -1038,10 +1038,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
 
     _pendingSignalFlushBusy = true;
     _pendingSignalRetryTimer?.cancel();
-    _pendingOfficeMessageRetryTimer?.cancel();
     _pendingSignalRetryTimer = null;
-    _officeMessageTimer?.cancel();
-    _officeMessageTimer = null;
     var retryNeeded = false;
     final deliveredIds = <String>[];
 
@@ -1389,6 +1386,9 @@ class _DriverShellScreenState extends State<DriverShellScreen>
     }
     if (_pendingSignals.isNotEmpty) {
       await _flushPendingSignals();
+    }
+    if (_pendingOfficeMessages.isNotEmpty) {
+      await _flushPendingOfficeMessages();
     }
     if (_pendingRegistrationPoints.isNotEmpty) {
       await _flushPendingRegistrationPoints();
