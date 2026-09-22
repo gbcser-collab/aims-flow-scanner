@@ -48,6 +48,11 @@ with tempfile.TemporaryDirectory(prefix="aims-r94-") as temp:
     $now=gmdate(DateTimeInterface::ATOM);
     $pdo->prepare("INSERT OR IGNORE INTO vehicles (plate,label,admin_user_id,enabled,created_at) VALUES (:p,:l,1,1,:c)")
         ->execute([":p"=>"SIP115",":l"=>"SIP-115",":c"=>$now]);
+    $pdo->prepare("INSERT INTO jobs (reference,vehicle_id,status,created_at,updated_at) VALUES (:r,1,'active',:c,:u)")
+        ->execute([":r"=>"R94-IDEMPOTENCY",":c"=>$now,":u"=>$now]);
+    $jobId=(int)$pdo->lastInsertId();
+    $pdo->prepare("INSERT INTO job_stops (job_id,stop_type,stop_order,address,latitude,longitude,created_at) VALUES (:j,'pickup',1,'R94 Test Stop',47.68,17.63,:c)")
+        ->execute([":j"=>$jobId,":c"=>$now]);
     '''
     subprocess.run(["php", "-r", seed], cwd=ROOT, env=env, check=True)
 
@@ -102,6 +107,26 @@ with tempfile.TemporaryDirectory(prefix="aims-r94-") as temp:
         s5, e = request(port, "server/aims-tracking/driver_event.php", signal)
         assert s4 == 200 and s5 == 200, (s4, d, s5, e)
 
+        arrived = {
+            "plate": "SIP-115",
+            "stopId": 1,
+            "action": "arrived",
+            "source": "touch",
+            "occurredAt": "2026-09-22T03:01:00Z",
+        }
+        sa1, ra1 = request(port, "server/aims-tracking/driver_stop_action.php", arrived)
+        sa2, ra2 = request(port, "server/aims-tracking/driver_stop_action.php", arrived)
+        assert sa1 == 200 and sa2 == 200, (sa1, ra1, sa2, ra2)
+        assert ra1.get("changed") is True, ra1
+        assert ra2.get("changed") is False, ra2
+
+        completed = {**arrived, "action": "completed", "occurredAt": "2026-09-22T03:02:00Z"}
+        sc1, rc1 = request(port, "server/aims-tracking/driver_stop_action.php", completed)
+        sc2, rc2 = request(port, "server/aims-tracking/driver_stop_action.php", completed)
+        assert sc1 == 200 and sc2 == 200, (sc1, rc1, sc2, rc2)
+        assert rc1.get("changed") is True, rc1
+        assert rc2.get("changed") is False, rc2
+
         db = sqlite3.connect(Path(temp) / "tracking.sqlite")
         message_count = db.execute(
             "SELECT COUNT(*) FROM driver_messages WHERE vehicle_id=1 AND client_message_id=?",
@@ -110,8 +135,20 @@ with tempfile.TemporaryDirectory(prefix="aims-r94-") as temp:
         signal_count = db.execute(
             "SELECT COUNT(*) FROM notifications WHERE vehicle_id=1 AND type='driver_signal'"
         ).fetchone()[0]
+        arrival_count = db.execute(
+            "SELECT COUNT(*) FROM notifications WHERE vehicle_id=1 AND type='job_arrival'"
+        ).fetchone()[0]
+        completion_count = db.execute(
+            "SELECT COUNT(*) FROM notifications WHERE vehicle_id=1 AND type='job_stop_completed'"
+        ).fetchone()[0]
+        job_status = db.execute(
+            "SELECT status FROM jobs WHERE reference='R94-IDEMPOTENCY'"
+        ).fetchone()[0]
         assert message_count == 1, message_count
         assert signal_count == 1, signal_count
+        assert arrival_count == 1, arrival_count
+        assert completion_count == 1, completion_count
+        assert job_status == "document_pending", job_status
 
         print("R94_BACKEND_IDEMPOTENCY_PASS")
     finally:
