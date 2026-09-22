@@ -3019,6 +3019,8 @@ class _DriverShellScreenState extends State<DriverShellScreen>
     _pendingStopRetryTimer = null;
     _pendingSignalRetryTimer?.cancel();
     _pendingSignalRetryTimer = null;
+    _pendingOfficeMessageRetryTimer?.cancel();
+    _pendingOfficeMessageRetryTimer = null;
     _pushSub?.cancel();
     _trackingSub?.cancel();
     _voiceSub?.cancel();
