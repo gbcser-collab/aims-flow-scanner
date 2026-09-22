@@ -530,22 +530,22 @@ class _DriverShellScreenState extends State<DriverShellScreen>
     await _saveJobsCache(nextJobs);
   }
 
-  Future<void> _linkNewestCmrToJob(
+  Future<void> _linkCmrDocumentToJob(
     DriverJob job,
-    DateTime scanStartedAt,
+    String documentId,
   ) async {
-    final documents = await _scanRepository.loadAll();
-    final threshold = scanStartedAt.subtract(const Duration(seconds: 30));
-    final candidates = documents
-        .where((document) => !document.createdAt.isBefore(threshold))
-        .toList()
-      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
-    if (candidates.isEmpty) {
+    final cleanId = documentId.trim();
+    if (cleanId.isEmpty) {
       await _refreshJobCmrStates();
       return;
     }
+    final documents = await _scanRepository.loadAll();
+    final matches = documents.where((document) => document.id == cleanId).toList();
+    if (matches.isEmpty) {
+      throw StateError('saved_cmr_not_found:$cleanId');
+    }
 
-    final document = candidates.first;
+    final document = matches.first;
     _jobCmrIds[job.id] = document.id;
     _jobCmrStates[job.id] = document.syncState;
     await _saveJobCmrLinks();
@@ -561,9 +561,9 @@ class _DriverShellScreenState extends State<DriverShellScreen>
       _voice.announce(
         queued
             ? _l(
-                'A CMR elmentve. Nincs stabil kapcsolat, ezért feltöltési sorban marad. Kapcsolat esetén automatikusan elküldöm.',
-                'CMR saved. There is no stable connection, so it remains queued and will upload automatically.',
-                'CMR gespeichert. Keine stabile Verbindung. Das Dokument bleibt in der Warteschlange und wird automatisch hochgeladen.',
+                'A CMR elmentve. Feltöltésre vár; a fuvar addig nem záródik le.',
+                'CMR saved. It is waiting to upload; the job stays open until then.',
+                'CMR gespeichert. Es wartet auf den Upload; der Auftrag bleibt bis dahin offen.',
               )
             : _l(
                 'A CMR elmentve és továbbítva.',
@@ -572,6 +572,23 @@ class _DriverShellScreenState extends State<DriverShellScreen>
               ),
       ),
     );
+  }
+
+  Future<void> _linkNewestCmrToJob(
+    DriverJob job,
+    DateTime scanStartedAt,
+  ) async {
+    final documents = await _scanRepository.loadAll();
+    final threshold = scanStartedAt.subtract(const Duration(seconds: 30));
+    final candidates = documents
+        .where((document) => !document.createdAt.isBefore(threshold))
+        .toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    if (candidates.isEmpty) {
+      await _refreshJobCmrStates();
+      return;
+    }
+    await _linkCmrDocumentToJob(job, candidates.first.id);
   }
 
 
@@ -1839,12 +1856,19 @@ class _DriverShellScreenState extends State<DriverShellScreen>
         return;
       }
       final job = _job;
-      final scanStartedAt = DateTime.now();
-      await Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => ScannerScreen(camera: camera)),
+      final documentId = await Navigator.of(context).push<String>(
+        MaterialPageRoute(
+          builder: (_) => ScannerScreen(
+            camera: camera,
+            returnDocumentIdOnSave: true,
+          ),
+        ),
       );
-      if (job != null && !_hasOpenStop(job)) {
-        await _linkNewestCmrToJob(job, scanStartedAt);
+      if (job != null &&
+          !_hasOpenStop(job) &&
+          documentId != null &&
+          documentId.isNotEmpty) {
+        await _linkCmrDocumentToJob(job, documentId);
       } else {
         await _refreshJobCmrStates();
       }
@@ -1873,18 +1897,21 @@ class _DriverShellScreenState extends State<DriverShellScreen>
         if (stop != null) stop.type,
         if (stop != null) stop.company,
       ].join(' ');
-      final scanStartedAt = DateTime.now();
-      await Navigator.of(context).push(
+      final documentId = await Navigator.of(context).push<String>(
         MaterialPageRoute(
           builder: (_) => SmartDocumentScannerScreen(
             camera: camera,
             plate: _plate,
             contextHint: contextHint,
+            returnCmrDocumentIdOnSave: true,
           ),
         ),
       );
-      if (job != null && !_hasOpenStop(job)) {
-        await _linkNewestCmrToJob(job, scanStartedAt);
+      if (job != null &&
+          !_hasOpenStop(job) &&
+          documentId != null &&
+          documentId.isNotEmpty) {
+        await _linkCmrDocumentToJob(job, documentId);
       } else {
         await _refreshJobCmrStates();
       }
