@@ -42,3 +42,19 @@ if "Timer.periodic(const Duration(seconds: 15)" not in initialize:
     )
 
 print("R94_CROSS_CHANNEL_ISOLATION_GUARD_PASS")
+
+
+EVENT_SOURCE = Path("server/aims-tracking/driver_event.php")
+event_text = EVENT_SOURCE.read_text(encoding="utf-8")
+for required in (
+    "$eventId",
+    "$occurredAt",
+    "$dedupeSuffix",
+    "hash('sha256',$eventId)",
+):
+    if required not in event_text:
+        raise SystemExit(f"R94_GUARD_FAIL driver_event idempotency missing: {required}")
+if "microtime(true).$body" in event_text:
+    raise SystemExit("R94_GUARD_FAIL legacy non-idempotent driver signal dedupe still present")
+
+print("R94_DRIVER_SIGNAL_IDEMPOTENCY_GUARD_PASS")
