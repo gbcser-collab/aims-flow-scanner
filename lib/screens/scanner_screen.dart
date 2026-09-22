@@ -14,9 +14,14 @@ import 'scan_review_screen.dart';
 enum _ScannerFlashMode { off, auto, on }
 
 class ScannerScreen extends StatefulWidget {
-  const ScannerScreen({super.key, required this.camera});
+  const ScannerScreen({
+    super.key,
+    required this.camera,
+    this.returnDocumentIdOnSave = false,
+  });
 
   final CameraDescription camera;
+  final bool returnDocumentIdOnSave;
 
   @override
   State<ScannerScreen> createState() => _ScannerScreenState();
@@ -240,17 +245,38 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
       if (!mounted) return;
       await _disposeCamera();
       if (!mounted) return;
-      await Navigator.of(context).pushReplacement(
-        MaterialPageRoute(
-          builder: (_) => ScanReviewScreen(
-            processedImagePath: result.outputPath,
-            signatureImagePath: result.signatureImagePath,
-            signatureConfidence: result.signatureConfidence,
-            quality: result.quality,
-            cmr: cmr,
+      if (widget.returnDocumentIdOnSave) {
+        final documentId = await Navigator.of(context).push<String>(
+          MaterialPageRoute(
+            builder: (_) => ScanReviewScreen(
+              processedImagePath: result.outputPath,
+              signatureImagePath: result.signatureImagePath,
+              signatureConfidence: result.signatureConfidence,
+              quality: result.quality,
+              cmr: cmr,
+              closeOnSave: true,
+            ),
           ),
-        ),
-      );
+        );
+        if (!mounted) return;
+        if (documentId != null && documentId.isNotEmpty) {
+          Navigator.of(context).pop(documentId);
+          return;
+        }
+        await _initialize();
+      } else {
+        await Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+            builder: (_) => ScanReviewScreen(
+              processedImagePath: result.outputPath,
+              signatureImagePath: result.signatureImagePath,
+              signatureConfidence: result.signatureConfidence,
+              quality: result.quality,
+              cmr: cmr,
+            ),
+          ),
+        );
+      }
     } on CameraException catch (e) {
       if (!mounted) return;
       setState(() {
