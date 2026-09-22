@@ -154,6 +154,9 @@ jobs:
       - name: R94 offline state quarantine guard
         run: python3 ci/r94_offline_state_guard.py
 
+      - name: R94 lifecycle recovery guard
+        run: python3 ci/r94_lifecycle_recovery_guard.py
+
       - name: Unit tests
         run: flutter test --reporter expanded
 
