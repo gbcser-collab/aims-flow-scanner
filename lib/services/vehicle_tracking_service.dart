@@ -9,6 +9,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'country_code_service.dart';
+import 'flow_tms_v12_service.dart';
 import 'roaming_resilience.dart';
 
 class VehicleTrackingStatus {
@@ -47,6 +48,7 @@ class VehicleTrackingService {
   static const _token = String.fromEnvironment('AIMS_TRACKING_TOKEN', defaultValue: '');
 
   final _statusController = StreamController<VehicleTrackingStatus>.broadcast();
+  final _flowV12 = FlowTmsV12Service.instance;
   StreamSubscription<Position>? _subscription;
   Timer? _heartbeatTimer;
   Timer? _retryTimer;
@@ -352,6 +354,19 @@ class VehicleTrackingService {
       'altitude': RoamingResilience.finiteOrZero(position.altitude),
       'source': source,
     };
+
+    unawaited(
+      _flowV12.enqueueGps(
+        pointId: point['pointId']!.toString(),
+        plate: _vehicleLabel,
+        latitude: position.latitude,
+        longitude: position.longitude,
+        accuracy: RoamingResilience.finiteOrZero(position.accuracy),
+        speed: max(0, RoamingResilience.finiteOrZero(position.speed)),
+        heading: RoamingResilience.finiteOrZero(position.heading),
+        capturedAt: position.timestamp,
+      ),
+    );
 
     await _withQueueLock(() async {
       final file = await _queueFile();
