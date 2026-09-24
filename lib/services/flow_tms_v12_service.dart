@@ -191,8 +191,6 @@ class FlowTmsV12Service {
   Future<void> enqueueGps({
     required String pointId,
     required String plate,
-    required String driverId,
-    required String loadId,
     required double latitude,
     required double longitude,
     required double accuracy,
@@ -201,11 +199,15 @@ class FlowTmsV12Service {
     required DateTime capturedAt,
   }) async {
     if (!enabled) return;
+    final prefs = await SharedPreferences.getInstance();
+    if (prefs.getInt(_sessionIdKey) == null) return;
+    final sessionPlate = prefs.getString(_sessionPlateKey) ?? '';
+    if (sessionPlate.isNotEmpty && sessionPlate != plate) return;
     final row = <String, dynamic>{
       'point_id': pointId,
       'plate': plate,
-      'driver_id': driverId,
-      'load_id': loadId,
+      'driver_id': prefs.getString(_sessionDriverKey),
+      'load_id': prefs.getString(_sessionLoadKey),
       'lat': latitude,
       'lon': longitude,
       'accuracy': accuracy,
