@@ -101,6 +101,7 @@ class DriverPushService {
       if (Firebase.apps.isEmpty) {
         await Firebase.initializeApp(options: options);
       }
+      await FirebaseMessaging.instance.setAutoInitEnabled(true);
       FirebaseMessaging.onBackgroundMessage(
         aimsDriverMessagingBackgroundHandler,
       );
@@ -245,6 +246,16 @@ class DriverPushService {
     await _notifications.cancel(jobId);
   }
 
+  Future<String> _getFcmTokenWithRetry() async {
+    String? token;
+    for (var attempt = 0; attempt < 4; attempt++) {
+      token = await FirebaseMessaging.instance.getToken();
+      if (token != null && token.isNotEmpty) return token;
+      await Future<void>.delayed(Duration(milliseconds: 500 * (attempt + 1)));
+    }
+    throw StateError('A telefon nem kapott Firebase push tokent.');
+  }
+
   Future<Map<String, String>> adminRegistrationPayload() async {
     if (Firebase.apps.isEmpty) {
       await initialize();
@@ -252,10 +263,7 @@ class DriverPushService {
     if (Firebase.apps.isEmpty) {
       throw StateError('A Firebase push szolgáltatás nem inicializálódott.');
     }
-    final fcm = await FirebaseMessaging.instance.getToken();
-    if (fcm == null || fcm.isEmpty) {
-      throw StateError('A telefon nem kapott Firebase push tokent.');
-    }
+    final fcm = await _getFcmTokenWithRetry();
     final tracking = await VehicleTrackingService.instance.currentStatus();
     return <String, String>{
       'fcmToken': fcm,
@@ -275,10 +283,7 @@ class DriverPushService {
     if (Firebase.apps.isEmpty) {
       throw StateError('A Firebase push szolgáltatás nem inicializálódott.');
     }
-    final fcm = await FirebaseMessaging.instance.getToken();
-    if (fcm == null || fcm.isEmpty) {
-      throw StateError('A telefon nem kapott Firebase push tokent.');
-    }
+    final fcm = await _getFcmTokenWithRetry();
     final tracking = await VehicleTrackingService.instance.currentStatus();
     await _api.registerPush(
       plate: cleanPlate,
