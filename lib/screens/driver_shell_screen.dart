@@ -1436,7 +1436,6 @@ class _DriverShellScreenState extends State<DriverShellScreen>
     if (_plate.isEmpty) return;
 
     String? pushError;
-    String? trackingError;
 
     // Push registration must not depend on location/background permissions.
     try {
@@ -1459,7 +1458,6 @@ class _DriverShellScreenState extends State<DriverShellScreen>
     if (!mounted) return;
     final issues = <String>[
       if (pushError != null) 'Push: $pushError',
-      if (trackingError != null) 'GPS: $trackingError',
     ];
     if (issues.isNotEmpty) {
       setState(() => _message = issues.join(' • '));
