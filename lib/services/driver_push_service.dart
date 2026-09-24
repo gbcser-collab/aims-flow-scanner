@@ -7,6 +7,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 import 'driver_api_service.dart';
 import 'runtime_firebase_options.dart';
+import 'flow_tms_v12_service.dart';
 import 'vehicle_tracking_service.dart';
 
 const _jobChannelId = 'aims_jobs';
@@ -230,6 +231,15 @@ class DriverPushService {
       deviceId: tracking.deviceId,
       fcmToken: fcm,
     );
+    try {
+      await FlowTmsV12Service.instance.registerDevice(
+        token: fcm,
+        plate: cleanPlate,
+        userId: tracking.deviceId,
+      );
+    } catch (_) {
+      // Legacy push registration must remain available if v1.2 is offline.
+    }
     _registeredPlate = cleanPlate;
   }
 
