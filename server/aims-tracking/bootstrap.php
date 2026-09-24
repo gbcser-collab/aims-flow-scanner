@@ -348,6 +348,21 @@ function aims_db(): PDO {
     if (!isset($jobColumns['document_sync_state'])) {
         $pdo->exec('ALTER TABLE jobs ADD COLUMN document_sync_state TEXT');
     }
+    if (!isset($jobColumns['customer_tracking_token_hash'])) {
+        $pdo->exec('ALTER TABLE jobs ADD COLUMN customer_tracking_token_hash TEXT');
+    }
+    if (!isset($jobColumns['customer_tracking_expires_at'])) {
+        $pdo->exec('ALTER TABLE jobs ADD COLUMN customer_tracking_expires_at TEXT');
+    }
+    if (!isset($jobColumns['customer_tracking_created_at'])) {
+        $pdo->exec('ALTER TABLE jobs ADD COLUMN customer_tracking_created_at TEXT');
+    }
+    if (!isset($jobColumns['customer_tracking_last_view_at'])) {
+        $pdo->exec('ALTER TABLE jobs ADD COLUMN customer_tracking_last_view_at TEXT');
+    }
+    $pdo->exec('CREATE INDEX IF NOT EXISTS idx_jobs_customer_tracking_hash
+        ON jobs(customer_tracking_token_hash)
+        WHERE customer_tracking_token_hash IS NOT NULL AND customer_tracking_token_hash <> ""');
 
     $stopColumns = [];
     foreach ($pdo->query('PRAGMA table_info(job_stops)')->fetchAll(PDO::FETCH_ASSOC) as $column) {
