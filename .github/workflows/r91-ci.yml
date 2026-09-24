@@ -6,6 +6,7 @@ on:
       - aims-flow-driver-v1-r91-invoice-scanner
       - aims-flow-driver-v1-r92-driver-first-all-in-one
       - aims-flow-r93-stability-hardening
+      - aims-flow-r93-v12-integration
   workflow_dispatch:
 
 concurrency:
