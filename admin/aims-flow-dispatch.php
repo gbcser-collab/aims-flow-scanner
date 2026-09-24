@@ -15,6 +15,8 @@ $pickupPhone=trim((string)($_POST['pickup_phone']??''));
 $deliveryCompany=trim((string)($_POST['delivery_company']??''));
 $deliveryAddress=trim((string)($_POST['delivery_address']??''));
 $deliveryPhone=trim((string)($_POST['delivery_phone']??''));
+$customerName=trim((string)($_POST['customer_name']??''));
+$customerEmail=trim((string)($_POST['customer_email']??''));
 $partial=!empty($_POST['partial_load']);
 $flash=['ok'=>false,'message'=>''];
 try{
@@ -28,10 +30,19 @@ try{
     $vehicleId=(int)$pdo->lastInsertId();
   }  $adminToken=(string)(getenv('AIMS_ADMIN_TRACKING_TOKEN')?:'');
   if($adminToken==='')throw new RuntimeException('Az admin Flow-kulcs nincs konfigurálva.');
+  if($customerEmail!==''&&!filter_var($customerEmail,FILTER_VALIDATE_EMAIL))throw new RuntimeException('A megbízó e-mail címe hibás.');
   $payload=['plate'=>$plate,'driverJob'=>[
     'reference'=>$reference,'partialLoad'=>$partial,
     'pickups'=>[['company'=>$pickupCompany,'address'=>$pickupAddress,'contactPhone'=>$pickupPhone]],
     'deliveries'=>[['company'=>$deliveryCompany,'address'=>$deliveryAddress,'contactPhone'=>$deliveryPhone]],
+    'orderData'=>[
+      'customer'=>$customerName,
+      'customer_email'=>$customerEmail,
+      'pickup_company'=>$pickupCompany,
+      'pickup_address'=>$pickupAddress,
+      'delivery_company'=>$deliveryCompany,
+      'delivery_address'=>$deliveryAddress,
+    ],
   ]];
   $ch=curl_init('https://logistic-aims.hu/api/aims-tracking/job_assign.php');
   curl_setopt_array($ch,[
