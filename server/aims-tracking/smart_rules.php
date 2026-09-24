@@ -81,36 +81,55 @@ function aims_inside_geofence(
 }
 
 function aims_geocode_address_candidates(string $address): array {
-    $original = trim(preg_replace('/\s+/u', ' ', $address) ?: '');
+    $original = trim(preg_replace('/\\s+/u', ' ', $address) ?: '');
     if ($original === '') return [];
+    $original = trim(preg_replace('/\\s*,\\s*/u', ', ', $original) ?: $original);
 
     $candidates = [$original];
+    $countries = [
+        'PL' => 'Poland', 'HU' => 'Hungary', 'SK' => 'Slovakia',
+        'CZ' => 'Czechia', 'CZE' => 'Czechia', 'DE' => 'Germany',
+        'D' => 'Germany', 'AT' => 'Austria', 'AUT' => 'Austria',
+        'IT' => 'Italy', 'LT' => 'Lithuania', 'LV' => 'Latvia',
+        'EE' => 'Estonia', 'RO' => 'Romania', 'BG' => 'Bulgaria',
+        'SI' => 'Slovenia', 'HR' => 'Croatia', 'NL' => 'Netherlands',
+        'BE' => 'Belgium', 'FR' => 'France', 'ES' => 'Spain',
+        'PT' => 'Portugal',
+    ];
+    $codes = implode('|', array_map('preg_quote', array_keys($countries)));
 
-    // Many European addresses arrive as "street house, 123 45 City".
-    // Nominatim can reject that exact shape even when the street + city is
-    // valid, so retry without only the postal-code token.
-    $withoutPostal = preg_replace(
-        '/,\s*[0-9]{3}\s?[0-9]{2}\s+(?=\S)/u',
-        ', ',
-        $original
-    );
-    $withoutPostal = trim((string)$withoutPostal);
-    if ($withoutPostal !== '' && !in_array($withoutPostal, $candidates, true)) {
-        $candidates[] = $withoutPostal;
+    if (preg_match('/^(.*?),\\s*(' . $codes . ')\\s+(.+)$/iu', $original, $m)) {
+        $cc = strtoupper($m[2]);
+        $candidates[] = trim($m[1]) . ', ' . trim($m[3]) . ', ' . $countries[$cc];
+    }
+    if (preg_match('/^(' . $codes . ')\\s*[-,:]?\\s*(.+)$/iu', $original, $m)) {
+        $cc = strtoupper($m[1]);
+        $candidates[] = trim($m[2]) . ', ' . $countries[$cc];
     }
 
-    // Accentless fallback is useful for partner PDFs and foreign keyboards,
-    // but keep the street + house number + city intact to avoid city-only
-    // false positives.
+    foreach (array_values($candidates) as $candidate) {
+        $withoutStreetPrefix = preg_replace('/^(?:ul\\.?|ulica)\\s+/iu', '', $candidate) ?: $candidate;
+        if ($withoutStreetPrefix !== $candidate && !in_array($withoutStreetPrefix, $candidates, true)) {
+            $candidates[] = $withoutStreetPrefix;
+        }
+    }
+
+    foreach (array_values($candidates) as $candidate) {
+        $withoutPostal = preg_replace('/,\\s*[0-9]{2,3}[- ]?[0-9]{2,3}\\s+(?=\\S)/u', ', ', $candidate);
+        $withoutPostal = trim((string)$withoutPostal);
+        if ($withoutPostal !== '' && !in_array($withoutPostal, $candidates, true)) {
+            $candidates[] = $withoutPostal;
+        }
+    }
+
     foreach (array_values($candidates) as $candidate) {
         $ascii = @iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $candidate);
         if (!is_string($ascii)) continue;
-        $ascii = trim(preg_replace('/\s+/', ' ', $ascii) ?: '');
+        $ascii = trim(preg_replace('/\\s+/', ' ', $ascii) ?: '');
         if ($ascii !== '' && !in_array($ascii, $candidates, true)) {
             $candidates[] = $ascii;
         }
     }
 
-    return $candidates;
+    return array_values(array_unique($candidates));
 }
-
