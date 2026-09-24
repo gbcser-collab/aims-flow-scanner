@@ -14,6 +14,7 @@ import '../services/aims_voice_command.dart';
 import '../services/aims_voice_service.dart';
 import '../services/driver_api_service.dart';
 import '../services/driver_push_service.dart';
+import '../services/flow_tms_v12_service.dart';
 import '../services/roaming_resilience.dart';
 import '../services/scan_repository.dart';
 import '../services/sync_coordinator.dart';
@@ -232,6 +233,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
   final _tracking = VehicleTrackingService.instance;
   final _push = DriverPushService.instance;
   final _sync = SyncCoordinator.instance;
+  final _flowV12 = FlowTmsV12Service.instance;
   static const _scanRepository = ScanRepository();
   final ScrollController _homeScrollController = ScrollController();
   late final AimsVoiceService _voice;
@@ -299,6 +301,77 @@ class _DriverShellScreenState extends State<DriverShellScreen>
       if (!_isStopCompleted(stop)) return true;
     }
     return false;
+  }
+
+  DriverJob? get _activeAcceptedJob {
+    for (final job in _jobs) {
+      if (job.acceptedAt != null && _hasOpenStop(job)) return job;
+    }
+    return null;
+  }
+
+  String _flowLoadId(DriverJob job) {
+    final reference = job.reference.trim();
+    return reference.isNotEmpty ? reference : 'job-${job.id}';
+  }
+
+  Future<void> _syncWorkSession() async {
+    if (_plate.isEmpty) return;
+    final active = _activeAcceptedJob;
+
+    if (active == null) {
+      try {
+        await _flowV12.endSession();
+      } catch (_) {
+        // The v1.2 client retains the session locally and retries later.
+      }
+      try {
+        final status = await _tracking.currentStatus();
+        if (status.enabled || status.running) {
+          await _tracking.disable();
+        }
+      } catch (_) {}
+      return;
+    }
+
+    try {
+      await _flowV12.startSession(
+        plate: _plate,
+        driverId: _driverName.isNotEmpty ? _driverName : _plate,
+        loadId: _flowLoadId(active),
+      );
+    } catch (_) {
+      // Legacy job flow remains usable if the integration API is offline.
+    }
+
+    try {
+      await _tracking.setVehicleLabel(_plate);
+      final status = await _tracking.currentStatus();
+      if (!status.enabled) {
+        await _tracking.enableWithPermission();
+      } else {
+        await _tracking.startIfEnabled();
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _queueFlowAuditEvent(
+    DriverJob job,
+    String type, {
+    Map<String, dynamic> payload = const <String, dynamic>{},
+    DateTime? occurredAt,
+  }) async {
+    try {
+      await _flowV12.enqueueEvent(
+        eventId: 'job-${job.id}-$type',
+        type: type,
+        plate: _plate,
+        driverId: _driverName.isNotEmpty ? _driverName : _plate,
+        loadId: _flowLoadId(job),
+        payload: payload,
+        createdAt: occurredAt,
+      );
+    } catch (_) {}
   }
 
   DriverJob? get _job {
@@ -1372,18 +1445,6 @@ class _DriverShellScreenState extends State<DriverShellScreen>
       pushError = e.toString().replaceFirst('Bad state: ', '');
     }
 
-    try {
-      await _tracking.setVehicleLabel(_plate);
-      final status = await _tracking.currentStatus();
-      if (!status.enabled) {
-        await _tracking.enableWithPermission();
-      } else {
-        await _tracking.startIfEnabled();
-      }
-    } catch (e) {
-      trackingError = e.toString().replaceFirst('Bad state: ', '');
-    }
-
     if (_pendingStopActions.isNotEmpty) {
       await _flushPendingStopActions(refreshAfter: false);
     }
@@ -1423,6 +1484,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
       await _refreshJobCmrStates();
       await _finalizeDocumentGateIfPossible();
       unawaited(_saveJobsCache(_jobs));
+      await _syncWorkSession();
     } catch (e) {
       if (!mounted || generation != _refreshGeneration) return;
       setState(() {
@@ -1530,6 +1592,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
         await _push.cancelJobNotification(jobId);
         await _refreshJobs(showLoading: false);
         job = _jobById(jobId) ?? job;
+        unawaited(_queueFlowAuditEvent(job, 'job_accepted'));
       }
       if (!mounted) return;
       setState(() => _index = 0);
@@ -1733,6 +1796,12 @@ class _DriverShellScreenState extends State<DriverShellScreen>
         Navigator.of(context).pop();
       }
       await _refreshJobs();
+      if (action == 'accepted') {
+        final acceptedJob = _jobById(jobId);
+        if (acceptedJob != null) {
+          unawaited(_queueFlowAuditEvent(acceptedJob, 'job_accepted'));
+        }
+      }
       if (mounted && action == 'accepted') {
         setState(() => _index = 0);
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -2358,6 +2427,23 @@ class _DriverShellScreenState extends State<DriverShellScreen>
       );
       unawaited(_flushPendingStopActions());
       if (finalCompletion) {
+        final eventJob = _job;
+        if (eventJob != null) {
+          unawaited(
+            _queueFlowAuditEvent(
+              eventJob,
+              'stop_completed',
+              payload: <String, dynamic>{
+                'stop_id': stop.id,
+                'stop_type': stop.type,
+                'source': source,
+                'offline_queued': true,
+              },
+              occurredAt: occurredAt,
+            ),
+          );
+        }
+        await _syncWorkSession();
         await _activateDocumentGate();
         return _l(
           'A fuvar befejeződött. A lezárás offline sorban áll. Kérlek, scanneld be a szükséges dokumentumot.',
@@ -2376,8 +2462,40 @@ class _DriverShellScreenState extends State<DriverShellScreen>
         source: source,
         occurredAt: occurredAt,
       );
+      final eventJob = _job;
+      if (eventJob != null) {
+        unawaited(
+          _queueFlowAuditEvent(
+            eventJob,
+            action == 'completed' ? 'stop_completed' : 'stop_arrived',
+            payload: <String, dynamic>{
+              'stop_id': stop.id,
+              'stop_type': stop.type,
+              'source': source,
+            },
+            occurredAt: occurredAt,
+          ),
+        );
+      }
       await _refreshJobs();
       if (finalCompletion) {
+        final eventJob = _job;
+        if (eventJob != null) {
+          unawaited(
+            _queueFlowAuditEvent(
+              eventJob,
+              'stop_completed',
+              payload: <String, dynamic>{
+                'stop_id': stop.id,
+                'stop_type': stop.type,
+                'source': source,
+                'offline_queued': true,
+              },
+              occurredAt: occurredAt,
+            ),
+          );
+        }
+        await _syncWorkSession();
         await _activateDocumentGate();
         return _documentGateActive
             ? _l(
@@ -2430,6 +2548,23 @@ class _DriverShellScreenState extends State<DriverShellScreen>
         occurredAt,
       );
       if (finalCompletion) {
+        final eventJob = _job;
+        if (eventJob != null) {
+          unawaited(
+            _queueFlowAuditEvent(
+              eventJob,
+              'stop_completed',
+              payload: <String, dynamic>{
+                'stop_id': stop.id,
+                'stop_type': stop.type,
+                'source': source,
+                'offline_queued': true,
+              },
+              occurredAt: occurredAt,
+            ),
+          );
+        }
+        await _syncWorkSession();
         await _activateDocumentGate();
         return _l(
           'A fuvar befejeződött. A lezárás offline sorban áll. Kérlek, scanneld be a szükséges dokumentumot.',
@@ -2446,6 +2581,23 @@ class _DriverShellScreenState extends State<DriverShellScreen>
         occurredAt,
       );
       if (finalCompletion) {
+        final eventJob = _job;
+        if (eventJob != null) {
+          unawaited(
+            _queueFlowAuditEvent(
+              eventJob,
+              'stop_completed',
+              payload: <String, dynamic>{
+                'stop_id': stop.id,
+                'stop_type': stop.type,
+                'source': source,
+                'offline_queued': true,
+              },
+              occurredAt: occurredAt,
+            ),
+          );
+        }
+        await _syncWorkSession();
         await _activateDocumentGate();
         return _l(
           'A fuvar befejeződött. A lezárás offline sorban áll. Kérlek, scanneld be a szükséges dokumentumot.',
@@ -2462,6 +2614,23 @@ class _DriverShellScreenState extends State<DriverShellScreen>
         occurredAt,
       );
       if (finalCompletion) {
+        final eventJob = _job;
+        if (eventJob != null) {
+          unawaited(
+            _queueFlowAuditEvent(
+              eventJob,
+              'stop_completed',
+              payload: <String, dynamic>{
+                'stop_id': stop.id,
+                'stop_type': stop.type,
+                'source': source,
+                'offline_queued': true,
+              },
+              occurredAt: occurredAt,
+            ),
+          );
+        }
+        await _syncWorkSession();
         await _activateDocumentGate();
         return _l(
           'A fuvar befejeződött. A lezárás offline sorban áll. Kérlek, scanneld be a szükséges dokumentumot.',
