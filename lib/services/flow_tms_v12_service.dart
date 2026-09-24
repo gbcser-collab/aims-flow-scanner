@@ -27,6 +27,7 @@ class FlowTmsV12Service {
 
   Future<void> _ioTail = Future<void>.value();
   bool _flushingGps = false;
+  bool _flushingEvents = false;
 
   bool get enabled => _baseUrl.trim().isNotEmpty && _apiKey.trim().isNotEmpty;
 
@@ -99,6 +100,7 @@ class FlowTmsV12Service {
     await prefs.setString(_sessionLoadKey, loadId);
     await prefs.setString(_sessionDriverKey, driverId);
     unawaited(flushGpsQueue());
+    unawaited(flushEventQueue());
     return sessionId;
   }
 
@@ -115,6 +117,7 @@ class FlowTmsV12Service {
       return;
     }
     await flushGpsQueue();
+    await flushEventQueue();
     await _post('/api/v1/sessions/end', <String, dynamic>{
       'session_id': sessionId,
     });
@@ -130,7 +133,14 @@ class FlowTmsV12Service {
     return prefs.getInt(_sessionIdKey) != null;
   }
 
-  Future<void> sendEvent({
+  Future<File> _eventQueueFile() async {
+    final dir = await getApplicationDocumentsDirectory();
+    final file = File('${dir.path}/aims_flow_v12_event_queue.jsonl');
+    if (!await file.exists()) await file.create(recursive: true);
+    return file;
+  }
+
+  Future<void> enqueueEvent({
     required String eventId,
     required String type,
     required String plate,
@@ -142,7 +152,7 @@ class FlowTmsV12Service {
     DateTime? createdAt,
   }) async {
     if (!enabled) return;
-    await _post('/api/v1/events', <String, dynamic>{
+    final row = <String, dynamic>{
       'event_id': eventId,
       'type': type,
       'plate': plate,
@@ -152,7 +162,64 @@ class FlowTmsV12Service {
       'lon': longitude,
       'payload': payload,
       'created_at': (createdAt ?? DateTime.now()).toUtc().toIso8601String(),
+    };
+    await _withIo(() async {
+      final file = await _eventQueueFile();
+      await file.writeAsString(
+        '${jsonEncode(row)}\n',
+        mode: FileMode.append,
+        flush: true,
+      );
     });
+    unawaited(flushEventQueue());
+  }
+
+  Future<void> flushEventQueue() async {
+    if (!enabled || _flushingEvents) return;
+    _flushingEvents = true;
+    try {
+      final lines = await _withIo(() async {
+        final file = await _eventQueueFile();
+        return (await file.readAsLines())
+            .where((line) => line.trim().isNotEmpty)
+            .take(50)
+            .toList();
+      });
+      if (lines.isEmpty) return;
+
+      var consumed = 0;
+      for (final line in lines) {
+        try {
+          final decoded = jsonDecode(line);
+          if (decoded is! Map) {
+            consumed++;
+            continue;
+          }
+          await _post(
+            '/api/v1/events',
+            Map<String, dynamic>.from(decoded),
+          );
+          consumed++;
+        } catch (_) {
+          break;
+        }
+      }
+      if (consumed > 0) {
+        await _withIo(() async {
+          final file = await _eventQueueFile();
+          final all = (await file.readAsLines())
+              .where((line) => line.trim().isNotEmpty)
+              .toList();
+          final remaining = all.skip(consumed).toList();
+          await file.writeAsString(
+            remaining.isEmpty ? '' : '${remaining.join('\n')}\n',
+            flush: true,
+          );
+        });
+      }
+    } finally {
+      _flushingEvents = false;
+    }
   }
 
   Future<void> registerDevice({
