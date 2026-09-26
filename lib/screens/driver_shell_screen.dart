@@ -2300,10 +2300,13 @@ class _DriverShellScreenState extends State<DriverShellScreen>
           );
           delivered.add(pending.id);
         } on DriverApiException catch (error) {
-          if (const {400, 404, 409, 410, 422}.contains(error.statusCode)) {
+          if (const {400, 409, 410, 422}.contains(error.statusCode)) {
             delivered.add(pending.id);
             continue;
           }
+          // 401/403/404 can also mean a temporarily unavailable or
+          // not-yet-deployed message channel. Keep the driver's text queued;
+          // never turn a transport problem into a fake "log in again" loop.
           retryNeeded = true;
           break;
         } catch (_) {
@@ -5146,6 +5149,46 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                 ],
               ),
               const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                decoration: BoxDecoration(
+                  color: _blue.withValues(alpha: .08),
+                  borderRadius: BorderRadius.circular(11),
+                  border: Border.all(color: _blue.withValues(alpha: .28)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.lock_outline_rounded,
+                      color: _blue,
+                      size: 16,
+                    ),
+                    const SizedBox(width: 7),
+                    Expanded(
+                      child: Text(
+                        _pendingOfficeMessages.isEmpty
+                            ? _l(
+                                'NATÍV FLOW ÜZENET • NEM KÉR WEBES BELÉPÉST',
+                                'NATIVE FLOW MESSAGE • NO WEB SIGN-IN',
+                                'NATIVE FLOW-NACHRICHT • KEINE WEB-ANMELDUNG',
+                              )
+                            : _l(
+                                '${_pendingOfficeMessages.length} ÜZENET VÁR AUTOMATIKUS KÜLDÉSRE',
+                                '${_pendingOfficeMessages.length} MESSAGE(S) WAITING FOR AUTO-SEND',
+                                '${_pendingOfficeMessages.length} NACHRICHT(EN) WARTEN AUF AUTO-VERSAND',
+                              ),
+                        style: const TextStyle(
+                          color: _blue,
+                          fontSize: 9,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: .45,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 9),
               if (_officeMessages.isEmpty)
                 Text(
                   _l(
