@@ -111,27 +111,45 @@ class SmartDocumentRepository {
   const SmartDocumentRepository();
 
   static const _prefsKey = 'aims_pending_smart_documents_v1';
+  static const _backupPrefsKey = 'aims_pending_smart_documents_v1_backup';
 
-  Future<List<PendingSmartDocument>> loadAll() async {
-    final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(_prefsKey);
+  Future<List<PendingSmartDocument>?> _decodeIndex(String? raw) async {
     if (raw == null || raw.trim().isEmpty) return const [];
     try {
       final decoded = jsonDecode(raw);
-      if (decoded is! List) return const [];
+      if (decoded is! List) return null;
       final documents = decoded
           .map(PendingSmartDocument.fromJson)
           .whereType<PendingSmartDocument>()
           .toList();
       final existing = <PendingSmartDocument>[];
       for (final document in documents) {
-        if (await File(document.imagePath).exists()) existing.add(document);
+        if (await File(document.imagePath).exists()) {
+          existing.add(document);
+        }
       }
       existing.sort((a, b) => b.createdAt.compareTo(a.createdAt));
       return existing;
     } catch (_) {
-      return const [];
+      return null;
     }
+  }
+
+  Future<List<PendingSmartDocument>> loadAll() async {
+    final prefs = await SharedPreferences.getInstance();
+    final primaryRaw = prefs.getString(_prefsKey);
+    final primary = await _decodeIndex(primaryRaw);
+    if (primary != null) return primary;
+
+    final backupRaw = prefs.getString(_backupPrefsKey);
+    final backup = await _decodeIndex(backupRaw);
+    if (backup != null) {
+      if (backupRaw != null && backupRaw.trim().isNotEmpty) {
+        await prefs.setString(_prefsKey, backupRaw);
+      }
+      return backup;
+    }
+    return const [];
   }
 
   Future<List<PendingSmartDocument>> pendingForSync() async {
@@ -189,10 +207,19 @@ class SmartDocumentRepository {
 
   Future<void> _writeAll(List<PendingSmartDocument> documents) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(
-      _prefsKey,
-      jsonEncode([for (final document in documents) document.toJson()]),
-    );
+    final payload =
+        jsonEncode([for (final document in documents) document.toJson()]);
+    final current = prefs.getString(_prefsKey);
+    if (current != null && current.trim().isNotEmpty) {
+      await prefs.setString(_backupPrefsKey, current);
+    }
+    final saved = await prefs.setString(_prefsKey, payload);
+    if (!saved) {
+      throw const FileSystemException(
+        'A Smart Document index mentése nem sikerült.',
+      );
+    }
+    await prefs.setString(_backupPrefsKey, payload);
   }
 }
 
