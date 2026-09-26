@@ -2,27 +2,44 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:aims_flow_scanner/services/driver_api_service.dart';
 
 void main() {
-  test('Autopilot V3 parses driver decision feed', () {
+  test('Autopilot R96 parses Pro decision feed', () {
     final state = DriverAutopilotStatus.fromJson({
+      'version': 'R96',
       'mode': 'enroute',
       'actionCode': 'navigate_next',
-      'severity': 'warn',
-      'reference': 'AIMS-95',
+      'secondaryActionCode': 'signal_delay',
+      'severity': 'high',
+      'riskScore': 72,
+      'confidence': 88,
+      'reasonCodes': ['late', 'gps_stale'],
+      'refreshAfterSeconds': 10,
+      'reference': 'AIMS-96',
       'seen': true,
       'accepted': true,
       'totalStops': 4,
       'completedStops': 2,
-      'gpsFresh': true,
+      'progressPct': 50,
+      'gpsFresh': false,
+      'gpsAccuracyMeters': 18.5,
+      'currentSpeedKmh': 74.2,
       'documentsRequired': false,
       'sequenceAnomaly': false,
-      'jobId': 95,
-      'gpsAgeMinutes': 2,
+      'isLate': true,
+      'dataQuality': {
+        'gps': 'stale',
+        'nextStop': 'complete',
+        'schedule': 'known',
+      },
+      'alertFingerprint': 'abc123',
+      'jobId': 96,
+      'gpsAgeMinutes': 24,
       'stationaryMinutes': 4,
-      'stopDwellMinutes': null,
+      'stopDwellMinutes': 18,
       'distanceKm': 82.5,
       'etaMinutes': 73,
       'plannedAt': '2026-09-26T20:00:00+00:00',
-      'timeBufferMinutes': 22,
+      'timeBufferMinutes': -12,
+      'updatedAt': '2026-09-26T18:00:00+00:00',
       'nextStop': {
         'id': 7,
         'type': 'delivery',
@@ -32,20 +49,46 @@ void main() {
       },
     });
 
+    expect(state.version, 'R96');
     expect(state.actionCode, 'navigate_next');
-    expect(state.jobId, 95);
-    expect(state.totalStops, 4);
-    expect(state.completedStops, 2);
+    expect(state.secondaryActionCode, 'signal_delay');
+    expect(state.riskScore, 72);
+    expect(state.confidence, 88);
+    expect(state.reasonCodes, contains('late'));
+    expect(state.refreshAfterSeconds, 10);
+    expect(state.progressPct, 50);
+    expect(state.isLate, isTrue);
+    expect(state.gpsAccuracyMeters, 18.5);
+    expect(state.currentSpeedKmh, 74.2);
+    expect(state.dataQuality['gps'], 'stale');
+    expect(state.alertFingerprint, 'abc123');
+    expect(state.jobId, 96);
     expect(state.distanceKm, 82.5);
     expect(state.etaMinutes, 73);
     expect(state.nextStop?['company'], 'AIMS Test');
   });
 
-  test('Autopilot V3 safely defaults missing fields', () {
-    final state = DriverAutopilotStatus.fromJson(const {});
-    expect(state.mode, 'idle');
-    expect(state.actionCode, 'wait_job');
-    expect(state.totalStops, 0);
-    expect(state.documentsRequired, isFalse);
+  test('Autopilot R96 remains backward compatible with older feed', () {
+    final state = DriverAutopilotStatus.fromJson({
+      'mode': 'idle',
+      'actionCode': 'wait_job',
+      'severity': 'info',
+      'reference': '',
+      'seen': false,
+      'accepted': false,
+      'totalStops': 0,
+      'completedStops': 0,
+      'gpsFresh': false,
+      'documentsRequired': false,
+      'sequenceAnomaly': false,
+    });
+
+    expect(state.version, 'R95');
+    expect(state.secondaryActionCode, isEmpty);
+    expect(state.riskScore, 0);
+    expect(state.confidence, 100);
+    expect(state.refreshAfterSeconds, 30);
+    expect(state.progressPct, 0);
+    expect(state.isLate, isFalse);
   });
 }
