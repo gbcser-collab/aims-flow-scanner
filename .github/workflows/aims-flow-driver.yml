@@ -9,6 +9,15 @@ on:
       - 'pubspec.yaml'
       - 'native/**'
       - '.github/workflows/aims-flow-driver.yml'
+  pull_request:
+    branches: [aims-flow-r94-full-system-hardening]
+    paths:
+      - 'lib/**'
+      - 'test/**'
+      - 'server/**'
+      - 'pubspec.yaml'
+      - 'native/**'
+      - '.github/workflows/aims-flow-driver.yml'
   workflow_dispatch:
 
 concurrency:
