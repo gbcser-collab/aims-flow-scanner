@@ -9,6 +9,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'country_code_service.dart';
+import 'gps_point_quality.dart';
 import 'roaming_resilience.dart';
 
 class VehicleTrackingStatus {
@@ -56,6 +57,7 @@ class VehicleTrackingService {
   bool _flushAgain = false;
   int _flushFailures = 0;
   Position? _lastPosition;
+  Position? _lastAcceptedPosition;
   DateTime? _lastSentAt;
   String? _lastError;
   String _deviceId = '';
@@ -85,7 +87,7 @@ class VehicleTrackingService {
       }
       final position = await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.high,
+          accuracy: LocationAccuracy.bestForNavigation,
           timeLimit: Duration(seconds: 8),
         ),
       );
@@ -186,9 +188,9 @@ class VehicleTrackingService {
     }
 
     final settings = AndroidSettings(
-      accuracy: LocationAccuracy.high,
-      distanceFilter: 5,
-      intervalDuration: const Duration(seconds: 15),
+      accuracy: LocationAccuracy.bestForNavigation,
+      distanceFilter: 3,
+      intervalDuration: const Duration(seconds: 8),
       foregroundNotificationConfig: const ForegroundNotificationConfig(
         notificationTitle: 'AIMS Flow nyomkövetés aktív',
         notificationText: 'A jármű helyzete a munkavégzés alatt frissül.',
@@ -207,7 +209,7 @@ class VehicleTrackingService {
     );
 
     _heartbeatTimer?.cancel();
-    _heartbeatTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+    _heartbeatTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       unawaited(_sendHeartbeat());
     });
     unawaited(_requestFlush());
@@ -215,9 +217,6 @@ class VehicleTrackingService {
   }
 
   void _enqueuePosition(Position position) {
-    _lastPosition = position;
-    _lastError = null;
-    _emit();
     _positionTail = _positionTail.then(
       (_) => _queueAndFlush(position, source: 'stream'),
     ).catchError((Object error) {
@@ -229,7 +228,7 @@ class VehicleTrackingService {
   Future<void> _sendHeartbeat() async {
     if (!_enabled || _subscription == null) return;
     if (_lastSentAt != null &&
-        DateTime.now().difference(_lastSentAt!) < const Duration(seconds: 40)) {
+        DateTime.now().difference(_lastSentAt!) < const Duration(seconds: 25)) {
       return;
     }
 
@@ -237,7 +236,7 @@ class VehicleTrackingService {
     try {
       position = await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.high,
+          accuracy: LocationAccuracy.bestForNavigation,
           timeLimit: Duration(seconds: 8),
         ),
       );
@@ -247,7 +246,6 @@ class VehicleTrackingService {
       position = await Geolocator.getLastKnownPosition();
     }
     if (position == null) return;
-    _lastPosition = position;
     await _queueAndFlush(position, source: 'heartbeat');
   }
 
@@ -331,6 +329,46 @@ class VehicleTrackingService {
       return;
     }
 
+    final previous = _lastAcceptedPosition;
+    final speed = max(0.0, RoamingResilience.finiteOrZero(position.speed));
+    final accuracy = RoamingResilience.finiteOrZero(position.accuracy);
+    final accepted = GpsPointQuality.acceptable(
+      latitude: position.latitude,
+      longitude: position.longitude,
+      accuracy: accuracy,
+      speedMps: speed,
+      capturedAt: position.timestamp,
+      previousLatitude: previous?.latitude,
+      previousLongitude: previous?.longitude,
+      previousAccuracy: previous?.accuracy,
+      previousCapturedAt: previous?.timestamp,
+    );
+    if (!accepted) {
+      _lastError = 'GPS pontosság gyenge, várok jobb jelre.';
+      _emit();
+      return;
+    }
+
+    if (source == 'stream' &&
+        previous != null &&
+        GpsPointQuality.isStationaryJitter(
+          latitude: position.latitude,
+          longitude: position.longitude,
+          accuracy: accuracy,
+          speedMps: speed,
+          previousLatitude: previous.latitude,
+          previousLongitude: previous.longitude,
+          previousAccuracy: previous.accuracy,
+          previousSpeedMps: max(0.0, previous.speed),
+        )) {
+      return;
+    }
+
+    _lastAcceptedPosition = position;
+    _lastPosition = position;
+    _lastError = null;
+    _emit();
+
     final countryCode = await CountryCodeService.instance.resolve(position);
 
     final point = <String, dynamic>{
@@ -346,8 +384,8 @@ class VehicleTrackingService {
       'timestamp': position.timestamp.toUtc().toIso8601String(),
       'latitude': position.latitude,
       'longitude': position.longitude,
-      'accuracy': RoamingResilience.finiteOrZero(position.accuracy),
-      'speedMps': max(0, RoamingResilience.finiteOrZero(position.speed)),
+      'accuracy': accuracy,
+      'speedMps': speed,
       'heading': RoamingResilience.finiteOrZero(position.heading),
       'altitude': RoamingResilience.finiteOrZero(position.altitude),
       'source': source,

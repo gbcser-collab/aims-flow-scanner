@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
@@ -7,6 +8,7 @@ import 'package:geolocator/geolocator.dart';
 import '../models/tracking_models.dart';
 import 'aims_api_service.dart';
 import 'device_identity_service.dart';
+import 'gps_point_quality.dart';
 import 'tracking_repository.dart';
 
 class TrackingRuntime extends ChangeNotifier {
@@ -86,8 +88,8 @@ class TrackingRuntime extends ChangeNotifier {
       try {
         final current = await Geolocator.getCurrentPosition(
           locationSettings: const LocationSettings(
-            accuracy: LocationAccuracy.high,
-            timeLimit: Duration(seconds: 12),
+            accuracy: LocationAccuracy.bestForNavigation,
+            timeLimit: Duration(seconds: 10),
           ),
         );
         await _handlePosition(current);
@@ -142,9 +144,9 @@ class TrackingRuntime extends ChangeNotifier {
 
     final LocationSettings settings = Platform.isAndroid
         ? AndroidSettings(
-            accuracy: LocationAccuracy.high,
-            distanceFilter: 25,
-            intervalDuration: const Duration(minutes: 1),
+            accuracy: LocationAccuracy.bestForNavigation,
+            distanceFilter: 5,
+            intervalDuration: const Duration(seconds: 12),
             foregroundNotificationConfig: const ForegroundNotificationConfig(
               notificationTitle: 'AIMS Flow nyomkövetés aktív',
               notificationText: 'Az aktív fuvar GPS-pozíciója megosztásra kerül a Logistic-AIMS admin felé.',
@@ -153,8 +155,8 @@ class TrackingRuntime extends ChangeNotifier {
             ),
           )
         : const LocationSettings(
-            accuracy: LocationAccuracy.high,
-            distanceFilter: 25,
+            accuracy: LocationAccuracy.bestForNavigation,
+            distanceFilter: 5,
           );
 
     _positionSubscription = Geolocator.getPositionStream(locationSettings: settings).listen(
@@ -179,13 +181,48 @@ class TrackingRuntime extends ChangeNotifier {
     final current = _session;
     if (current == null || !current.active) return;
 
+    final previous = current.latestPoint;
+    final speed = max(0.0, position.speed.isFinite ? position.speed : 0.0);
+    final accuracy =
+        position.accuracy.isFinite ? position.accuracy : double.infinity;
+    final accepted = GpsPointQuality.acceptable(
+      latitude: position.latitude,
+      longitude: position.longitude,
+      accuracy: accuracy,
+      speedMps: speed,
+      capturedAt: position.timestamp,
+      previousLatitude: previous?.latitude,
+      previousLongitude: previous?.longitude,
+      previousAccuracy: previous?.accuracy,
+      previousCapturedAt: previous?.capturedAt,
+    );
+    if (!accepted) {
+      _statusMessage = 'Gyenge GPS-jel, várok pontosabb pozícióra.';
+      notifyListeners();
+      return;
+    }
+
+    if (previous != null &&
+        GpsPointQuality.isStationaryJitter(
+          latitude: position.latitude,
+          longitude: position.longitude,
+          accuracy: accuracy,
+          speedMps: speed,
+          previousLatitude: previous.latitude,
+          previousLongitude: previous.longitude,
+          previousAccuracy: previous.accuracy,
+          previousSpeedMps: max(0.0, previous.speedMps),
+        )) {
+      return;
+    }
+
     final point = TrackingPoint(
       id: 'gps_${position.timestamp.microsecondsSinceEpoch}',
       capturedAt: position.timestamp,
       latitude: position.latitude,
       longitude: position.longitude,
-      accuracy: position.accuracy,
-      speedMps: position.speed,
+      accuracy: accuracy,
+      speedMps: speed,
       heading: position.heading,
       altitude: position.altitude,
       isMocked: position.isMocked,
