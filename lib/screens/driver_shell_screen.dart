@@ -1928,7 +1928,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
               for (final row in rows) ...[
                 Text(row.key, style: const TextStyle(color: Colors.white38, fontSize: 10, fontWeight: FontWeight.w800)),
                 const SizedBox(height: 3),
-                SelectableText(row.value, style: const TextStyle(color: Colors.white, fontSize: 15, height: 1.35, fontWeight: FontWeight.w600)),
+                SelectableText(row.value, style: const TextStyle(color: Colors.white, fontSize: 14.5, height: 1.35, fontWeight: FontWeight.w600)),
                 const SizedBox(height: 13),
               ],
               FilledButton.icon(
@@ -4178,7 +4178,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                     height: 1.08,
                   ),
                 ),
-                const SizedBox(height: 9),
+                const SizedBox(height: 7),
                 SelectableText(
                   stop.address,
                   style: const TextStyle(
@@ -5053,7 +5053,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
           physics: const NeverScrollableScrollPhysics(),
           mainAxisSpacing: 12,
           crossAxisSpacing: 12,
-          childAspectRatio: .88,
+          childAspectRatio: 1.12,
           children: [
             _signal(
               Icons.schedule_rounded,
@@ -5760,7 +5760,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                   ),
                 ),
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 14, 13, 13),
+                  padding: const EdgeInsets.fromLTRB(14, 12, 12, 11),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -5768,8 +5768,8 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Container(
-                            width: 44,
-                            height: 44,
+                            width: 40,
+                            height: 40,
                             decoration: BoxDecoration(
                               color: accent.withValues(alpha: .15),
                               borderRadius: BorderRadius.circular(13),
@@ -5777,12 +5777,12 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                                 color: accent.withValues(alpha: .42),
                               ),
                             ),
-                            child: Icon(icon, color: accent, size: 25),
+                            child: Icon(icon, color: accent, size: 23),
                           ),
                           const Spacer(),
                           Container(
-                            width: 28,
-                            height: 28,
+                            width: 26,
+                            height: 26,
                             decoration: BoxDecoration(
                               color: Colors.white.withValues(alpha: .05),
                               borderRadius: BorderRadius.circular(9),
@@ -5791,7 +5791,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                             child: const Icon(
                               Icons.chevron_right_rounded,
                               color: Colors.white54,
-                              size: 20,
+                              size: 18,
                             ),
                           ),
                         ],
