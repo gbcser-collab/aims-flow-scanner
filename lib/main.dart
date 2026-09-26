@@ -36,6 +36,83 @@ class AimsFlowApp extends StatelessWidget {
         foregroundColor: dark ? Colors.white : const Color(0xFF06131F),
         surfaceTintColor: Colors.transparent,
       ),
+      textTheme: TextTheme(
+        headlineSmall: TextStyle(
+          color: dark ? Colors.white : const Color(0xFF06131F),
+          fontSize: 28,
+          fontWeight: FontWeight.w900,
+          height: 1.08,
+          letterSpacing: -.35,
+        ),
+        titleLarge: TextStyle(
+          color: dark ? Colors.white : const Color(0xFF06131F),
+          fontSize: 20,
+          fontWeight: FontWeight.w900,
+          height: 1.15,
+        ),
+        titleMedium: TextStyle(
+          color: dark ? Colors.white : const Color(0xFF06131F),
+          fontSize: 15,
+          fontWeight: FontWeight.w900,
+          height: 1.2,
+        ),
+        bodyLarge: TextStyle(
+          color: dark ? Colors.white : const Color(0xFF183247),
+          fontSize: 14,
+          fontWeight: FontWeight.w600,
+          height: 1.4,
+        ),
+        bodyMedium: TextStyle(
+          color: dark ? Colors.white70 : const Color(0xFF486273),
+          fontSize: 13,
+          fontWeight: FontWeight.w500,
+          height: 1.4,
+        ),
+        bodySmall: TextStyle(
+          color: dark ? Colors.white54 : const Color(0xFF657B89),
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+          height: 1.35,
+        ),
+        labelLarge: const TextStyle(
+          fontSize: 14,
+          fontWeight: FontWeight.w900,
+          letterSpacing: .15,
+        ),
+      ),
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: dark ? const Color(0xFF071725) : Colors.white,
+        hintStyle: TextStyle(
+          color: dark ? Colors.white38 : const Color(0xFF8194A0),
+          fontSize: 13,
+          fontWeight: FontWeight.w500,
+        ),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide(
+            color: dark ? const Color(0xFF24557D) : const Color(0xFFC9D8E1),
+          ),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: aimsBlue, width: 1.6),
+        ),
+      ),
+      navigationBarTheme: NavigationBarThemeData(
+        backgroundColor: dark ? const Color(0xFF04101A) : Colors.white,
+        indicatorColor: aimsBlue.withValues(alpha: dark ? .18 : .12),
+        labelTextStyle: WidgetStateProperty.resolveWith(
+          (states) => TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w800,
+            color: states.contains(WidgetState.selected)
+                ? aimsBlue
+                : (dark ? Colors.white60 : const Color(0xFF536B7A)),
+          ),
+        ),
+      ),
       cardTheme: const CardThemeData(elevation: 0, margin: EdgeInsets.zero),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
