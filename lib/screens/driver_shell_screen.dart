@@ -286,6 +286,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
   DateTime? _lastAutopilotSpokenAt;
   bool _autopilotRefreshing = false;
   int _autopilotFailureCount = 0;
+  DateTime? _autopilotLastSuccessAt;
   final Set<int> _preArrivalBriefedStops = <int>{};
   DateTime? _lastPreArrivalCheckAt;
   DriverRestModeState _restMode = const DriverRestModeState(active: false);
@@ -1628,6 +1629,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
 
       if (status != null) {
         _autopilotFailureCount = 0;
+        _autopilotLastSuccessAt = DateTime.now();
         _scheduleAutopilotRefresh(status.refreshAfterSeconds);
         final now = DateTime.now();
         final actionChanged = previous?.actionCode != status.actionCode;
@@ -3702,7 +3704,12 @@ class _DriverShellScreenState extends State<DriverShellScreen>
     final address = next?['address']?.toString().trim() ?? '';
     final secondaryLabel = _autopilotSecondaryLabel(ap.secondaryActionCode);
     final gpsQuality = ap.dataQuality['gps']?.toString() ?? 'unknown';
-    final isLive = gpsQuality == 'fresh';
+    final lastSuccess = _autopilotLastSuccessAt;
+    final feedFresh = _autopilotFailureCount == 0 &&
+        lastSuccess != null &&
+        DateTime.now().difference(lastSuccess) <
+            Duration(seconds: math.max(90, ap.refreshAfterSeconds * 3));
+    final isLive = gpsQuality == 'fresh' && feedFresh;
     final reasons = ap.reasonCodes
         .map(_autopilotReasonLabel)
         .where((item) => item.trim().isNotEmpty)
@@ -3756,7 +3763,9 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                     Text(
                       isLive
                           ? _l('ÉLŐ DÖNTÉSI MOTOR', 'LIVE DECISION ENGINE', 'LIVE-ENTSCHEIDUNGSMOTOR')
-                          : _l('KORLÁTOZOTT ADATMINŐSÉG', 'LIMITED DATA QUALITY', 'EINGESCHRÄNKTE DATENQUALITÄT'),
+                          : !feedFresh
+                              ? _l('UTOLSÓ ISMERT ÁLLAPOT', 'LAST KNOWN STATE', 'LETZTER BEKANNTER STAND')
+                              : _l('KORLÁTOZOTT ADATMINŐSÉG', 'LIMITED DATA QUALITY', 'EINGESCHRÄNKTE DATENQUALITÄT'),
                       style: TextStyle(
                         color: isLive ? _green : const Color(0xFFFFC857),
                         fontSize: 9,
