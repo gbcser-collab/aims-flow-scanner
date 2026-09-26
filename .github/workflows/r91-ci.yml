@@ -7,6 +7,7 @@ on:
       - aims-flow-driver-v1-r92-driver-first-all-in-one
       - aims-flow-r93-stability-hardening
       - aims-flow-r94-full-system-hardening
+      - aims-flow-r100-ui-message-stability
   workflow_dispatch:
 
 concurrency:
@@ -150,6 +151,9 @@ jobs:
 
       - name: R95 customer portal security guard
         run: python3 ci/r95_customer_portal_guard.py
+
+      - name: R100 message / signal / typography guard
+        run: python3 ci/r100_message_signal_guard.py
 
       - name: R94 tracking contract guard
         run: python3 ci/r94_tracking_contract_guard.py
