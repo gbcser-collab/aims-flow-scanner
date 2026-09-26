@@ -39,8 +39,10 @@ class _SmartDocumentScannerScreenState
     with WidgetsBindingObserver {
   CameraController? _camera;
   bool _busy = false;
+  bool _initializing = false;
   String _phase = '';
   String? _error;
+  int _cameraGeneration = 0;
   double _viewportAspect = 9 / 16;
 
   String _l(String hu, String en, String de) => switch (
@@ -58,46 +60,254 @@ class _SmartDocumentScannerScreenState
     _initCamera();
   }
 
-  Future<void> _initCamera() async {
-    if (_busy) return;
-    setState(() {
-      _busy = true;
-      _error = null;
-    });
-    try {
-      await _camera?.dispose();
-    } catch (_) {}
-    final camera = CameraController(
-      widget.camera,
-      ResolutionPreset.veryHigh,
-      enableAudio: false,
-      imageFormatGroup: ImageFormatGroup.jpeg,
-    );
-    try {
-      await camera.initialize();
+  Future<void> _disposeCamera() async {
+    final old = _camera;
+    _camera = null;
+    if (old != null) {
       try {
-        await camera.setFocusMode(FocusMode.auto);
+        await old.dispose();
       } catch (_) {}
-      try {
-        await camera.setFlashMode(FlashMode.auto);
-      } catch (_) {}
-      if (!mounted) {
-        await camera.dispose();
-        return;
-      }
-      setState(() => _camera = camera);
-    } catch (e) {
-      await camera.dispose();
-      if (mounted) {
-        setState(() => _error = _l(
-              'A kamera nem indult el: $e',
-              'Camera failed to start: $e',
-              'Kamera konnte nicht gestartet werden: $e',
-            ));
-      }
-    } finally {
-      if (mounted) setState(() => _busy = false);
     }
+  }
+
+  String _friendlyCameraError(Object? error) {
+    if (error is CameraException) {
+      switch (error.code) {
+        case 'CameraAccessDenied':
+        case 'CameraAccessDeniedWithoutPrompt':
+          return _l(
+            'A kameraengedély nincs megadva. Engedélyezd a Beállításokban, majd próbáld újra.',
+            'Camera permission is missing. Enable it in Settings and try again.',
+            'Die Kameraberechtigung fehlt. In den Einstellungen aktivieren und erneut versuchen.',
+          );
+        case 'CameraAccessRestricted':
+          return _l(
+            'A kamera használata ezen a készüléken korlátozva van.',
+            'Camera use is restricted on this device.',
+            'Die Kameranutzung ist auf diesem Gerät eingeschränkt.',
+          );
+        default:
+          return _l(
+            'A kamera nem indult el (${error.code}).',
+            'The camera could not start (${error.code}).',
+            'Die Kamera konnte nicht gestartet werden (${error.code}).',
+          );
+      }
+    }
+    return _l(
+      'A kamera nem indult el. Próbáld újra.',
+      'The camera could not start. Try again.',
+      'Die Kamera konnte nicht gestartet werden. Erneut versuchen.',
+    );
+  }
+
+  Future<void> _initCamera() async {
+    if (_initializing || !mounted) return;
+    _initializing = true;
+    final generation = ++_cameraGeneration;
+    if (mounted) setState(() => _error = null);
+    await _disposeCamera();
+
+    const presets = <ResolutionPreset>[
+      ResolutionPreset.veryHigh,
+      ResolutionPreset.high,
+      ResolutionPreset.medium,
+    ];
+
+    Object? lastError;
+    for (final preset in presets) {
+      if (!mounted || generation != _cameraGeneration) break;
+      final candidate = CameraController(
+        widget.camera,
+        preset,
+        enableAudio: false,
+        imageFormatGroup: ImageFormatGroup.jpeg,
+      );
+      try {
+        await candidate.initialize();
+        if (!mounted || generation != _cameraGeneration) {
+          await candidate.dispose();
+          break;
+        }
+        try {
+          await candidate.setFocusMode(FocusMode.auto);
+        } catch (_) {}
+        try {
+          await candidate.setExposureMode(ExposureMode.auto);
+        } catch (_) {}
+        try {
+          await candidate.setFlashMode(FlashMode.auto);
+        } catch (_) {
+          try {
+            await candidate.setFlashMode(FlashMode.off);
+          } catch (_) {}
+        }
+        if (!mounted || generation != _cameraGeneration) {
+          await candidate.dispose();
+          break;
+        }
+        setState(() {
+          _camera = candidate;
+          _error = null;
+        });
+        _initializing = false;
+        return;
+      } catch (e) {
+        lastError = e;
+        try {
+          await candidate.dispose();
+        } catch (_) {}
+      }
+    }
+
+    _initializing = false;
+    if (!mounted || generation != _cameraGeneration) return;
+    setState(() => _error = _friendlyCameraError(lastError));
+  }
+
+  Future<void> _prepareCapture(CameraController camera) async {
+    try {
+      await camera.setFocusMode(FocusMode.auto);
+    } catch (_) {}
+    try {
+      await camera.setExposureMode(ExposureMode.auto);
+    } catch (_) {}
+    try {
+      await camera.setFocusPoint(const Offset(.5, .5));
+    } catch (_) {}
+    try {
+      await camera.setExposurePoint(const Offset(.5, .5));
+    } catch (_) {}
+    await Future<void>.delayed(const Duration(milliseconds: 160));
+  }
+
+  List<String> _qualityWarnings(ScanProcessingResult result) {
+    final q = result.quality;
+    return <String>[
+      if (!result.autoCropReliable)
+        _l(
+          'A dokumentum széleit nem sikerült biztosan felismerni.',
+          'Document edges could not be detected reliably.',
+          'Die Dokumentränder konnten nicht zuverlässig erkannt werden.',
+        ),
+      if (q.isBlurry)
+        _l('A kép életlennek tűnik.', 'The image looks blurry.', 'Das Bild wirkt unscharf.'),
+      if (q.isTooDark)
+        _l('A dokumentum túl sötét.', 'The document is too dark.', 'Das Dokument ist zu dunkel.'),
+      if (q.isTooBright)
+        _l('A dokumentum túl világos.', 'The document is too bright.', 'Das Dokument ist zu hell.'),
+      if (q.hasTooMuchGlare)
+        _l('Erős becsillanást érzékelek.', 'Strong glare detected.', 'Starke Spiegelung erkannt.'),
+      if (q.documentTooSmall)
+        _l('A dokumentum túl kicsi a képen.', 'The document is too small in the image.', 'Das Dokument ist im Bild zu klein.'),
+    ];
+  }
+
+  Future<bool> _confirmScanQuality(ScanProcessingResult result) async {
+    if (!result.shouldSuggestRetake) return true;
+    if (!mounted) return false;
+    final warnings = _qualityWarnings(result);
+    return await showDialog<bool>(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => AlertDialog(
+            backgroundColor: const Color(0xFF071725),
+            title: Text(
+              _l(
+                'Érdemes újrafotózni',
+                'Retake recommended',
+                'Neues Foto empfohlen',
+              ),
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _l(
+                    'Minőség: ${result.quality.score}/100 · keret: ${(result.cornerConfidence * 100).round()}%',
+                    'Quality: ${result.quality.score}/100 · frame: ${(result.cornerConfidence * 100).round()}%',
+                    'Qualität: ${result.quality.score}/100 · Rahmen: ${(result.cornerConfidence * 100).round()}%',
+                  ),
+                ),
+                const SizedBox(height: 10),
+                for (final warning in warnings)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 5),
+                    child: Text('• $warning'),
+                  ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: Text(_l('HASZNÁLOM', 'USE ANYWAY', 'TROTZDEM VERWENDEN')),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: Text(_l('ÚJRAFOTÓZOM', 'RETAKE', 'NEU AUFNEHMEN')),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+  }
+
+  Future<bool> _confirmWeakOcr(String text) async {
+    if (text.trim().replaceAll(RegExp(r'\s+'), '').length >= 12) return true;
+    if (!mounted) return false;
+    return await showDialog<bool>(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => AlertDialog(
+            backgroundColor: const Color(0xFF071725),
+            title: Text(_l('Kevés olvasható szöveg', 'Little readable text', 'Wenig lesbarer Text')),
+            content: Text(
+              _l(
+                'A Flow alig tudott szöveget kiolvasni. Újrafotózás jobb eredményt adhat.',
+                'Flow could read very little text. A retake may give a better result.',
+                'Flow konnte nur wenig Text lesen. Ein neues Foto kann ein besseres Ergebnis liefern.',
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: Text(_l('HASZNÁLOM', 'USE ANYWAY', 'TROTZDEM VERWENDEN')),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: Text(_l('ÚJRAFOTÓZOM', 'RETAKE', 'NEU AUFNEHMEN')),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+  }
+
+  Future<void> _deleteArtifact(String? path) async {
+    if (path == null || path.trim().isEmpty) return;
+    try {
+      final file = File(path);
+      if (await file.exists()) await file.delete();
+    } catch (_) {}
+  }
+
+  Widget _cameraPreview(CameraController camera) {
+    final previewSize = camera.value.previewSize;
+    if (previewSize == null) return CameraPreview(camera);
+    return ClipRect(
+      child: SizedBox.expand(
+        child: FittedBox(
+          fit: BoxFit.cover,
+          alignment: Alignment.center,
+          child: SizedBox(
+            width: previewSize.height,
+            height: previewSize.width,
+            child: CameraPreview(camera),
+          ),
+        ),
+      ),
+    );
   }
 
   Future<SmartDocumentType?> _confirmType(
@@ -298,21 +508,37 @@ class _SmartDocumentScannerScreenState
     setState(() {
       _busy = true;
       _phase = _l(
-        'Dokumentum fotózása…',
-        'Taking document photo…',
-        'Dokument wird fotografiert…',
+        'Kamera stabilizálása…',
+        'Stabilizing camera…',
+        'Kamera wird stabilisiert…',
       );
       _error = null;
     });
 
     final ocr = OcrService();
     XFile? shot;
+    String? output;
+    String? signature;
+    var keepArtifacts = false;
     try {
+      await _prepareCapture(camera);
+      if (!mounted) return;
+      setState(() => _phase = _l(
+            'Dokumentum fotózása…',
+            'Taking document photo…',
+            'Dokument wird fotografiert…',
+          ));
+
       shot = await camera.takePicture();
+      final shotFile = File(shot.path);
+      if (!await shotFile.exists() || await shotFile.length() < 4096) {
+        throw const FormatException('capture_file_invalid');
+      }
+
       final temp = await getTemporaryDirectory();
       final stamp = DateTime.now().microsecondsSinceEpoch;
-      final output = '${temp.path}/aims_smart_document_$stamp.jpg';
-      final signature = '${temp.path}/aims_smart_signature_$stamp.jpg';
+      output = '${temp.path}/aims_smart_document_$stamp.jpg';
+      signature = '${temp.path}/aims_smart_signature_$stamp.jpg';
 
       if (mounted) {
         setState(() => _phase = _l(
@@ -329,14 +555,25 @@ class _SmartDocumentScannerScreenState
         frameCrop: FrameCropSpec(viewportAspect: _viewportAspect),
       );
 
+      if (!await _confirmScanQuality(result)) {
+        return;
+      }
+
       if (mounted) {
         setState(() => _phase = _l(
-              'OCR és dokumentumtípus felismerése…',
-              'OCR and document type recognition…',
-              'OCR und Dokumenttyperkennung…',
+              'Több-passzos OCR és dokumentumtípus felismerése…',
+              'Multi-pass OCR and document type recognition…',
+              'Mehrfach-OCR und Dokumenttyperkennung…',
             ));
       }
-      final text = await ocr.recognize(result.outputPath);
+      final text = await ocr.recognizeBest(
+        processedImagePath: result.outputPath,
+        originalImagePath: shot.path,
+      );
+      if (!await _confirmWeakOcr(text)) {
+        return;
+      }
+
       final classification = const SmartDocumentClassifier().classify(
         text,
         context: widget.contextHint,
@@ -349,10 +586,8 @@ class _SmartDocumentScannerScreenState
       }
       if (selected == null || !mounted) return;
 
-      try {
-        await camera.dispose();
-      } catch (_) {}
-      _camera = null;
+      await _disposeCamera();
+      keepArtifacts = true;
 
       await _routeResult(
         imagePath: result.outputPath,
@@ -362,6 +597,15 @@ class _SmartDocumentScannerScreenState
         type: selected,
         scanResult: result,
       );
+    } on CameraException catch (e) {
+      if (!mounted) return;
+      setState(() => _error = _l(
+            'Kamerahiba (${e.code}): ${e.description ?? 'a kép nem készült el'}',
+            'Camera error (${e.code}): ${e.description ?? 'the image was not captured'}',
+            'Kamerafehler (${e.code}): ${e.description ?? 'das Bild wurde nicht aufgenommen'}',
+          ));
+      _cameraGeneration++;
+      await _disposeCamera();
     } catch (e) {
       if (mounted) {
         setState(() => _error = _l(
@@ -373,40 +617,46 @@ class _SmartDocumentScannerScreenState
     } finally {
       await ocr.dispose();
       if (shot != null) {
-        try {
-          await File(shot.path).delete();
-        } catch (_) {}
+        await _deleteArtifact(shot.path);
+      }
+      if (!keepArtifacts) {
+        await _deleteArtifact(output);
+        await _deleteArtifact(signature);
       }
       if (mounted) {
         setState(() {
           _busy = false;
           _phase = '';
         });
+        if (_camera == null && (ModalRoute.of(context)?.isCurrent ?? false)) {
+          unawaited(_initCamera());
+        }
       }
     }
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed &&
-        _camera == null &&
-        !_busy) {
-      _initCamera();
+    if (state == AppLifecycleState.resumed && _camera == null && !_busy) {
+      unawaited(_initCamera());
       return;
     }
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.inactive ||
-        state == AppLifecycleState.hidden) {
-      final camera = _camera;
-      _camera = null;
-      camera?.dispose();
+        state == AppLifecycleState.hidden ||
+        state == AppLifecycleState.detached) {
+      _cameraGeneration++;
+      unawaited(_disposeCamera());
     }
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _camera?.dispose();
+    _cameraGeneration++;
+    final camera = _camera;
+    _camera = null;
+    camera?.dispose();
     super.dispose();
   }
 
@@ -429,10 +679,27 @@ class _SmartDocumentScannerScreenState
                   Center(
                     child: Padding(
                       padding: const EdgeInsets.all(24),
-                      child: Text(
-                        _error!,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(color: Colors.orangeAccent),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.camera_alt_outlined,
+                            color: Colors.orangeAccent,
+                            size: 42,
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            _error!,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(color: Colors.orangeAccent),
+                          ),
+                          const SizedBox(height: 14),
+                          FilledButton.icon(
+                            onPressed: _initializing ? null : _initCamera,
+                            icon: const Icon(Icons.refresh_rounded),
+                            label: Text(_l('ÚJRAPRÓBÁLÁS', 'RETRY', 'ERNEUT VERSUCHEN')),
+                          ),
+                        ],
                       ),
                     ),
                   )
@@ -443,7 +710,7 @@ class _SmartDocumentScannerScreenState
                     ),
                   )
                 else
-                  CameraPreview(camera),
+                  _cameraPreview(camera),
                 if (camera != null && camera.value.isInitialized)
                   const ScannerOverlay(),
                 Positioned(
