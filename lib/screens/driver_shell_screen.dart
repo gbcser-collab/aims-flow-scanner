@@ -5051,9 +5051,9 @@ class _DriverShellScreenState extends State<DriverShellScreen>
           crossAxisCount: 2,
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
-          mainAxisSpacing: 9,
-          crossAxisSpacing: 9,
-          childAspectRatio: 1.02,
+          mainAxisSpacing: 12,
+          crossAxisSpacing: 12,
+          childAspectRatio: .88,
           children: [
             _signal(
               Icons.schedule_rounded,
@@ -5691,41 +5691,169 @@ class _DriverShellScreenState extends State<DriverShellScreen>
     String detail,
     VoidCallback onTap, {
     bool danger = false,
-  }) =>
-      InkWell(
-        onTap: _actionBusy ? null : onTap,
-        borderRadius: BorderRadius.circular(16),
-        child: Ink(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: danger
-                ? Colors.redAccent.withValues(alpha: .08)
-                : _panelColor,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: danger
-                  ? Colors.redAccent.withValues(alpha: .65)
-                  : const Color(0xFF173B54),
-              width: danger ? 2 : 1,
+  }) {
+    final accent = danger ? const Color(0xFFFF5C68) : _blue;
+    final borderColor = danger
+        ? const Color(0xFFFF6A74)
+        : const Color(0xFF2B6B93);
+
+    return AnimatedOpacity(
+      duration: const Duration(milliseconds: 160),
+      opacity: _actionBusy ? .55 : 1,
+      child: Material(
+        color: Colors.transparent,
+        elevation: 6,
+        shadowColor: accent.withValues(alpha: .20),
+        borderRadius: BorderRadius.circular(18),
+        child: InkWell(
+          onTap: _actionBusy ? null : onTap,
+          borderRadius: BorderRadius.circular(18),
+          splashColor: accent.withValues(alpha: .16),
+          highlightColor: accent.withValues(alpha: .08),
+          child: Ink(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: danger
+                    ? const [
+                        Color(0xFF2A1118),
+                        Color(0xFF160A0F),
+                      ]
+                    : const [
+                        Color(0xFF0D2940),
+                        Color(0xFF071725),
+                      ],
+              ),
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(
+                color: borderColor,
+                width: danger ? 2.2 : 1.6,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: accent.withValues(alpha: danger ? .18 : .10),
+                  blurRadius: 18,
+                  offset: const Offset(0, 7),
+                ),
+                const BoxShadow(
+                  color: Color(0x55000000),
+                  blurRadius: 8,
+                  offset: Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Stack(
+              children: [
+                Positioned(
+                  left: 0,
+                  top: 0,
+                  bottom: 0,
+                  child: Container(
+                    width: 4,
+                    decoration: BoxDecoration(
+                      color: accent,
+                      borderRadius: const BorderRadius.horizontal(
+                        left: Radius.circular(18),
+                      ),
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 14, 13, 13),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            width: 44,
+                            height: 44,
+                            decoration: BoxDecoration(
+                              color: accent.withValues(alpha: .15),
+                              borderRadius: BorderRadius.circular(13),
+                              border: Border.all(
+                                color: accent.withValues(alpha: .42),
+                              ),
+                            ),
+                            child: Icon(icon, color: accent, size: 25),
+                          ),
+                          const Spacer(),
+                          Container(
+                            width: 28,
+                            height: 28,
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: .05),
+                              borderRadius: BorderRadius.circular(9),
+                              border: Border.all(color: Colors.white10),
+                            ),
+                            child: const Icon(
+                              Icons.chevron_right_rounded,
+                              color: Colors.white54,
+                              size: 20,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const Spacer(),
+                      Text(
+                        title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: .1,
+                        ),
+                      ),
+                      const SizedBox(height: 5),
+                      Text(
+                        detail,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.white60,
+                          fontSize: 10.5,
+                          height: 1.25,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 9),
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.touch_app_rounded,
+                            size: 13,
+                            color: accent.withValues(alpha: .82),
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            _l(
+                              'KOPPINTS A KÜLDÉSHEZ',
+                              'TAP TO SEND',
+                              'ZUM SENDEN TIPPEN',
+                            ),
+                            style: TextStyle(
+                              color: accent.withValues(alpha: .90),
+                              fontSize: 8.5,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: .55,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Icon(icon, color: danger ? Colors.redAccent : _blue, size: 30),
-              const Spacer(),
-              Text(title, style: const TextStyle(fontWeight: FontWeight.w900)),
-              const SizedBox(height: 3),
-              Text(
-                detail,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(color: Colors.white38, fontSize: 10),
-              ),
-            ],
-          ),
         ),
-      );
+      ),
+    );
+  }
 
   Widget _panel(Widget child) => Container(
         padding: const EdgeInsets.all(16),
