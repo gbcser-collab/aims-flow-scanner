@@ -2,9 +2,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:aims_flow_scanner/services/driver_api_service.dart';
 
 void main() {
-  test('Autopilot R96 parses Pro decision feed', () {
+  test('Autopilot R97 parses refined decision feed', () {
     final state = DriverAutopilotStatus.fromJson({
-      'version': 'R96',
+      'version': 'R97',
       'mode': 'enroute',
       'actionCode': 'navigate_next',
       'secondaryActionCode': 'signal_delay',
@@ -13,7 +13,7 @@ void main() {
       'confidence': 88,
       'reasonCodes': ['late', 'gps_stale'],
       'refreshAfterSeconds': 10,
-      'reference': 'AIMS-96',
+      'reference': 'AIMS-97',
       'seen': true,
       'accepted': true,
       'totalStops': 4,
@@ -49,7 +49,7 @@ void main() {
       },
     });
 
-    expect(state.version, 'R96');
+    expect(state.version, 'R97');
     expect(state.actionCode, 'navigate_next');
     expect(state.secondaryActionCode, 'signal_delay');
     expect(state.riskScore, 72);
@@ -68,7 +68,7 @@ void main() {
     expect(state.nextStop?['company'], 'AIMS Test');
   });
 
-  test('Autopilot R96 remains backward compatible with older feed', () {
+  test('Autopilot R97 remains backward compatible with older feed', () {
     final state = DriverAutopilotStatus.fromJson({
       'mode': 'idle',
       'actionCode': 'wait_job',
