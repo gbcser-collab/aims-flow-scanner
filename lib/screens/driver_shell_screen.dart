@@ -282,6 +282,9 @@ class _DriverShellScreenState extends State<DriverShellScreen>
   int _officeMessageNonce = 0;
   Timer? _officeMessageTimer;
   Timer? _autopilotTimer;
+  String? _lastAutopilotSpokenSignature;
+  DateTime? _lastAutopilotSpokenAt;
+  bool _autopilotRefreshing = false;
   final Set<int> _preArrivalBriefedStops = <int>{};
   DateTime? _lastPreArrivalCheckAt;
   DriverRestModeState _restMode = const DriverRestModeState(active: false);
@@ -1437,13 +1440,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
           unawaited(_refreshOfficeMessages(silent: true));
         }
       });
-      _autopilotTimer?.cancel();
-      _autopilotTimer = Timer.periodic(const Duration(seconds: 30), (_) {
-        if (_plate.isNotEmpty) {
-          unawaited(_refreshAutopilot());
-        }
-      });
-      unawaited(_refreshAutopilot());
+      _scheduleAutopilotRefresh(1);
     }
 
     // Driver-first default: voice control is ON unless the driver explicitly
@@ -1565,14 +1562,97 @@ class _DriverShellScreenState extends State<DriverShellScreen>
     }
   }
 
-  Future<void> _refreshAutopilot() async {
+  void _scheduleAutopilotRefresh([int seconds = 30]) {
+    _autopilotTimer?.cancel();
     if (_plate.isEmpty) return;
+    final safeSeconds = seconds.clamp(8, 120);
+    _autopilotTimer = Timer(Duration(seconds: safeSeconds), () {
+      if (_plate.isNotEmpty) {
+        unawaited(_refreshAutopilot());
+      }
+    });
+  }
+
+  String _autopilotVoiceMessage(DriverAutopilotStatus status) {
+    if (status.sequenceAnomaly) {
+      return _l(
+        'Figyelem. A fuvar megállóinak sorrendje eltér a várt folyamattól. Ellenőrizd a fuvart.',
+        'Attention. The stop sequence differs from the expected workflow. Check the job.',
+        'Achtung. Die Stopp-Reihenfolge weicht vom erwarteten Ablauf ab. Auftrag prüfen.',
+      );
+    }
+    if (status.isLate) {
+      return _l(
+        'Figyelem. Az Autopilot késést jelez. Szükség esetén jelezd az irodának.',
+        'Attention. Autopilot predicts a delay. Inform the office if needed.',
+        'Achtung. Autopilot erkennt eine Verspätung. Informiere bei Bedarf die Disposition.',
+      );
+    }
+    if (status.stopDwellMinutes != null && status.stopDwellMinutes! >= 30) {
+      return _l(
+        'Hosszabb várakozást érzékelek. Ha még nem jelezted, küldj várakozás jelzést.',
+        'I detect extended waiting. Send a waiting alert if you have not already done so.',
+        'Ich erkenne eine längere Wartezeit. Sende eine Wartezeitmeldung, falls noch nicht geschehen.',
+      );
+    }
+    if (!status.gpsFresh && status.accepted) {
+      return _l(
+        'A GPS adat nem friss. Ellenőrizd a helymeghatározást és a mobilinternetet.',
+        'GPS data is not fresh. Check location services and mobile data.',
+        'GPS-Daten sind nicht aktuell. Prüfe Standortdienste und mobile Daten.',
+      );
+    }
+    if (status.actionCode == 'scan_documents') {
+      return _l(
+        'A fuvar megállói elkészültek. Következő lépés a CMR vagy POD dokumentum scannelése.',
+        'All stops are complete. The next step is scanning the CMR or POD document.',
+        'Alle Stopps sind abgeschlossen. Als Nächstes CMR- oder POD-Dokument scannen.',
+      );
+    }
+    return '';
+  }
+
+  Future<void> _refreshAutopilot() async {
+    if (_plate.isEmpty || _autopilotRefreshing) return;
+    _autopilotRefreshing = true;
     try {
+      final previous = _autopilot;
       final status = await _api.fetchAutopilot(_plate);
       if (!mounted) return;
       setState(() => _autopilot = status);
+
+      if (status != null) {
+        _scheduleAutopilotRefresh(status.refreshAfterSeconds);
+        final now = DateTime.now();
+        final actionChanged = previous?.actionCode != status.actionCode;
+        final shouldSpeak =
+            status.alertFingerprint.isNotEmpty &&
+            status.alertFingerprint != _lastAutopilotSpokenSignature &&
+            (status.severity == 'high' ||
+                (actionChanged &&
+                    const {
+                      'scan_documents',
+                      'finish_pickup',
+                      'finish_delivery',
+                    }.contains(status.actionCode)));
+        final speechCooldownPassed = _lastAutopilotSpokenAt == null ||
+            now.difference(_lastAutopilotSpokenAt!) >= const Duration(minutes: 4);
+        if (shouldSpeak && speechCooldownPassed) {
+          final message = _autopilotVoiceMessage(status);
+          if (message.isNotEmpty) {
+            _lastAutopilotSpokenSignature = status.alertFingerprint;
+            _lastAutopilotSpokenAt = now;
+            unawaited(_voice.announce(message));
+          }
+        }
+      } else {
+        _scheduleAutopilotRefresh(45);
+      }
     } catch (_) {
-      // Autopilot V3 is additive. Core Flow remains usable if the feed is offline.
+      // R96 is additive: core Flow remains usable if the Autopilot feed is offline.
+      _scheduleAutopilotRefresh(45);
+    } finally {
+      _autopilotRefreshing = false;
     }
   }
 
