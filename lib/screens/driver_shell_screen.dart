@@ -756,7 +756,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
             retryNeeded = true;
             break;
           }
-          if (const {400, 404, 409, 410, 422}.contains(error.statusCode)) {
+          if (const {400, 409, 410, 422}.contains(error.statusCode)) {
             deliveredStopIds.add(point.stopId);
             continue;
           }
@@ -1381,6 +1381,16 @@ class _DriverShellScreenState extends State<DriverShellScreen>
 
     final status = await _tracking.currentStatus();
 
+    // Android can rebuild the shell before SharedPreferences has restored the
+    // in-memory plate. Recover it from the tracking identity first; only show
+    // login when no durable driver identity exists anywhere.
+    if (role != 'admin' &&
+        plate.isEmpty &&
+        status.vehicleLabel.trim().isNotEmpty) {
+      plate = status.vehicleLabel.trim().toUpperCase();
+      await prefs.setString(_prefsPlate, plate);
+    }
+
     if (role != 'admin' && plate.isEmpty) {
       if (!mounted) return;
       await Navigator.of(context).pushAndRemoveUntil(
@@ -1405,10 +1415,6 @@ class _DriverShellScreenState extends State<DriverShellScreen>
         );
       });
       return;
-    }
-
-    if (plate.isEmpty && status.vehicleLabel.trim().isNotEmpty) {
-      plate = status.vehicleLabel.trim().toUpperCase();
     }
 
     final cachedJobs = await _loadCachedJobs(prefs, plate);
@@ -2408,13 +2414,13 @@ class _DriverShellScreenState extends State<DriverShellScreen>
       );
       unawaited(_refreshOfficeMessages(silent: true));
     } on DriverApiException catch (error) {
-      if (const {400, 404, 409, 410, 422}.contains(error.statusCode)) {
+      if (const {400, 409, 410, 422}.contains(error.statusCode)) {
         if (mounted) {
           _snack(
             _l(
-              'Az üzenet nem küldhető el. Ellenőrizd a bejelentkezést.',
-              'Message cannot be sent. Check sign in.',
-              'Nachricht kann nicht gesendet werden. Anmeldung prüfen.',
+              'Az üzenet most nem küldhető el. Ellenőrizd a szöveget, majd próbáld újra.',
+              'The message cannot be sent right now. Check the text and try again.',
+              'Die Nachricht kann derzeit nicht gesendet werden. Text prüfen und erneut versuchen.',
             ),
           );
         }
@@ -4959,9 +4965,9 @@ class _DriverShellScreenState extends State<DriverShellScreen>
       if (_autopilot != null) const SizedBox(height: 12),
       Text(
         _l('Fuvarom', 'My job', 'Mein Auftrag'),
-        style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w900),
+        style: Theme.of(context).textTheme.headlineSmall,
       ),
-      const SizedBox(height: 4),
+      const SizedBox(height: 6),
       Text(
         job == null
             ? _l(
@@ -4970,7 +4976,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                 'Es gibt keinen aktiven Auftrag.',
               )
             : job.reference,
-        style: const TextStyle(color: Colors.white54),
+        style: Theme.of(context).textTheme.bodyMedium,
       ),
       const SizedBox(height: 14),
       _jobsShortcut(),
@@ -5035,25 +5041,25 @@ class _DriverShellScreenState extends State<DriverShellScreen>
   Widget _quickSignal() => _page([
         Text(
           _l('Gyors jelzés', 'Quick signal', 'Schnellmeldung'),
-          style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w900),
+          style: Theme.of(context).textTheme.headlineSmall,
         ),
-        const SizedBox(height: 4),
+        const SizedBox(height: 6),
         Text(
           _l(
             'Egy koppintás. A rendszám, fuvar, időpont és GPS-hely automatikusan mellé kerül.',
             'One tap. Plate, job, time and GPS location are attached automatically.',
             'Ein Tippen. Kennzeichen, Auftrag, Zeit und GPS-Position werden automatisch hinzugefügt.',
           ),
-          style: const TextStyle(color: Colors.white54, height: 1.4),
+          style: Theme.of(context).textTheme.bodyMedium,
         ),
-        const SizedBox(height: 14),
+        const SizedBox(height: 16),
         GridView.count(
           crossAxisCount: 2,
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
           mainAxisSpacing: 12,
           crossAxisSpacing: 12,
-          childAspectRatio: 1.12,
+          childAspectRatio: 1.02,
           children: [
             _signal(
               Icons.schedule_rounded,
@@ -5258,16 +5264,16 @@ class _DriverShellScreenState extends State<DriverShellScreen>
           ),
         Text(
           _l('Smart dokumentum', 'Smart documents', 'Smart Dokumente'),
-          style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w900),
+          style: Theme.of(context).textTheme.headlineSmall,
         ),
-        const SizedBox(height: 4),
+        const SizedBox(height: 6),
         Text(
           _l(
             'Egy fotó. A Flow felismeri, milyen dokumentumot fotóztál, és a megfelelő feldolgozóba küldi.',
             'One photo. Flow recognizes the document type and routes it to the correct processor.',
             'Ein Foto. Flow erkennt den Dokumenttyp und leitet ihn an die passende Verarbeitung weiter.',
           ),
-          style: const TextStyle(color: Colors.white54, height: 1.35),
+          style: Theme.of(context).textTheme.bodyMedium,
         ),
         const SizedBox(height: 14),
         _panel(
@@ -5692,10 +5698,10 @@ class _DriverShellScreenState extends State<DriverShellScreen>
     VoidCallback onTap, {
     bool danger = false,
   }) {
-    final accent = danger ? const Color(0xFFFF5C68) : _blue;
+    final accent = danger ? const Color(0xFFFF5967) : const Color(0xFF29C2FF);
     final borderColor = danger
-        ? const Color(0xFFFF6A74)
-        : const Color(0xFF2B6B93);
+        ? const Color(0xFFFF7580)
+        : const Color(0xFF3BC7FF);
 
     return AnimatedOpacity(
       duration: const Duration(milliseconds: 160),
@@ -5717,24 +5723,25 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                 end: Alignment.bottomRight,
                 colors: danger
                     ? const [
-                        Color(0xFF2A1118),
-                        Color(0xFF160A0F),
+                        Color(0xFF361019),
+                        Color(0xFF19090F),
                       ]
                     : const [
-                        Color(0xFF0D2940),
-                        Color(0xFF071725),
+                        Color(0xFF103B5C),
+                        Color(0xFF071B2B),
                       ],
               ),
               borderRadius: BorderRadius.circular(18),
               border: Border.all(
                 color: borderColor,
-                width: danger ? 2.2 : 1.6,
+                width: danger ? 2.4 : 2.0,
               ),
               boxShadow: [
                 BoxShadow(
-                  color: accent.withValues(alpha: danger ? .18 : .10),
-                  blurRadius: 18,
-                  offset: const Offset(0, 7),
+                  color: accent.withValues(alpha: danger ? .24 : .18),
+                  blurRadius: 24,
+                  spreadRadius: 1,
+                  offset: const Offset(0, 8),
                 ),
                 const BoxShadow(
                   color: Color(0x55000000),
@@ -5750,7 +5757,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                   top: 0,
                   bottom: 0,
                   child: Container(
-                    width: 4,
+                    width: 5,
                     decoration: BoxDecoration(
                       color: accent,
                       borderRadius: const BorderRadius.horizontal(
@@ -5768,8 +5775,8 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Container(
-                            width: 40,
-                            height: 40,
+                            width: 46,
+                            height: 46,
                             decoration: BoxDecoration(
                               color: accent.withValues(alpha: .15),
                               borderRadius: BorderRadius.circular(13),
@@ -5777,7 +5784,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                                 color: accent.withValues(alpha: .42),
                               ),
                             ),
-                            child: Icon(icon, color: accent, size: 23),
+                            child: Icon(icon, color: accent, size: 27),
                           ),
                           const Spacer(),
                           Container(
@@ -5803,7 +5810,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           color: Colors.white,
-                          fontSize: 15,
+                          fontSize: 16,
                           fontWeight: FontWeight.w900,
                           letterSpacing: .1,
                         ),
@@ -5815,7 +5822,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           color: Colors.white60,
-                          fontSize: 10.5,
+                          fontSize: 11,
                           height: 1.25,
                           fontWeight: FontWeight.w600,
                         ),
@@ -5837,7 +5844,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                             ),
                             style: TextStyle(
                               color: accent.withValues(alpha: .90),
-                              fontSize: 8.5,
+                              fontSize: 9,
                               fontWeight: FontWeight.w900,
                               letterSpacing: .55,
                             ),
