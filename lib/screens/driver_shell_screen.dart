@@ -245,6 +245,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
   String _plate = '';
   String _driverName = '';
   List<DriverJob> _jobs = const [];
+  DriverAutopilotStatus? _autopilot;
   bool _loading = true;
   bool _actionBusy = false;
   String? _message;
@@ -280,6 +281,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
   Timer? _pendingOfficeMessageRetryTimer;
   int _officeMessageNonce = 0;
   Timer? _officeMessageTimer;
+  Timer? _autopilotTimer;
   final Set<int> _preArrivalBriefedStops = <int>{};
   DateTime? _lastPreArrivalCheckAt;
   DriverRestModeState _restMode = const DriverRestModeState(active: false);
@@ -1435,6 +1437,13 @@ class _DriverShellScreenState extends State<DriverShellScreen>
           unawaited(_refreshOfficeMessages(silent: true));
         }
       });
+      _autopilotTimer?.cancel();
+      _autopilotTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+        if (_plate.isNotEmpty) {
+          unawaited(_refreshAutopilot());
+        }
+      });
+      unawaited(_refreshAutopilot());
     }
 
     // Driver-first default: voice control is ON unless the driver explicitly
@@ -1536,6 +1545,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
       await _refreshJobCmrStates();
       await _finalizeDocumentGateIfPossible();
       unawaited(_saveJobsCache(_jobs));
+      unawaited(_refreshAutopilot());
     } catch (e) {
       if (!mounted || generation != _refreshGeneration) return;
       setState(() {
@@ -1552,6 +1562,17 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                 'Auftragsdaten konnten nicht aktualisiert werden: $e',
               );
       });
+    }
+  }
+
+  Future<void> _refreshAutopilot() async {
+    if (_plate.isEmpty) return;
+    try {
+      final status = await _api.fetchAutopilot(_plate);
+      if (!mounted) return;
+      setState(() => _autopilot = status);
+    } catch (_) {
+      // Autopilot V3 is additive. Core Flow remains usable if the feed is offline.
     }
   }
 
@@ -3389,6 +3410,191 @@ class _DriverShellScreenState extends State<DriverShellScreen>
         ],
       );
 
+  String _autopilotActionLabel(String code) {
+    switch (code) {
+      case 'open_job':
+        return _l('FUVAR MEGNYITÁSA', 'OPEN JOB', 'AUFTRAG ÖFFNEN');
+      case 'accept_job':
+        return _l('FUVAR ELFOGADÁSA', 'ACCEPT JOB', 'AUFTRAG ANNEHMEN');
+      case 'navigate_next':
+        return _l('INDULJ A KÖVETKEZŐ STOPHOZ', 'GO TO NEXT STOP', 'ZUM NÄCHSTEN STOPP');
+      case 'finish_pickup':
+        return _l('FELRAKÁS BEFEJEZÉSE', 'FINISH PICKUP', 'BELADUNG ABSCHLIESSEN');
+      case 'finish_delivery':
+        return _l('LERAKÁS BEFEJEZÉSE', 'FINISH DELIVERY', 'ENTLADUNG ABSCHLIESSEN');
+      case 'scan_documents':
+        return _l('CMR / POD SCANNELÉS', 'SCAN CMR / POD', 'CMR / POD SCANNEN');
+      case 'refresh_job':
+        return _l('FUVAR FRISSÍTÉSE', 'REFRESH JOB', 'AUFTRAG AKTUALISIEREN');
+      default:
+        return _l('KÉSZENLÉT', 'STANDBY', 'BEREITSCHAFT');
+    }
+  }
+
+  Future<void> _runAutopilotAction() async {
+    final ap = _autopilot;
+    if (ap == null || _actionBusy) return;
+    switch (ap.actionCode) {
+      case 'open_job':
+        if (ap.jobId != null) _showJobDialog(jobId: ap.jobId!);
+        return;
+      case 'accept_job':
+        if (ap.jobId != null) await _acceptAndNavigate(ap.jobId!);
+        return;
+      case 'navigate_next':
+        await _openMaps();
+        return;
+      case 'finish_pickup':
+      case 'finish_delivery':
+        await _runPrimaryStopAction();
+        return;
+      case 'scan_documents':
+        if (mounted) setState(() => _index = 3);
+        await _openCmrScanner();
+        return;
+      case 'refresh_job':
+        await _refreshJobs();
+        return;
+      default:
+        return;
+    }
+  }
+
+  Widget _autopilotCard() {
+    final ap = _autopilot;
+    if (ap == null) return const SizedBox.shrink();
+    final color = ap.severity == 'high'
+        ? const Color(0xFFFF6B73)
+        : ap.severity == 'warn'
+            ? const Color(0xFFFFC857)
+            : _green;
+    final next = ap.nextStop;
+    final company = next?['company']?.toString().trim() ?? '';
+    final address = next?['address']?.toString().trim() ?? '';
+    final facts = <String>[
+      if (ap.gpsAgeMinutes != null) 'GPS ${ap.gpsAgeMinutes} p',
+      if (ap.stationaryMinutes != null) _l(
+        'Állás ${ap.stationaryMinutes} p',
+        'Stopped ${ap.stationaryMinutes} min',
+        'Stillstand ${ap.stationaryMinutes} Min.',
+      ),
+      if (ap.stopDwellMinutes != null) _l(
+        'Várakozás ${ap.stopDwellMinutes} p',
+        'Waiting ${ap.stopDwellMinutes} min',
+        'Wartezeit ${ap.stopDwellMinutes} Min.',
+      ),
+      if (ap.distanceKm != null) '${ap.distanceKm!.toStringAsFixed(1)} km',
+      if (ap.etaMinutes != null) 'ETA ~${ap.etaMinutes} p',
+      if (ap.timeBufferMinutes != null)
+        ap.timeBufferMinutes! < 0
+            ? _l(
+                '${ap.timeBufferMinutes!.abs()} p késés',
+                '${ap.timeBufferMinutes!.abs()} min late',
+                '${ap.timeBufferMinutes!.abs()} Min. verspätet',
+              )
+            : _l(
+                '${ap.timeBufferMinutes} p puffer',
+                '${ap.timeBufferMinutes} min buffer',
+                '${ap.timeBufferMinutes} Min. Puffer',
+              ),
+    ];
+    return Container(
+      key: const Key('autopilot-v3-card'),
+      padding: const EdgeInsets.all(15),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: .08),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: color.withValues(alpha: .65), width: 1.5),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.auto_awesome_rounded, color: color),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text(
+                  'AIMS AUTOPILOT V3',
+                  style: TextStyle(fontWeight: FontWeight.w900),
+                ),
+              ),
+              Text(
+                '${ap.completedStops}/${ap.totalStops}',
+                style: TextStyle(color: color, fontWeight: FontWeight.w900),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            _autopilotActionLabel(ap.actionCode),
+            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
+          ),
+          if (company.isNotEmpty) ...[
+            const SizedBox(height: 7),
+            Text(company, style: const TextStyle(fontWeight: FontWeight.w800)),
+          ],
+          if (address.isNotEmpty)
+            Text(
+              address,
+              style: const TextStyle(color: Colors.white70, height: 1.35),
+            ),
+          if (facts.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 7,
+              runSpacing: 7,
+              children: [
+                for (final fact in facts)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF06131F),
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(color: const Color(0xFF24445A)),
+                    ),
+                    child: Text(
+                      fact,
+                      style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w800),
+                    ),
+                  ),
+              ],
+            ),
+          ],
+          if (ap.sequenceAnomaly) ...[
+            const SizedBox(height: 9),
+            Text(
+              _l(
+                '⚠ A stopok sorrendje eltér. Ellenőrizd a fuvart.',
+                '⚠ Stop sequence differs. Check the job.',
+                '⚠ Stopp-Reihenfolge weicht ab. Auftrag prüfen.',
+              ),
+              style: const TextStyle(
+                color: Color(0xFFFF8B91),
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ],
+          if (ap.actionCode != 'wait_job') ...[
+            const SizedBox(height: 12),
+            FilledButton.icon(
+              key: const Key('autopilot-v3-action'),
+              onPressed: _actionBusy ? null : () => unawaited(_runAutopilotAction()),
+              icon: const Icon(Icons.arrow_forward_rounded),
+              label: Text(_autopilotActionLabel(ap.actionCode)),
+              style: FilledButton.styleFrom(
+                minimumSize: const Size.fromHeight(52),
+                backgroundColor: color,
+                foregroundColor: const Color(0xFF001016),
+                textStyle: const TextStyle(fontWeight: FontWeight.w900),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   Widget _home() {
     final job = _job;
     final stop = _stop;
@@ -3404,6 +3610,8 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                 : _l('Felrakó', 'Pickup', 'Ladestelle');
 
     return _page([
+      KeyedSubtree(key: const Key('autopilot-home-slot'), child: _autopilotCard()),
+      if (_autopilot != null) const SizedBox(height: 12),
       if (_loading)
         const LinearProgressIndicator(minHeight: 2)
       else
@@ -4308,6 +4516,8 @@ class _DriverShellScreenState extends State<DriverShellScreen>
   Widget _trip() {
     final job = _job;
     return _page([
+      KeyedSubtree(key: const Key('autopilot-trip-slot'), child: _autopilotCard()),
+      if (_autopilot != null) const SizedBox(height: 12),
       Text(
         _l('Fuvarom', 'My job', 'Mein Auftrag'),
         style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w900),
