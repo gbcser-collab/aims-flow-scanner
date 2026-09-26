@@ -34,6 +34,10 @@ $clamp = static fn (int $value, int $min, int $max): int => max($min, min($max, 
 $q = $pdo->prepare('SELECT * FROM vehicles WHERE plate=:plate AND enabled=1 LIMIT 1');
 $q->execute([':plate' => $plate]);
 $vehicle = $q->fetch(PDO::FETCH_ASSOC);
+$restMode = $vehicle
+    ? aims_rest_mode_state($pdo, (int)$vehicle['id'], $now)
+    : ['active' => false, 'startedAt' => null, 'until' => null];
+$restModeActive = ($restMode['active'] ?? false) === true;
 
 $idlePayload = static function (array $extra = []) use ($now): array {
     return array_merge([
@@ -67,6 +71,8 @@ $idlePayload = static function (array $extra = []) use ($now): array {
         'sequenceAnomaly' => false,
         'documentsRequired' => false,
         'gpsFresh' => false,
+        'restModeActive' => false,
+        'restModeUntil' => null,
         'dataQuality' => [
             'gps' => 'unknown',
             'nextStop' => 'none',
@@ -134,6 +140,8 @@ if (!$job) {
             'currentSpeedKmh' => $currentSpeedKmh,
             'stationaryMinutes' => $stationaryMin,
             'gpsFresh' => $gpsFresh,
+            'restModeActive' => $restModeActive,
+            'restModeUntil' => $restMode['until'] ?? null,
             'confidence' => $clamp($confidence, 0, 100),
             'reasonCodes' => $reasons,
             'dataQuality' => [
@@ -209,7 +217,31 @@ if (!$seen) {
     $secondaryAction = 'message_office';
 }
 
-$dwell = $next ? $minutesAgo($next['inside_since'] ?? null) : null;
+$dwell = null;
+if ($next && !empty($next['inside_since'])) {
+    try {
+        $insideAt = (new DateTimeImmutable((string)$next['inside_since']))
+            ->setTimezone(new DateTimeZone('UTC'));
+        $grossSeconds = max(0, $now->getTimestamp() - $insideAt->getTimestamp());
+        $pausedSeconds = max(0, (int)($next['waiting_paused_seconds'] ?? 0));
+        $pauseStartedRaw = trim((string)($next['waiting_pause_started_at'] ?? ''));
+        if ($pauseStartedRaw !== '') {
+            try {
+                $pauseStarted = (new DateTimeImmutable($pauseStartedRaw))
+                    ->setTimezone(new DateTimeZone('UTC'));
+                $pausedSeconds += max(
+                    0,
+                    $now->getTimestamp() - $pauseStarted->getTimestamp()
+                );
+            } catch (Throwable) {
+                // Ignore malformed pause timestamp; stored completed pause still applies.
+            }
+        }
+        $dwell = (int)floor(max(0, $grossSeconds - $pausedSeconds) / 60);
+    } catch (Throwable) {
+        $dwell = null;
+    }
+}
 
 $distanceKm = null;
 $etaMin = null;
@@ -278,12 +310,12 @@ if ($seen && !$accepted) {
     $reasons[] = 'job_unaccepted';
 }
 if (!$point) {
-    $risk += $mode === 'at_stop' ? 18 : 35;
-    $confidence -= 30;
+    $risk += $restModeActive ? 5 : ($mode === 'at_stop' ? 18 : 35);
+    $confidence -= $restModeActive ? 10 : 30;
     $reasons[] = 'gps_missing';
 } elseif (!$gpsFresh) {
-    $risk += $mode === 'at_stop' ? 12 : 30;
-    $confidence -= $mode === 'at_stop' ? 10 : 20;
+    $risk += $restModeActive ? 3 : ($mode === 'at_stop' ? 12 : 30);
+    $confidence -= $restModeActive ? 5 : ($mode === 'at_stop' ? 10 : 20);
     $reasons[] = 'gps_stale';
 }
 if ($gpsAccuracy !== null && $gpsAccuracy > 80) {
@@ -325,7 +357,7 @@ if ($next && !$planned) {
 if ($allDone) {
     $reasons[] = 'documents_pending';
 }
-if ($accepted && $stationaryMin !== null && $stationaryMin >= 120 && !$allDone) {
+if (!$restModeActive && $accepted && $stationaryMin !== null && $stationaryMin >= 120 && !$allDone) {
     $risk += 12;
     $reasons[] = 'long_stationary';
 }
@@ -397,6 +429,8 @@ $out = [
     'sequenceAnomaly' => $sequenceAnomaly,
     'documentsRequired' => $allDone,
     'gpsFresh' => $gpsFresh,
+    'restModeActive' => $restModeActive,
+    'restModeUntil' => $restMode['until'] ?? null,
     'dataQuality' => $dataQuality,
     'alertFingerprint' => sha1($fingerprintSource),
     'updatedAt' => $now->format(DateTimeInterface::ATOM),
