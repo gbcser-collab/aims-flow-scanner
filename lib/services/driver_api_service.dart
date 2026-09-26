@@ -362,7 +362,7 @@ class DriverApiService {
     );
 
     Object? lastError;
-    for (var attempt = 0; attempt < 2; attempt++) {
+    for (var attempt = 0; attempt < 3; attempt++) {
       try {
         final response = await http
             .get(uri, headers: _headers)
@@ -378,10 +378,10 @@ class DriverApiService {
             .toList();
       } on DriverApiException catch (error) {
         lastError = error;
-        if (!error.retryable || attempt == 1) rethrow;
+        if (!error.retryable || attempt == 2) rethrow;
       } catch (error) {
         lastError = error;
-        if (attempt == 1) rethrow;
+        if (attempt == 2) rethrow;
       }
       await Future<void>.delayed(Duration(milliseconds: 350 * (attempt + 1)));
     }
@@ -396,7 +396,7 @@ class DriverApiService {
     );
 
     Object? lastError;
-    for (var attempt = 0; attempt < 3; attempt++) {
+    for (var attempt = 0; attempt < 2; attempt++) {
       try {
         final response = await http
             .get(uri, headers: _headers)
@@ -411,10 +411,10 @@ class DriverApiService {
         );
       } on DriverApiException catch (error) {
         lastError = error;
-        if (!error.retryable || attempt == 2) rethrow;
+        if (!error.retryable || attempt == 1) rethrow;
       } catch (error) {
         lastError = error;
-        if (attempt == 2) rethrow;
+        if (attempt == 1) rethrow;
       }
       await Future<void>.delayed(
         Duration(milliseconds: 250 * (attempt + 1)),
