@@ -1657,7 +1657,8 @@ class _DriverShellScreenState extends State<DriverShellScreen>
     } catch (_) {
       // Keep the last known state visible and back off gradually on bad mobile
       // data instead of hammering the network or blanking the UI.
-      _autopilotFailureCount = (_autopilotFailureCount + 1).clamp(1, 4);
+      _autopilotFailureCount =
+          (_autopilotFailureCount + 1).clamp(1, 4).toInt();
       final retrySeconds = switch (_autopilotFailureCount) {
         1 => 12,
         2 => 20,
