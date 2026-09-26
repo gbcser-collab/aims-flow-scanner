@@ -330,7 +330,7 @@ class VehicleTrackingService {
     }
 
     final previous = _lastAcceptedPosition;
-    final speed = max(0, RoamingResilience.finiteOrZero(position.speed));
+    final speed = max(0.0, RoamingResilience.finiteOrZero(position.speed));
     final accuracy = RoamingResilience.finiteOrZero(position.accuracy);
     final accepted = GpsPointQuality.acceptable(
       latitude: position.latitude,
@@ -359,7 +359,7 @@ class VehicleTrackingService {
           previousLatitude: previous.latitude,
           previousLongitude: previous.longitude,
           previousAccuracy: previous.accuracy,
-          previousSpeedMps: max(0, previous.speed),
+          previousSpeedMps: max(0.0, previous.speed),
         )) {
       return;
     }
