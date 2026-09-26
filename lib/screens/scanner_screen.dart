@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:camera/camera.dart';
@@ -277,6 +278,43 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
     } catch (_) {}
   }
 
+  Future<bool> _confirmWeakOcr(String text) async {
+    if (text.trim().replaceAll(RegExp(r'\s+'), '').length >= 12) return true;
+    if (!mounted) return false;
+    return await showDialog<bool>(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => AlertDialog(
+            backgroundColor: const Color(0xFF101216),
+            title: Text(
+              _l(
+                'Kevés olvasható CMR-szöveg',
+                'Little readable CMR text',
+                'Wenig lesbarer CMR-Text',
+              ),
+            ),
+            content: Text(
+              _l(
+                'A Flow alig tudott szöveget kiolvasni. A kép megmaradhat, de újrafotózással valószínűleg több mezőt tudok automatikusan kitölteni.',
+                'Flow could read very little text. You can keep the image, but a retake will likely fill more fields automatically.',
+                'Flow konnte nur wenig Text lesen. Das Bild kann verwendet werden, aber ein neues Foto füllt wahrscheinlich mehr Felder automatisch aus.',
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: Text(_l('HASZNÁLOM', 'USE ANYWAY', 'TROTZDEM VERWENDEN')),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: Text(_l('ÚJRAFOTÓZOM', 'RETAKE', 'NEU AUFNEHMEN')),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+  }
+
   Future<void> _setFlashMode(_ScannerFlashMode mode) async {
     final controller = _controller;
     if (controller == null || !controller.value.isInitialized || _processing || _flashChanging || mode == _flashMode) return;
@@ -344,6 +382,10 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
         originalImagePath: shot.path,
       );
 
+      if (!await _confirmWeakOcr(text)) {
+        return;
+      }
+
       if (!mounted) return;
       setState(() => _phase = _l('CMR mezők kitöltése…', 'Filling CMR fields…', 'CMR-Felder werden ausgefüllt…'));
       final cmr = const CmrParser().parse(text);
@@ -395,7 +437,22 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
         _processing = false;
         _phase = '';
       });
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(_l('Kamerahiba (${e.code}): ${e.description ?? 'a kép nem készült el'}', 'Camera error (${e.code}): ${e.description ?? 'the image was not captured'}', 'Kamerafehler (${e.code}): ${e.description ?? 'das Bild wurde nicht aufgenommen'}'))));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            _l(
+              'Kamerahiba (${e.code}): ${e.description ?? 'a kép nem készült el'}',
+              'Camera error (${e.code}): ${e.description ?? 'the image was not captured'}',
+              'Kamerafehler (${e.code}): ${e.description ?? 'das Bild wurde nicht aufgenommen'}',
+            ),
+          ),
+        ),
+      );
+      _cameraGeneration++;
+      await _disposeCamera();
+      if (mounted) {
+        unawaited(_initialize());
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() {
