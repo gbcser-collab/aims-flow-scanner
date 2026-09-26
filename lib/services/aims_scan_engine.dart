@@ -70,7 +70,8 @@ class AimsScanEngine {
       );
     }
 
-    final corners = _detectDocument(source);
+    final detection = _detectDocument(source);
+    final corners = detection.corners;
     final fillRatio = _polygonArea(corners) / (source.width * source.height);
     final warped = _warpToRectangle(source, corners);
     final enhanced = _enhanceDocument(warped);
@@ -97,6 +98,8 @@ class AimsScanEngine {
       outputPath: outputPath,
       corners: corners,
       quality: quality,
+      autoCropReliable: detection.reliable,
+      cornerConfidence: detection.confidence,
       signatureImagePath: signaturePath,
       signatureConfidence: signatureConfidence,
     );
@@ -133,11 +136,15 @@ class AimsScanEngine {
     return img.copyCrop(source, x: x, y: y, width: width, height: height);
   }
 
-  DocumentCorners _detectDocument(img.Image source) {
+  _DocumentDetection _detectDocument(img.Image source) {
     const targetWidth = 720;
     final scale = source.width > targetWidth ? targetWidth / source.width : 1.0;
     final work = scale < 1
-        ? img.copyResize(source, width: targetWidth, interpolation: img.Interpolation.average)
+        ? img.copyResize(
+            source,
+            width: targetWidth,
+            interpolation: img.Interpolation.average,
+          )
         : img.Image.from(source);
 
     final w = work.width;
@@ -146,7 +153,8 @@ class AimsScanEngine {
     for (var y = 0; y < h; y++) {
       for (var x = 0; x < w; x++) {
         final p = work.getPixel(x, y);
-        luminance[y * w + x] = 0.2126 * p.r + 0.7152 * p.g + 0.0722 * p.b;
+        luminance[y * w + x] =
+            0.2126 * p.r + 0.7152 * p.g + 0.0722 * p.b;
       }
     }
 
@@ -155,28 +163,46 @@ class AimsScanEngine {
     for (var y = 1; y < h - 1; y += 2) {
       for (var x = 1; x < w - 1; x += 2) {
         final gx =
-            -luminance[(y - 1) * w + (x - 1)] + luminance[(y - 1) * w + (x + 1)] -
-            2 * luminance[y * w + (x - 1)] + 2 * luminance[y * w + (x + 1)] -
-            luminance[(y + 1) * w + (x - 1)] + luminance[(y + 1) * w + (x + 1)];
+            -luminance[(y - 1) * w + (x - 1)] +
+            luminance[(y - 1) * w + (x + 1)] -
+            2 * luminance[y * w + (x - 1)] +
+            2 * luminance[y * w + (x + 1)] -
+            luminance[(y + 1) * w + (x - 1)] +
+            luminance[(y + 1) * w + (x + 1)];
         final gy =
-            -luminance[(y - 1) * w + (x - 1)] - 2 * luminance[(y - 1) * w + x] - luminance[(y - 1) * w + (x + 1)] +
-            luminance[(y + 1) * w + (x - 1)] + 2 * luminance[(y + 1) * w + x] + luminance[(y + 1) * w + (x + 1)];
+            -luminance[(y - 1) * w + (x - 1)] -
+            2 * luminance[(y - 1) * w + x] -
+            luminance[(y - 1) * w + (x + 1)] +
+            luminance[(y + 1) * w + (x - 1)] +
+            2 * luminance[(y + 1) * w + x] +
+            luminance[(y + 1) * w + (x + 1)];
         final mag = sqrt(gx * gx + gy * gy);
         magnitudes.add(mag);
         candidates.add(_EdgePoint(x.toDouble(), y.toDouble(), mag));
       }
     }
 
-    if (magnitudes.isEmpty) return _fallbackCorners(source.width, source.height);
+    _DocumentDetection fallback([double confidence = .18]) =>
+        _DocumentDetection(
+          _fallbackCorners(source.width, source.height),
+          reliable: false,
+          confidence: confidence,
+        );
+
+    if (magnitudes.isEmpty) return fallback();
     magnitudes.sort();
     final threshold = magnitudes[(magnitudes.length * 0.88).floor()];
     final marginX = w * 0.02;
     final marginY = h * 0.02;
     final strong = candidates.where((p) {
-      return p.magnitude >= threshold && p.x > marginX && p.x < w - marginX && p.y > marginY && p.y < h - marginY;
+      return p.magnitude >= threshold &&
+          p.x > marginX &&
+          p.x < w - marginX &&
+          p.y > marginY &&
+          p.y < h - marginY;
     }).toList();
 
-    if (strong.length < 40) return _fallbackCorners(source.width, source.height);
+    if (strong.length < 40) return fallback(.22);
 
     _EdgePoint? tl;
     _EdgePoint? tr;
@@ -189,7 +215,9 @@ class AimsScanEngine {
       if (bl == null || p.x - p.y < bl.x - bl.y) bl = p;
     }
 
-    if (tl == null || tr == null || br == null || bl == null) return _fallbackCorners(source.width, source.height);
+    if (tl == null || tr == null || br == null || bl == null) {
+      return fallback(.20);
+    }
 
     final inv = 1 / scale;
     final result = DocumentCorners(
@@ -199,9 +227,49 @@ class AimsScanEngine {
       bottomLeft: DocPoint(bl.x * inv, bl.y * inv),
     );
 
-    final ratio = _polygonArea(result) / (source.width * source.height);
-    if (ratio < 0.28 || ratio > 0.995) return _fallbackCorners(source.width, source.height);
-    return result;
+    final fillRatio = _polygonArea(result) / (source.width * source.height);
+    if (fillRatio < 0.28 || fillRatio > 0.995) return fallback(.28);
+
+    double distance(DocPoint a, DocPoint b) {
+      final dx = a.x - b.x;
+      final dy = a.y - b.y;
+      return sqrt(dx * dx + dy * dy);
+    }
+
+    final top = distance(result.topLeft, result.topRight);
+    final bottom = distance(result.bottomLeft, result.bottomRight);
+    final left = distance(result.topLeft, result.bottomLeft);
+    final right = distance(result.topRight, result.bottomRight);
+    final minSide = min(min(top, bottom), min(left, right));
+    final maxSide = max(max(top, bottom), max(left, right));
+    final sideHealth = maxSide <= 0 ? 0.0 : (minSide / maxSide).clamp(0.0, 1.0);
+    final horizontalBalance =
+        max(top, bottom) <= 0 ? 0.0 : (min(top, bottom) / max(top, bottom)).clamp(0.0, 1.0);
+    final verticalBalance =
+        max(left, right) <= 0 ? 0.0 : (min(left, right) / max(left, right)).clamp(0.0, 1.0);
+
+    final edgeDensity = (strong.length / max(1, candidates.length))
+        .clamp(0.0, 0.25) /
+        0.25;
+    final fillHealth = ((fillRatio - .28) / .50).clamp(0.0, 1.0);
+    final confidence = (
+      edgeDensity * .28 +
+      horizontalBalance * .24 +
+      verticalBalance * .24 +
+      fillHealth * .18 +
+      sideHealth * .06
+    ).clamp(0.0, 1.0).toDouble();
+
+    final reliable = confidence >= .52 &&
+        horizontalBalance >= .42 &&
+        verticalBalance >= .42 &&
+        fillRatio >= .34;
+
+    return _DocumentDetection(
+      reliable ? result : _fallbackCorners(source.width, source.height),
+      reliable: reliable,
+      confidence: confidence,
+    );
   }
 
   DocumentCorners _fallbackCorners(int width, int height) {
@@ -307,23 +375,47 @@ class AimsScanEngine {
 
   img.Image _enhanceDocument(img.Image source) {
     final result = img.Image.from(source);
-    var minL = 255.0;
-    var maxL = 0.0;
-    for (final p in result) {
-      final l = 0.2126 * p.r + 0.7152 * p.g + 0.0722 * p.b;
-      minL = min(minL, l);
-      maxL = max(maxL, l);
+
+    // Percentile-based contrast is much less sensitive to a single black stamp
+    // or white glare pixel than min/max stretching.
+    final histogram = List<int>.filled(256, 0);
+    var samples = 0;
+    for (var y = 0; y < result.height; y += 2) {
+      for (var x = 0; x < result.width; x += 2) {
+        final p = result.getPixel(x, y);
+        final l = (0.2126 * p.r + 0.7152 * p.g + 0.0722 * p.b)
+            .round()
+            .clamp(0, 255);
+        histogram[l]++;
+        samples++;
+      }
     }
-    final spread = max(32.0, maxL - minL);
+
+    int percentile(double p) {
+      final target = max(1, (samples * p).round());
+      var seen = 0;
+      for (var i = 0; i < histogram.length; i++) {
+        seen += histogram[i];
+        if (seen >= target) return i;
+      }
+      return 255;
+    }
+
+    final low = percentile(.03).toDouble();
+    final high = percentile(.97).toDouble();
+    final spread = max(40.0, high - low);
+
     for (final p in result) {
       int adjust(num value) {
-        final normalized = ((value - minL) / spread * 255).clamp(0, 255).toDouble();
-        final contrasted = (normalized - 128) * 1.14 + 128;
-        final whitened = contrasted > 175
-            ? contrasted + (255 - contrasted) * 0.24
+        final normalized =
+            ((value - low) / spread * 255).clamp(0, 255).toDouble();
+        final contrasted = (normalized - 128) * 1.10 + 128;
+        final whitened = contrasted > 178
+            ? contrasted + (255 - contrasted) * 0.20
             : contrasted;
         return whitened.round().clamp(0, 255).toInt();
       }
+
       p
         ..r = adjust(p.r)
         ..g = adjust(p.g)
@@ -464,4 +556,16 @@ class _EdgePoint {
   final double x;
   final double y;
   final double magnitude;
+}
+
+class _DocumentDetection {
+  const _DocumentDetection(
+    this.corners, {
+    required this.reliable,
+    required this.confidence,
+  });
+
+  final DocumentCorners corners;
+  final bool reliable;
+  final double confidence;
 }
