@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 
+import '../models/scan_models.dart';
 import '../services/aims_locale.dart';
 import '../services/aims_scan_engine.dart';
 import '../services/cmr_parser.dart';
@@ -422,7 +424,7 @@ class _SmartDocumentScannerScreenState
 
   Future<void> _routeResult({
     required String imagePath,
-    required String signaturePath,
+    required String? signaturePath,
     required String rawText,
     required SmartDocumentClassification classification,
     required SmartDocumentType type,
@@ -519,7 +521,6 @@ class _SmartDocumentScannerScreenState
     XFile? shot;
     String? output;
     String? signature;
-    var keepArtifacts = false;
     try {
       await _prepareCapture(camera);
       if (!mounted) return;
@@ -587,8 +588,6 @@ class _SmartDocumentScannerScreenState
       if (selected == null || !mounted) return;
 
       await _disposeCamera();
-      keepArtifacts = true;
-
       await _routeResult(
         imagePath: result.outputPath,
         signaturePath: signature,
@@ -619,10 +618,8 @@ class _SmartDocumentScannerScreenState
       if (shot != null) {
         await _deleteArtifact(shot.path);
       }
-      if (!keepArtifacts) {
-        await _deleteArtifact(output);
-        await _deleteArtifact(signature);
-      }
+      await _deleteArtifact(output);
+      await _deleteArtifact(signature);
       if (mounted) {
         setState(() {
           _busy = false;
