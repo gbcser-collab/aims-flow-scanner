@@ -113,6 +113,21 @@ class SyncCoordinator extends ChangeNotifier {
               clearLastError: true,
             ),
           );
+        } on SmartDocumentUploadException catch (e) {
+          await _smartRepository.update(
+            document.copyWith(
+              syncState: SmartDocumentSyncState.failed,
+              lastError: e.code,
+            ),
+          );
+          _lastError = e.retryable
+              ? 'Nincs stabil kapcsolat. A Smart Document offline sorban marad.'
+              : 'Smart Document hiba: ${e.code}';
+          if (e.retryable) {
+            // Do not hammer the same broken mobile connection with every
+            // queued document. The next sync cycle will retry safely.
+            break;
+          }
         } catch (e) {
           await _smartRepository.update(
             document.copyWith(
@@ -122,6 +137,7 @@ class SyncCoordinator extends ChangeNotifier {
           );
           _lastError =
               'Smart Document szinkron várakozik. A fájl biztonságosan a telefonon marad.';
+          break;
         }
       }
 
