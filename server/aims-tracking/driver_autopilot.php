@@ -37,7 +37,7 @@ $vehicle = $q->fetch(PDO::FETCH_ASSOC);
 
 $idlePayload = static function (array $extra = []) use ($now): array {
     return array_merge([
-        'version' => 'R96',
+        'version' => 'R97',
         'mode' => 'idle',
         'actionCode' => 'wait_job',
         'secondaryActionCode' => 'message_office',
@@ -108,6 +108,10 @@ $gpsAccuracy = isset($point['accuracy']) && is_numeric($point['accuracy'])
 $currentSpeedKmh = isset($point['speed_mps']) && is_numeric($point['speed_mps'])
     ? round(max(0.0, (float)$point['speed_mps'] * 3.6), 1)
     : null;
+// A stale stationary anchor must not survive real movement.
+if ($currentSpeedKmh !== null && $currentSpeedKmh >= 10.0) {
+    $stationaryMin = null;
+}
 $gpsFresh = $gpsAge !== null && $gpsAge < 20;
 
 if (!$job) {
@@ -259,7 +263,8 @@ if ($planned && $etaMin !== null) {
     }
 }
 
-$isLate = $buffer !== null && $buffer < 0;
+// Five-minute grace prevents ETA jitter from flapping between on-time/late.
+$isLate = $buffer !== null && $buffer <= -5;
 $reasons = [];
 $risk = 0;
 $confidence = 100;
@@ -273,12 +278,12 @@ if ($seen && !$accepted) {
     $reasons[] = 'job_unaccepted';
 }
 if (!$point) {
-    $risk += 35;
+    $risk += $mode === 'at_stop' ? 18 : 35;
     $confidence -= 30;
     $reasons[] = 'gps_missing';
 } elseif (!$gpsFresh) {
-    $risk += 30;
-    $confidence -= 20;
+    $risk += $mode === 'at_stop' ? 12 : 30;
+    $confidence -= $mode === 'at_stop' ? 10 : 20;
     $reasons[] = 'gps_stale';
 }
 if ($gpsAccuracy !== null && $gpsAccuracy > 80) {
@@ -300,8 +305,8 @@ if ($isLate) {
     $risk += min(35, 20 + (int)floor(abs($buffer) / 15) * 5);
     $reasons[] = 'late';
     $secondaryAction = 'signal_delay';
-} elseif ($buffer !== null && $buffer < 15) {
-    $risk += 14;
+} elseif ($buffer !== null && $buffer < 10) {
+    $risk += 12;
     $reasons[] = 'time_buffer_low';
 }
 if ($sequenceAnomaly) {
@@ -341,22 +346,21 @@ $dataQuality = [
     'schedule' => $planned ? 'known' : 'missing',
 ];
 
+// Fingerprint only semantic state. Minute-by-minute numeric drift must not
+// retrigger the same voice/alert repeatedly.
 $fingerprintSource = implode('|', [
-    'R96',
+    'R97',
     (string)$job['id'],
     $mode,
     $action,
     $secondaryAction,
     $severity,
-    (string)$risk,
     (string)($next['id'] ?? 0),
-    (string)($dwell ?? -1),
-    (string)($buffer ?? 999999),
-    implode(',', $reasons),
+    implode(',', array_values(array_unique($reasons))),
 ]);
 
 $out = [
-    'version' => 'R96',
+    'version' => 'R97',
     'mode' => $mode,
     'actionCode' => $action,
     'secondaryActionCode' => $secondaryAction,
