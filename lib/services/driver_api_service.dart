@@ -362,7 +362,7 @@ class DriverApiService {
     );
 
     Object? lastError;
-    for (var attempt = 0; attempt < 3; attempt++) {
+    for (var attempt = 0; attempt < 2; attempt++) {
       try {
         final response = await http
             .get(uri, headers: _headers)
@@ -378,10 +378,10 @@ class DriverApiService {
             .toList();
       } on DriverApiException catch (error) {
         lastError = error;
-        if (!error.retryable || attempt == 2) rethrow;
+        if (!error.retryable || attempt == 1) rethrow;
       } catch (error) {
         lastError = error;
-        if (attempt == 2) rethrow;
+        if (attempt == 1) rethrow;
       }
       await Future<void>.delayed(Duration(milliseconds: 350 * (attempt + 1)));
     }
@@ -400,7 +400,7 @@ class DriverApiService {
       try {
         final response = await http
             .get(uri, headers: _headers)
-            .timeout(const Duration(seconds: 10));
+            .timeout(const Duration(seconds: 6));
         final body = _decodeResponse(response);
         final raw = body['autopilot'];
         if (raw is! Map) {
@@ -417,7 +417,7 @@ class DriverApiService {
         if (attempt == 2) rethrow;
       }
       await Future<void>.delayed(
-        Duration(milliseconds: 300 * (attempt + 1)),
+        Duration(milliseconds: 250 * (attempt + 1)),
       );
     }
     throw StateError(lastError?.toString() ?? 'Autopilot network error');
