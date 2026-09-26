@@ -139,6 +139,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
   String _plate = '';
   String _driverName = '';
   List<DriverJob> _jobs = const [];
+  DriverAutopilotStatus? _autopilot;
   bool _loading = true;
   bool _actionBusy = false;
   String? _message;
@@ -157,6 +158,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
   final List<_PendingDriverSignal> _pendingSignals = [];
   bool _pendingSignalFlushBusy = false;
   Timer? _pendingSignalRetryTimer;
+  Timer? _autopilotTimer;
   int _signalNonce = 0;
 
   bool _isStopCompleted(DriverStop stop) =>
@@ -794,6 +796,10 @@ class _DriverShellScreenState extends State<DriverShellScreen>
       await _flushPendingSignals();
     }
     await _refreshJobs();
+    _autopilotTimer ??= Timer.periodic(
+      const Duration(seconds: 30),
+      (_) => unawaited(_refreshAutopilot()),
+    );
 
     if (!mounted) return;
     final issues = <String>[
@@ -821,6 +827,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
         _message = null;
       });
       unawaited(_saveJobsCache(jobs));
+      unawaited(_refreshAutopilot());
     } catch (e) {
       if (!mounted || generation != _refreshGeneration) return;
       setState(() {
@@ -837,6 +844,18 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                 'Auftragsdaten konnten nicht aktualisiert werden: $e',
               );
       });
+      unawaited(_refreshAutopilot());
+    }
+  }
+
+  Future<void> _refreshAutopilot() async {
+    if (_plate.isEmpty) return;
+    try {
+      final status = await _api.fetchAutopilot(_plate);
+      if (!mounted) return;
+      setState(() => _autopilot = status);
+    } catch (_) {
+      // V3 is additive: core Flow stays usable if the Autopilot feed is offline.
     }
   }
 
@@ -1901,6 +1920,8 @@ class _DriverShellScreenState extends State<DriverShellScreen>
     _pendingStopRetryTimer = null;
     _pendingSignalRetryTimer?.cancel();
     _pendingSignalRetryTimer = null;
+    _autopilotTimer?.cancel();
+    _autopilotTimer = null;
     _pushSub?.cancel();
     _trackingSub?.cancel();
     _voiceSub?.cancel();
@@ -2052,6 +2073,134 @@ class _DriverShellScreenState extends State<DriverShellScreen>
           ),
         ],
       );
+
+  String _autopilotActionLabel(String code) {
+    switch (code) {
+      case 'open_job': return _l('FUVAR MEGNYITÁSA', 'OPEN JOB', 'AUFTRAG ÖFFNEN');
+      case 'accept_job': return _l('FUVAR ELFOGADÁSA', 'ACCEPT JOB', 'AUFTRAG ANNEHMEN');
+      case 'navigate_next': return _l('INDULJ A KÖVETKEZŐ STOPHOZ', 'GO TO NEXT STOP', 'ZUM NÄCHSTEN STOPP');
+      case 'finish_pickup': return _l('FELRAKÁS BEFEJEZÉSE', 'FINISH PICKUP', 'BELADUNG ABSCHLIESSEN');
+      case 'finish_delivery': return _l('LERAKÁS BEFEJEZÉSE', 'FINISH DELIVERY', 'ENTLADUNG ABSCHLIESSEN');
+      case 'scan_documents': return _l('CMR / POD SCANNELÉS', 'SCAN CMR / POD', 'CMR / POD SCANNEN');
+      case 'refresh_job': return _l('FUVAR FRISSÍTÉSE', 'REFRESH JOB', 'AUFTRAG AKTUALISIEREN');
+      default: return _l('KÉSZENLÉT', 'STANDBY', 'BEREITSCHAFT');
+    }
+  }
+
+  Future<void> _runAutopilotAction() async {
+    final ap = _autopilot;
+    if (ap == null || _actionBusy) return;
+    switch (ap.actionCode) {
+      case 'open_job':
+        if (ap.jobId != null) await _showJobDialog(jobId: ap.jobId!);
+        break;
+      case 'accept_job':
+        if (ap.jobId != null) await _acceptAndNavigate(ap.jobId!);
+        break;
+      case 'navigate_next':
+        await _openMaps();
+        break;
+      case 'finish_pickup':
+      case 'finish_delivery':
+        await _runPrimaryStopAction();
+        break;
+      case 'scan_documents':
+        if (mounted) setState(() => _index = 3);
+        await _openCmrScanner();
+        break;
+      case 'refresh_job':
+        await _refreshJobs();
+        break;
+    }
+  }
+
+  Widget _autopilotCard() {
+    final ap = _autopilot;
+    if (ap == null) return const SizedBox.shrink();
+    final severityColor = ap.severity == 'high'
+        ? const Color(0xFFFF6B73)
+        : ap.severity == 'warn'
+            ? const Color(0xFFFFC857)
+            : _green;
+    final next = ap.nextStop;
+    final company = next?['company']?.toString().trim() ?? '';
+    final address = next?['address']?.toString().trim() ?? '';
+    final facts = <String>[
+      if (ap.gpsAgeMinutes != null) 'GPS ' + ap.gpsAgeMinutes.toString() + ' p',
+      if (ap.stationaryMinutes != null) _l('Állás ', 'Stopped ', 'Stillstand ') + ap.stationaryMinutes.toString() + ' p',
+      if (ap.stopDwellMinutes != null) _l('Várakozás ', 'Waiting ', 'Wartezeit ') + ap.stopDwellMinutes.toString() + ' p',
+      if (ap.distanceKm != null) ap.distanceKm!.toStringAsFixed(1) + ' km',
+      if (ap.etaMinutes != null) 'ETA ~' + ap.etaMinutes.toString() + ' p',
+      if (ap.timeBufferMinutes != null)
+        ap.timeBufferMinutes! < 0
+            ? ap.timeBufferMinutes!.abs().toString() + _l(' p késés', ' min late', ' Min. spät')
+            : ap.timeBufferMinutes.toString() + _l(' p puffer', ' min buffer', ' Min. Puffer'),
+    ];
+    return Container(
+      padding: const EdgeInsets.all(15),
+      decoration: BoxDecoration(
+        color: severityColor.withValues(alpha: .08),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: severityColor.withValues(alpha: .65), width: 1.5),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Icon(Icons.auto_awesome_rounded, color: severityColor),
+          const SizedBox(width: 8),
+          const Expanded(child: Text('AIMS AUTOPILOT V3', style: TextStyle(fontWeight: FontWeight.w900))),
+          Text(ap.completedStops.toString() + '/' + ap.totalStops.toString(),
+              style: TextStyle(color: severityColor, fontWeight: FontWeight.w900)),
+        ]),
+        const SizedBox(height: 10),
+        Text(_autopilotActionLabel(ap.actionCode),
+            style: const TextStyle(fontSize: 21, fontWeight: FontWeight.w900)),
+        if (company.isNotEmpty) ...[
+          const SizedBox(height: 7),
+          Text(company, style: const TextStyle(fontWeight: FontWeight.w800)),
+        ],
+        if (address.isNotEmpty)
+          Text(address, style: const TextStyle(color: Colors.white70, height: 1.35)),
+        if (facts.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          Wrap(spacing: 7, runSpacing: 7, children: [
+            for (final fact in facts)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF06131F),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(color: const Color(0xFF24445A)),
+                ),
+                child: Text(fact, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w800)),
+              ),
+          ]),
+        ],
+        if (ap.sequenceAnomaly) ...[
+          const SizedBox(height: 9),
+          Text(
+            _l('⚠ A stopok sorrendje eltér. Ellenőrizd a fuvart.',
+               '⚠ Stop sequence differs. Check the job.',
+               '⚠ Stopp-Reihenfolge weicht ab. Auftrag prüfen.'),
+            style: const TextStyle(color: Color(0xFFFF8B91), fontWeight: FontWeight.w800),
+          ),
+        ],
+        if (ap.actionCode != 'wait_job') ...[
+          const SizedBox(height: 12),
+          FilledButton.icon(
+            onPressed: _actionBusy ? null : () => unawaited(_runAutopilotAction()),
+            icon: const Icon(Icons.arrow_forward_rounded),
+            label: Text(_autopilotActionLabel(ap.actionCode)),
+            style: FilledButton.styleFrom(
+              minimumSize: const Size.fromHeight(52),
+              backgroundColor: severityColor,
+              foregroundColor: const Color(0xFF001016),
+              textStyle: const TextStyle(fontWeight: FontWeight.w900),
+            ),
+          ),
+        ],
+      ]),
+    );
+  }
 
   Widget _home() {
     final job = _job;
@@ -2401,6 +2550,10 @@ class _DriverShellScreenState extends State<DriverShellScreen>
             ],
           ),
         ),
+      if (_autopilot != null) ...[
+        const SizedBox(height: 10),
+        _autopilotCard(),
+      ],
       if (pendingStopNotice != null) ...[
         const SizedBox(height: 10),
         _info(pendingStopNotice),
@@ -2970,6 +3123,10 @@ class _DriverShellScreenState extends State<DriverShellScreen>
       ),
       const SizedBox(height: 14),
       _jobsShortcut(),
+      if (_autopilot != null) ...[
+        const SizedBox(height: 12),
+        _autopilotCard(),
+      ],
       const SizedBox(height: 12),
       if (job == null)
         _panel(
