@@ -306,7 +306,6 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
     XFile? shot;
     String? processedPath;
     String? signaturePath;
-    var keepArtifacts = false;
     try {
       await _prepareCapture(controller);
       if (!mounted) return;
@@ -351,7 +350,6 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
 
       if (!mounted) return;
       await _disposeCamera();
-      keepArtifacts = true;
       if (!mounted) return;
       if (widget.returnDocumentIdOnSave) {
         final documentId = await Navigator.of(context).push<String>(
@@ -410,10 +408,8 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
       if (shot != null) {
         await _deleteArtifact(shot.path);
       }
-      if (!keepArtifacts) {
-        await _deleteArtifact(processedPath);
-        await _deleteArtifact(signaturePath);
-      }
+      await _deleteArtifact(processedPath);
+      await _deleteArtifact(signaturePath);
       if (mounted && _processing && _controller != null) {
         setState(() {
           _processing = false;
