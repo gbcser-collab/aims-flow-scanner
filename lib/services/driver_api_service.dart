@@ -391,20 +391,36 @@ class DriverApiService {
   Future<DriverAutopilotStatus?> fetchAutopilot(String plate) async {
     _ensureConfigured();
     final normalized = plate.trim().toUpperCase();
-    final response = await http
-        .get(
-          Uri.parse(
-            '${_base()}/driver_autopilot.php?plate=${Uri.encodeQueryComponent(normalized)}',
-          ),
-          headers: _headers,
-        )
-        .timeout(const Duration(seconds: 10));
-    final body = _decodeResponse(response);
-    final raw = body['autopilot'];
-    if (raw is! Map) return null;
-    return DriverAutopilotStatus.fromJson(
-      Map<String, dynamic>.from(raw),
+    final uri = Uri.parse(
+      '${_base()}/driver_autopilot.php?plate=${Uri.encodeQueryComponent(normalized)}',
     );
+
+    Object? lastError;
+    for (var attempt = 0; attempt < 2; attempt++) {
+      try {
+        final response = await http
+            .get(uri, headers: _headers)
+            .timeout(const Duration(seconds: 6));
+        final body = _decodeResponse(response);
+        final raw = body['autopilot'];
+        if (raw is! Map) {
+          throw const DriverApiException(502, 'invalid_autopilot_response');
+        }
+        return DriverAutopilotStatus.fromJson(
+          Map<String, dynamic>.from(raw),
+        );
+      } on DriverApiException catch (error) {
+        lastError = error;
+        if (!error.retryable || attempt == 1) rethrow;
+      } catch (error) {
+        lastError = error;
+        if (attempt == 1) rethrow;
+      }
+      await Future<void>.delayed(
+        Duration(milliseconds: 250 * (attempt + 1)),
+      );
+    }
+    throw StateError(lastError?.toString() ?? 'Autopilot network error');
   }
 
   Future<void> acknowledge({
