@@ -1614,7 +1614,11 @@ class _DriverShellScreenState extends State<DriverShellScreen>
 
   Future<void> _refreshAutopilot() async {
     if (_plate.isEmpty || _autopilotRefreshing) return;
-    _autopilotRefreshing = true;
+    if (mounted) {
+      setState(() => _autopilotRefreshing = true);
+    } else {
+      _autopilotRefreshing = true;
+    }
     try {
       final previous = _autopilot;
       final status = await _api.fetchAutopilot(_plate);
@@ -1652,7 +1656,11 @@ class _DriverShellScreenState extends State<DriverShellScreen>
       // R96 is additive: core Flow remains usable if the Autopilot feed is offline.
       _scheduleAutopilotRefresh(45);
     } finally {
-      _autopilotRefreshing = false;
+      if (mounted) {
+        setState(() => _autopilotRefreshing = false);
+      } else {
+        _autopilotRefreshing = false;
+      }
     }
   }
 
