@@ -217,15 +217,15 @@ jobs:
           test -s build/app/outputs/flutter-apk/app-release.apk
           unzip -t build/app/outputs/flutter-apk/app-release.apk > /tmp/apk-test.txt
           tail -5 /tmp/apk-test.txt
-          cp build/app/outputs/flutter-apk/app-release.apk AIMS-Flow-R98.apk
-          sha256sum AIMS-Flow-R98.apk | tee AIMS-Flow-R98.sha256
-          ls -lh AIMS-Flow-R98.apk
+          cp build/app/outputs/flutter-apk/app-release.apk AIMS-Flow-R99.apk
+          sha256sum AIMS-Flow-R99.apk | tee AIMS-Flow-R99.sha256
+          ls -lh AIMS-Flow-R99.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: AIMS-Flow-R98-ANDROID
+          name: AIMS-Flow-R99-ANDROID
           path: |
-            AIMS-Flow-R98.apk
-            AIMS-Flow-R98.sha256
+            AIMS-Flow-R99.apk
+            AIMS-Flow-R99.sha256
           if-no-files-found: error
