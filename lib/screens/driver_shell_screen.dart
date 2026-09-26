@@ -285,6 +285,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
   String? _lastAutopilotSpokenSignature;
   DateTime? _lastAutopilotSpokenAt;
   bool _autopilotRefreshing = false;
+  int _autopilotFailureCount = 0;
   final Set<int> _preArrivalBriefedStops = <int>{};
   DateTime? _lastPreArrivalCheckAt;
   DriverRestModeState _restMode = const DriverRestModeState(active: false);
@@ -1565,7 +1566,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
   void _scheduleAutopilotRefresh([int seconds = 30]) {
     _autopilotTimer?.cancel();
     if (_plate.isEmpty) return;
-    final safeSeconds = seconds.clamp(8, 120);
+    final safeSeconds = seconds.clamp(8, 120).toInt();
     _autopilotTimer = Timer(Duration(seconds: safeSeconds), () {
       if (_plate.isNotEmpty) {
         unawaited(_refreshAutopilot());
@@ -1626,6 +1627,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
       setState(() => _autopilot = status);
 
       if (status != null) {
+        _autopilotFailureCount = 0;
         _scheduleAutopilotRefresh(status.refreshAfterSeconds);
         final now = DateTime.now();
         final actionChanged = previous?.actionCode != status.actionCode;
@@ -1653,8 +1655,16 @@ class _DriverShellScreenState extends State<DriverShellScreen>
         _scheduleAutopilotRefresh(45);
       }
     } catch (_) {
-      // R96 is additive: core Flow remains usable if the Autopilot feed is offline.
-      _scheduleAutopilotRefresh(45);
+      // Keep the last known state visible and back off gradually on bad mobile
+      // data instead of hammering the network or blanking the UI.
+      _autopilotFailureCount = (_autopilotFailureCount + 1).clamp(1, 4);
+      final retrySeconds = switch (_autopilotFailureCount) {
+        1 => 12,
+        2 => 20,
+        3 => 35,
+        _ => 60,
+      };
+      _scheduleAutopilotRefresh(retrySeconds);
     } finally {
       if (mounted) {
         setState(() => _autopilotRefreshing = false);
@@ -3246,9 +3256,24 @@ class _DriverShellScreenState extends State<DriverShellScreen>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.detached) {
+      _autopilotTimer?.cancel();
+      _officeMessageTimer?.cancel();
+      return;
+    }
     if (state != AppLifecycleState.resumed || !mounted || _plate.isEmpty) {
       return;
     }
+    _officeMessageTimer?.cancel();
+    _officeMessageTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+      if (_plate.isNotEmpty) {
+        unawaited(_refreshOfficeMessages(silent: true));
+      }
+    });
+    _scheduleAutopilotRefresh(1);
+
     final now = DateTime.now();
     final previous = _lastResumeRefreshAt;
     if (previous != null &&
@@ -3295,6 +3320,10 @@ class _DriverShellScreenState extends State<DriverShellScreen>
     _pendingSignalRetryTimer = null;
     _pendingOfficeMessageRetryTimer?.cancel();
     _pendingOfficeMessageRetryTimer = null;
+    _officeMessageTimer?.cancel();
+    _officeMessageTimer = null;
+    _autopilotTimer?.cancel();
+    _autopilotTimer = null;
     _pushSub?.cancel();
     _trackingSub?.cancel();
     _voiceSub?.cancel();
