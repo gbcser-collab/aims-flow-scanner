@@ -228,59 +228,103 @@ class DriverAutopilotStatus {
     required this.gpsFresh,
     required this.documentsRequired,
     required this.sequenceAnomaly,
+    this.version = 'R95',
+    this.secondaryActionCode = '',
+    this.riskScore = 0,
+    this.confidence = 100,
+    this.reasonCodes = const <String>[],
+    this.refreshAfterSeconds = 30,
+    this.progressPct = 0,
+    this.isLate = false,
+    this.dataQuality = const <String, dynamic>{},
+    this.alertFingerprint = '',
     this.jobId,
     this.gpsAgeMinutes,
+    this.gpsAccuracyMeters,
+    this.currentSpeedKmh,
     this.stationaryMinutes,
     this.stopDwellMinutes,
     this.distanceKm,
     this.etaMinutes,
     this.plannedAt,
     this.timeBufferMinutes,
+    this.updatedAt,
     this.nextStop,
   });
 
+  final String version;
   final String mode;
   final String actionCode;
+  final String secondaryActionCode;
   final String severity;
+  final int riskScore;
+  final int confidence;
+  final List<String> reasonCodes;
+  final int refreshAfterSeconds;
   final String reference;
   final bool seen;
   final bool accepted;
   final int totalStops;
   final int completedStops;
+  final int progressPct;
   final bool gpsFresh;
   final bool documentsRequired;
   final bool sequenceAnomaly;
+  final bool isLate;
+  final Map<String, dynamic> dataQuality;
+  final String alertFingerprint;
   final int? jobId;
   final int? gpsAgeMinutes;
+  final double? gpsAccuracyMeters;
+  final double? currentSpeedKmh;
   final int? stationaryMinutes;
   final int? stopDwellMinutes;
   final double? distanceKm;
   final int? etaMinutes;
   final String? plannedAt;
   final int? timeBufferMinutes;
+  final String? updatedAt;
   final Map<String, dynamic>? nextStop;
 
   factory DriverAutopilotStatus.fromJson(Map<String, dynamic> json) =>
       DriverAutopilotStatus(
+        version: json['version']?.toString() ?? 'R95',
         mode: json['mode']?.toString() ?? 'idle',
         actionCode: json['actionCode']?.toString() ?? 'wait_job',
+        secondaryActionCode: json['secondaryActionCode']?.toString() ?? '',
         severity: json['severity']?.toString() ?? 'info',
+        riskScore: (json['riskScore'] as num?)?.toInt() ?? 0,
+        confidence: (json['confidence'] as num?)?.toInt() ?? 100,
+        reasonCodes: (json['reasonCodes'] as List? ?? const [])
+            .map((item) => item.toString())
+            .toList(growable: false),
+        refreshAfterSeconds:
+            (json['refreshAfterSeconds'] as num?)?.toInt() ?? 30,
         reference: json['reference']?.toString() ?? '',
         seen: json['seen'] == true,
         accepted: json['accepted'] == true,
         totalStops: (json['totalStops'] as num?)?.toInt() ?? 0,
         completedStops: (json['completedStops'] as num?)?.toInt() ?? 0,
+        progressPct: (json['progressPct'] as num?)?.toInt() ?? 0,
         gpsFresh: json['gpsFresh'] == true,
         documentsRequired: json['documentsRequired'] == true,
         sequenceAnomaly: json['sequenceAnomaly'] == true,
+        isLate: json['isLate'] == true,
+        dataQuality: json['dataQuality'] is Map
+            ? Map<String, dynamic>.from(json['dataQuality'] as Map)
+            : const <String, dynamic>{},
+        alertFingerprint: json['alertFingerprint']?.toString() ?? '',
         jobId: (json['jobId'] as num?)?.toInt(),
         gpsAgeMinutes: (json['gpsAgeMinutes'] as num?)?.toInt(),
+        gpsAccuracyMeters: (json['gpsAccuracyMeters'] as num?)?.toDouble(),
+        currentSpeedKmh: (json['currentSpeedKmh'] as num?)?.toDouble(),
         stationaryMinutes: (json['stationaryMinutes'] as num?)?.toInt(),
         stopDwellMinutes: (json['stopDwellMinutes'] as num?)?.toInt(),
         distanceKm: (json['distanceKm'] as num?)?.toDouble(),
         etaMinutes: (json['etaMinutes'] as num?)?.toInt(),
         plannedAt: json['plannedAt']?.toString(),
         timeBufferMinutes: (json['timeBufferMinutes'] as num?)?.toInt(),
+        updatedAt: json['updatedAt']?.toString(),
         nextStop: json['nextStop'] is Map
             ? Map<String, dynamic>.from(json['nextStop'] as Map)
             : null,

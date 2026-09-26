@@ -282,6 +282,9 @@ class _DriverShellScreenState extends State<DriverShellScreen>
   int _officeMessageNonce = 0;
   Timer? _officeMessageTimer;
   Timer? _autopilotTimer;
+  String? _lastAutopilotSpokenSignature;
+  DateTime? _lastAutopilotSpokenAt;
+  bool _autopilotRefreshing = false;
   final Set<int> _preArrivalBriefedStops = <int>{};
   DateTime? _lastPreArrivalCheckAt;
   DriverRestModeState _restMode = const DriverRestModeState(active: false);
@@ -1437,13 +1440,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
           unawaited(_refreshOfficeMessages(silent: true));
         }
       });
-      _autopilotTimer?.cancel();
-      _autopilotTimer = Timer.periodic(const Duration(seconds: 30), (_) {
-        if (_plate.isNotEmpty) {
-          unawaited(_refreshAutopilot());
-        }
-      });
-      unawaited(_refreshAutopilot());
+      _scheduleAutopilotRefresh(1);
     }
 
     // Driver-first default: voice control is ON unless the driver explicitly
@@ -1565,14 +1562,105 @@ class _DriverShellScreenState extends State<DriverShellScreen>
     }
   }
 
-  Future<void> _refreshAutopilot() async {
+  void _scheduleAutopilotRefresh([int seconds = 30]) {
+    _autopilotTimer?.cancel();
     if (_plate.isEmpty) return;
+    final safeSeconds = seconds.clamp(8, 120);
+    _autopilotTimer = Timer(Duration(seconds: safeSeconds), () {
+      if (_plate.isNotEmpty) {
+        unawaited(_refreshAutopilot());
+      }
+    });
+  }
+
+  String _autopilotVoiceMessage(DriverAutopilotStatus status) {
+    if (status.sequenceAnomaly) {
+      return _l(
+        'Figyelem. A fuvar megállóinak sorrendje eltér a várt folyamattól. Ellenőrizd a fuvart.',
+        'Attention. The stop sequence differs from the expected workflow. Check the job.',
+        'Achtung. Die Stopp-Reihenfolge weicht vom erwarteten Ablauf ab. Auftrag prüfen.',
+      );
+    }
+    if (status.isLate) {
+      return _l(
+        'Figyelem. Az Autopilot késést jelez. Szükség esetén jelezd az irodának.',
+        'Attention. Autopilot predicts a delay. Inform the office if needed.',
+        'Achtung. Autopilot erkennt eine Verspätung. Informiere bei Bedarf die Disposition.',
+      );
+    }
+    if (status.stopDwellMinutes != null && status.stopDwellMinutes! >= 30) {
+      return _l(
+        'Hosszabb várakozást érzékelek. Ha még nem jelezted, küldj várakozás jelzést.',
+        'I detect extended waiting. Send a waiting alert if you have not already done so.',
+        'Ich erkenne eine längere Wartezeit. Sende eine Wartezeitmeldung, falls noch nicht geschehen.',
+      );
+    }
+    if (!status.gpsFresh && status.accepted) {
+      return _l(
+        'A GPS adat nem friss. Ellenőrizd a helymeghatározást és a mobilinternetet.',
+        'GPS data is not fresh. Check location services and mobile data.',
+        'GPS-Daten sind nicht aktuell. Prüfe Standortdienste und mobile Daten.',
+      );
+    }
+    if (status.actionCode == 'scan_documents') {
+      return _l(
+        'A fuvar megállói elkészültek. Következő lépés a CMR vagy POD dokumentum scannelése.',
+        'All stops are complete. The next step is scanning the CMR or POD document.',
+        'Alle Stopps sind abgeschlossen. Als Nächstes CMR- oder POD-Dokument scannen.',
+      );
+    }
+    return '';
+  }
+
+  Future<void> _refreshAutopilot() async {
+    if (_plate.isEmpty || _autopilotRefreshing) return;
+    if (mounted) {
+      setState(() => _autopilotRefreshing = true);
+    } else {
+      _autopilotRefreshing = true;
+    }
     try {
+      final previous = _autopilot;
       final status = await _api.fetchAutopilot(_plate);
       if (!mounted) return;
       setState(() => _autopilot = status);
+
+      if (status != null) {
+        _scheduleAutopilotRefresh(status.refreshAfterSeconds);
+        final now = DateTime.now();
+        final actionChanged = previous?.actionCode != status.actionCode;
+        final shouldSpeak =
+            status.alertFingerprint.isNotEmpty &&
+            status.alertFingerprint != _lastAutopilotSpokenSignature &&
+            (status.severity == 'high' ||
+                (actionChanged &&
+                    const {
+                      'scan_documents',
+                      'finish_pickup',
+                      'finish_delivery',
+                    }.contains(status.actionCode)));
+        final speechCooldownPassed = _lastAutopilotSpokenAt == null ||
+            now.difference(_lastAutopilotSpokenAt!) >= const Duration(minutes: 4);
+        if (shouldSpeak && speechCooldownPassed) {
+          final message = _autopilotVoiceMessage(status);
+          if (message.isNotEmpty) {
+            _lastAutopilotSpokenSignature = status.alertFingerprint;
+            _lastAutopilotSpokenAt = now;
+            unawaited(_voice.announce(message));
+          }
+        }
+      } else {
+        _scheduleAutopilotRefresh(45);
+      }
     } catch (_) {
-      // Autopilot V3 is additive. Core Flow remains usable if the feed is offline.
+      // R96 is additive: core Flow remains usable if the Autopilot feed is offline.
+      _scheduleAutopilotRefresh(45);
+    } finally {
+      if (mounted) {
+        setState(() => _autopilotRefreshing = false);
+      } else {
+        _autopilotRefreshing = false;
+      }
     }
   }
 
@@ -3431,6 +3519,58 @@ class _DriverShellScreenState extends State<DriverShellScreen>
     }
   }
 
+  String _autopilotSecondaryLabel(String code) {
+    switch (code) {
+      case 'signal_delay':
+        return _l('JELZEM A KÉSÉST', 'REPORT DELAY', 'VERSPÄTUNG MELDEN');
+      case 'signal_waiting':
+        return _l('JELZEM A VÁRAKOZÁST', 'REPORT WAITING', 'WARTEZEIT MELDEN');
+      case 'message_office':
+        return _l('ÍROK AZ IRODÁNAK', 'MESSAGE OFFICE', 'DISPOSITION SCHREIBEN');
+      case 'quick_signal':
+        return _l('GYORS JELZÉS', 'QUICK SIGNAL', 'SCHNELLMELDUNG');
+      default:
+        return '';
+    }
+  }
+
+  String _autopilotReasonLabel(String code) {
+    switch (code) {
+      case 'job_unseen':
+        return _l('Fuvar még nincs megnyitva', 'Job not opened yet', 'Auftrag noch nicht geöffnet');
+      case 'job_unaccepted':
+        return _l('Fuvar még nincs elfogadva', 'Job not accepted yet', 'Auftrag noch nicht angenommen');
+      case 'gps_missing':
+        return _l('Nincs GPS-adat', 'No GPS data', 'Keine GPS-Daten');
+      case 'gps_stale':
+        return _l('Régi GPS-adat', 'Stale GPS data', 'Veraltete GPS-Daten');
+      case 'gps_low_accuracy':
+        return _l('Pontatlan GPS', 'Low GPS accuracy', 'Ungenaues GPS');
+      case 'dwell_15':
+        return _l('15+ perc várakozás', '15+ min waiting', '15+ Min. Wartezeit');
+      case 'dwell_30':
+        return _l('30+ perc várakozás', '30+ min waiting', '30+ Min. Wartezeit');
+      case 'dwell_60':
+        return _l('60+ perc várakozás', '60+ min waiting', '60+ Min. Wartezeit');
+      case 'late':
+        return _l('Késési kockázat', 'Delay risk', 'Verspätungsrisiko');
+      case 'time_buffer_low':
+        return _l('Kevés időpuffer', 'Low time buffer', 'Kleiner Zeitpuffer');
+      case 'stop_sequence_anomaly':
+        return _l('Stopsorrend eltérés', 'Stop sequence anomaly', 'Abweichende Stopp-Reihenfolge');
+      case 'next_stop_no_coordinates':
+        return _l('Hiányzó stop-koordináta', 'Missing stop coordinates', 'Fehlende Stopp-Koordinaten');
+      case 'schedule_missing':
+        return _l('Nincs időablak', 'No time window', 'Kein Zeitfenster');
+      case 'documents_pending':
+        return _l('Dokumentum szükséges', 'Document required', 'Dokument erforderlich');
+      case 'long_stationary':
+        return _l('Hosszú állás', 'Long stationary period', 'Langer Stillstand');
+      default:
+        return code.replaceAll('_', ' ');
+    }
+  }
+
   Future<void> _runAutopilotAction() async {
     final ap = _autopilot;
     if (ap == null || _actionBusy) return;
@@ -3460,136 +3600,384 @@ class _DriverShellScreenState extends State<DriverShellScreen>
     }
   }
 
+  Future<void> _runAutopilotSecondaryAction() async {
+    final ap = _autopilot;
+    if (ap == null || _actionBusy) return;
+    switch (ap.secondaryActionCode) {
+      case 'signal_delay':
+        await _sendSignal('Késés');
+        return;
+      case 'signal_waiting':
+        await _sendSignal('Várakozás');
+        return;
+      case 'message_office':
+      case 'quick_signal':
+        if (mounted) setState(() => _index = 2);
+        return;
+      default:
+        return;
+    }
+  }
+
+  Widget _autopilotMetric(
+    String label,
+    String value, {
+    Color? accent,
+  }) {
+    final color = accent ?? Colors.white70;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: const Color(0xFF06131F),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withValues(alpha: .28)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(
+              color: Colors.white38,
+              fontSize: 8,
+              fontWeight: FontWeight.w900,
+              letterSpacing: .7,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            value,
+            style: TextStyle(
+              color: color,
+              fontSize: 12,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _autopilotCard() {
     final ap = _autopilot;
     if (ap == null) return const SizedBox.shrink();
+
     final color = ap.severity == 'high'
-        ? const Color(0xFFFF6B73)
+        ? const Color(0xFFFF5C68)
         : ap.severity == 'warn'
             ? const Color(0xFFFFC857)
             : _green;
     final next = ap.nextStop;
     final company = next?['company']?.toString().trim() ?? '';
     final address = next?['address']?.toString().trim() ?? '';
-    final facts = <String>[
-      if (ap.gpsAgeMinutes != null) 'GPS ${ap.gpsAgeMinutes} p',
-      if (ap.stationaryMinutes != null) _l(
-        'Állás ${ap.stationaryMinutes} p',
-        'Stopped ${ap.stationaryMinutes} min',
-        'Stillstand ${ap.stationaryMinutes} Min.',
-      ),
-      if (ap.stopDwellMinutes != null) _l(
-        'Várakozás ${ap.stopDwellMinutes} p',
-        'Waiting ${ap.stopDwellMinutes} min',
-        'Wartezeit ${ap.stopDwellMinutes} Min.',
-      ),
-      if (ap.distanceKm != null) '${ap.distanceKm!.toStringAsFixed(1)} km',
-      if (ap.etaMinutes != null) 'ETA ~${ap.etaMinutes} p',
-      if (ap.timeBufferMinutes != null)
-        ap.timeBufferMinutes! < 0
-            ? _l(
-                '${ap.timeBufferMinutes!.abs()} p késés',
-                '${ap.timeBufferMinutes!.abs()} min late',
-                '${ap.timeBufferMinutes!.abs()} Min. verspätet',
-              )
-            : _l(
-                '${ap.timeBufferMinutes} p puffer',
-                '${ap.timeBufferMinutes} min buffer',
-                '${ap.timeBufferMinutes} Min. Puffer',
-              ),
-    ];
+    final secondaryLabel = _autopilotSecondaryLabel(ap.secondaryActionCode);
+    final gpsQuality = ap.dataQuality['gps']?.toString() ?? 'unknown';
+    final isLive = gpsQuality == 'fresh';
+    final reasons = ap.reasonCodes
+        .map(_autopilotReasonLabel)
+        .where((item) => item.trim().isNotEmpty)
+        .take(3)
+        .toList(growable: false);
+
     return Container(
       key: const Key('autopilot-v3-card'),
-      padding: const EdgeInsets.all(15),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: .08),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: color.withValues(alpha: .65), width: 1.5),
+        color: color.withValues(alpha: .07),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: color.withValues(alpha: .72),
+          width: ap.severity == 'high' ? 2 : 1.3,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: color.withValues(alpha: ap.severity == 'high' ? .13 : .06),
+            blurRadius: 24,
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Icon(Icons.auto_awesome_rounded, color: color),
-              const SizedBox(width: 8),
-              const Expanded(
-                child: Text(
-                  'AIMS AUTOPILOT V3',
-                  style: TextStyle(fontWeight: FontWeight.w900),
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: .14),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(Icons.auto_awesome_rounded, color: color),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'AIMS AUTOPILOT ${ap.version}',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: .7,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      isLive
+                          ? _l('ÉLŐ DÖNTÉSI MOTOR', 'LIVE DECISION ENGINE', 'LIVE-ENTSCHEIDUNGSMOTOR')
+                          : _l('KORLÁTOZOTT ADATMINŐSÉG', 'LIMITED DATA QUALITY', 'EINGESCHRÄNKTE DATENQUALITÄT'),
+                      style: TextStyle(
+                        color: isLive ? _green : const Color(0xFFFFC857),
+                        fontSize: 9,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: .7,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              Text(
-                '${ap.completedStops}/${ap.totalStops}',
-                style: TextStyle(color: color, fontWeight: FontWeight.w900),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: .13),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  '${ap.riskScore}/100',
+                  style: TextStyle(color: color, fontWeight: FontWeight.w900),
+                ),
               ),
             ],
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 14),
+          Text(
+            _l('KÖVETKEZŐ LÉPÉS', 'NEXT ACTION', 'NÄCHSTE AKTION'),
+            style: const TextStyle(
+              color: Colors.white38,
+              fontSize: 9,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 1.1,
+            ),
+          ),
+          const SizedBox(height: 4),
           Text(
             _autopilotActionLabel(ap.actionCode),
-            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
-          ),
-          if (company.isNotEmpty) ...[
-            const SizedBox(height: 7),
-            Text(company, style: const TextStyle(fontWeight: FontWeight.w800)),
-          ],
-          if (address.isNotEmpty)
-            Text(
-              address,
-              style: const TextStyle(color: Colors.white70, height: 1.35),
+            style: const TextStyle(
+              fontSize: 23,
+              fontWeight: FontWeight.w900,
+              height: 1.08,
             ),
-          if (facts.isNotEmpty) ...[
-            const SizedBox(height: 10),
-            Wrap(
-              spacing: 7,
-              runSpacing: 7,
+          ),
+          if (company.isNotEmpty || address.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            if (company.isNotEmpty)
+              Text(
+                company,
+                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w900),
+              ),
+            if (address.isNotEmpty)
+              Text(
+                address,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: Colors.white70, height: 1.35),
+              ),
+          ],
+          if (ap.totalStops > 0) ...[
+            const SizedBox(height: 14),
+            Row(
               children: [
-                for (final fact in facts)
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF06131F),
-                      borderRadius: BorderRadius.circular(999),
-                      border: Border.all(color: const Color(0xFF24445A)),
-                    ),
-                    child: Text(
-                      fact,
-                      style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w800),
-                    ),
+                Text(
+                  _l('FUVAR HALADÁS', 'JOB PROGRESS', 'AUFTRAGSFORTSCHRITT'),
+                  style: const TextStyle(
+                    color: Colors.white38,
+                    fontSize: 8,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: .7,
                   ),
+                ),
+                const Spacer(),
+                Text(
+                  '${ap.completedStops}/${ap.totalStops} · ${ap.progressPct}%',
+                  style: const TextStyle(
+                    color: Colors.white70,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
               ],
             ),
-          ],
-          if (ap.sequenceAnomaly) ...[
-            const SizedBox(height: 9),
-            Text(
-              _l(
-                '⚠ A stopok sorrendje eltér. Ellenőrizd a fuvart.',
-                '⚠ Stop sequence differs. Check the job.',
-                '⚠ Stopp-Reihenfolge weicht ab. Auftrag prüfen.',
-              ),
-              style: const TextStyle(
-                color: Color(0xFFFF8B91),
-                fontWeight: FontWeight.w800,
+            const SizedBox(height: 6),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(999),
+              child: LinearProgressIndicator(
+                minHeight: 7,
+                value: ap.progressPct.clamp(0, 100) / 100,
+                backgroundColor: Colors.white10,
+                valueColor: AlwaysStoppedAnimation<Color>(color),
               ),
             ),
           ],
-          if (ap.actionCode != 'wait_job') ...[
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 7,
+            runSpacing: 7,
+            children: [
+              _autopilotMetric(
+                _l('KOCKÁZAT', 'RISK', 'RISIKO'),
+                '${ap.riskScore}/100',
+                accent: color,
+              ),
+              _autopilotMetric(
+                _l('BIZTOSSÁG', 'CONFIDENCE', 'SICHERHEIT'),
+                '${ap.confidence}%',
+                accent: ap.confidence >= 75 ? _green : const Color(0xFFFFC857),
+              ),
+              if (ap.distanceKm != null)
+                _autopilotMetric(
+                  _l('TÁV', 'DISTANCE', 'DISTANZ'),
+                  '${ap.distanceKm!.toStringAsFixed(1)} km',
+                ),
+              if (ap.etaMinutes != null)
+                _autopilotMetric('ETA', '~${ap.etaMinutes} p'),
+              if (ap.timeBufferMinutes != null)
+                _autopilotMetric(
+                  ap.isLate
+                      ? _l('KÉSÉS', 'LATE', 'VERSPÄTET')
+                      : _l('PUFFER', 'BUFFER', 'PUFFER'),
+                  ap.isLate
+                      ? '${ap.timeBufferMinutes!.abs()} p'
+                      : '${ap.timeBufferMinutes} p',
+                  accent: ap.isLate ? const Color(0xFFFF5C68) : _green,
+                ),
+              if (ap.stopDwellMinutes != null)
+                _autopilotMetric(
+                  _l('VÁRAKOZÁS', 'WAITING', 'WARTEZEIT'),
+                  '${ap.stopDwellMinutes} p',
+                  accent: ap.stopDwellMinutes! >= 30
+                      ? const Color(0xFFFFC857)
+                      : Colors.white70,
+                ),
+              if (ap.gpsAgeMinutes != null)
+                _autopilotMetric(
+                  'GPS',
+                  ap.gpsAgeMinutes == 0
+                      ? _l('MOST', 'NOW', 'JETZT')
+                      : '${ap.gpsAgeMinutes} p',
+                  accent: ap.gpsFresh ? _green : const Color(0xFFFF5C68),
+                ),
+              if (ap.currentSpeedKmh != null)
+                _autopilotMetric(
+                  _l('SEBESSÉG', 'SPEED', 'GESCHW.'),
+                  '${ap.currentSpeedKmh!.round()} km/h',
+                ),
+            ],
+          ),
+          if (reasons.isNotEmpty) ...[
             const SizedBox(height: 12),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(11),
+              decoration: BoxDecoration(
+                color: const Color(0xFF04101A),
+                borderRadius: BorderRadius.circular(13),
+                border: Border.all(color: Colors.white10),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    _l('MIÉRT JELEZ?', 'WHY THIS STATUS?', 'WARUM DIESER STATUS?'),
+                    style: const TextStyle(
+                      color: Colors.white38,
+                      fontSize: 8,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: .7,
+                    ),
+                  ),
+                  const SizedBox(height: 5),
+                  for (final reason in reasons)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 3),
+                      child: Text(
+                        '• $reason',
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+          const SizedBox(height: 13),
+          if (ap.actionCode != 'wait_job')
             FilledButton.icon(
               key: const Key('autopilot-v3-action'),
               onPressed: _actionBusy ? null : () => unawaited(_runAutopilotAction()),
               icon: const Icon(Icons.arrow_forward_rounded),
               label: Text(_autopilotActionLabel(ap.actionCode)),
               style: FilledButton.styleFrom(
-                minimumSize: const Size.fromHeight(52),
+                minimumSize: const Size.fromHeight(58),
                 backgroundColor: color,
                 foregroundColor: const Color(0xFF001016),
+                textStyle: const TextStyle(
+                  fontWeight: FontWeight.w900,
+                  fontSize: 14,
+                ),
+              ),
+            ),
+          if (secondaryLabel.isNotEmpty && !_documentGateActive) ...[
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              key: const Key('autopilot-v3-secondary-action'),
+              onPressed: _actionBusy
+                  ? null
+                  : () => unawaited(_runAutopilotSecondaryAction()),
+              icon: Icon(
+                ap.secondaryActionCode.startsWith('signal_')
+                    ? Icons.campaign_rounded
+                    : Icons.chat_bubble_outline_rounded,
+              ),
+              label: Text(secondaryLabel),
+              style: OutlinedButton.styleFrom(
+                minimumSize: const Size.fromHeight(52),
+                foregroundColor: Colors.white,
+                side: const BorderSide(color: Color(0xFF31536B)),
                 textStyle: const TextStyle(fontWeight: FontWeight.w900),
               ),
             ),
           ],
+          const SizedBox(height: 7),
+          Row(
+            children: [
+              Icon(
+                isLive ? Icons.cloud_done_rounded : Icons.cloud_sync_rounded,
+                size: 14,
+                color: isLive ? _green : Colors.white38,
+              ),
+              const SizedBox(width: 5),
+              Expanded(
+                child: Text(
+                  _l(
+                    'Automatikus frissítés: ${ap.refreshAfterSeconds} mp',
+                    'Auto refresh: ${ap.refreshAfterSeconds} sec',
+                    'Auto-Aktualisierung: ${ap.refreshAfterSeconds} Sek.',
+                  ),
+                  style: const TextStyle(color: Colors.white38, fontSize: 9),
+                ),
+              ),
+              TextButton(
+                onPressed: _autopilotRefreshing
+                    ? null
+                    : () => unawaited(_refreshAutopilot()),
+                child: Text(_l('FRISSÍTÉS', 'REFRESH', 'AKTUALISIEREN')),
+              ),
+            ],
+          ),
         ],
       ),
     );
