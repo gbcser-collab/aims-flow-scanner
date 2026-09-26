@@ -70,6 +70,8 @@ class ScanProcessingResult {
     required this.outputPath,
     required this.corners,
     required this.quality,
+    this.autoCropReliable = true,
+    this.cornerConfidence = 1,
     this.signatureImagePath,
     this.signatureConfidence = 0,
   });
@@ -77,8 +79,17 @@ class ScanProcessingResult {
   final String outputPath;
   final DocumentCorners corners;
   final ScanQuality quality;
+  final bool autoCropReliable;
+  final double cornerConfidence;
   final String? signatureImagePath;
   final double signatureConfidence;
+
+  bool get shouldSuggestRetake =>
+      !autoCropReliable ||
+      quality.score < 70 ||
+      quality.isBlurry ||
+      quality.hasTooMuchGlare ||
+      quality.documentTooSmall;
 }
 
 class CmrData {
