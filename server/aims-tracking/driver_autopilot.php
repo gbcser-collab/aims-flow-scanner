@@ -106,19 +106,26 @@ $vs = $pdo->prepare('SELECT * FROM vehicle_state WHERE vehicle_id=:v LIMIT 1');
 $vs->execute([':v' => $vehicle['id']]);
 $state = $vs->fetch(PDO::FETCH_ASSOC) ?: null;
 
-$gpsAge = $minutesAgo($point['captured_at'] ?? null);
+$gpsCapturedAge = $minutesAgo($point['captured_at'] ?? null);
+$gpsReceivedAge = $minutesAgo($point['received_at'] ?? null);
+$gpsAges = array_values(array_filter(
+    [$gpsCapturedAge, $gpsReceivedAge],
+    static fn ($value): bool => $value !== null
+));
+$gpsAge = $gpsAges ? max($gpsAges) : null;
 $stationaryMin = $minutesAgo($state['stationary_since'] ?? null);
 $gpsAccuracy = isset($point['accuracy']) && is_numeric($point['accuracy'])
     ? round((float)$point['accuracy'], 1)
     : null;
-$currentSpeedKmh = isset($point['speed_mps']) && is_numeric($point['speed_mps'])
+$rawSpeedKmh = isset($point['speed_mps']) && is_numeric($point['speed_mps'])
     ? round(max(0.0, (float)$point['speed_mps'] * 3.6), 1)
     : null;
-// A stale stationary anchor must not survive real movement.
+$gpsFresh = $gpsAge !== null && $gpsAge < 20;
+$currentSpeedKmh = $gpsFresh ? $rawSpeedKmh : null;
+// A stale stationary anchor must not survive confirmed real movement.
 if ($currentSpeedKmh !== null && $currentSpeedKmh >= 10.0) {
     $stationaryMin = null;
 }
-$gpsFresh = $gpsAge !== null && $gpsAge < 20;
 
 if (!$job) {
     $reasons = [];
@@ -357,7 +364,7 @@ if ($next && !$planned) {
 if ($allDone) {
     $reasons[] = 'documents_pending';
 }
-if (!$restModeActive && $accepted && $stationaryMin !== null && $stationaryMin >= 120 && !$allDone) {
+if (!$restModeActive && $gpsFresh && $accepted && $stationaryMin !== null && $stationaryMin >= 120 && !$allDone) {
     $risk += 12;
     $reasons[] = 'long_stationary';
 }
