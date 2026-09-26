@@ -4,6 +4,7 @@ import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 
+import '../models/scan_models.dart';
 import '../services/aims_locale.dart';
 import '../services/aims_scan_engine.dart';
 import '../services/cmr_parser.dart';
@@ -184,6 +185,98 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
     }
   }
 
+  Future<void> _prepareCapture(CameraController controller) async {
+    try {
+      await controller.setFocusMode(FocusMode.auto);
+    } catch (_) {}
+    try {
+      await controller.setExposureMode(ExposureMode.auto);
+    } catch (_) {}
+    try {
+      await controller.setFocusPoint(const Offset(.5, .5));
+    } catch (_) {}
+    try {
+      await controller.setExposurePoint(const Offset(.5, .5));
+    } catch (_) {}
+    await Future<void>.delayed(const Duration(milliseconds: 160));
+  }
+
+  List<String> _qualityWarnings(ScanProcessingResult result) {
+    final q = result.quality;
+    return <String>[
+      if (!result.autoCropReliable)
+        _l(
+          'A dokumentum széleit nem sikerült biztosan felismerni.',
+          'Document edges could not be detected reliably.',
+          'Die Dokumentränder konnten nicht zuverlässig erkannt werden.',
+        ),
+      if (q.isBlurry)
+        _l('A kép életlennek tűnik.', 'The image looks blurry.', 'Das Bild wirkt unscharf.'),
+      if (q.isTooDark)
+        _l('A dokumentum túl sötét.', 'The document is too dark.', 'Das Dokument ist zu dunkel.'),
+      if (q.isTooBright)
+        _l('A dokumentum túl világos.', 'The document is too bright.', 'Das Dokument ist zu hell.'),
+      if (q.hasTooMuchGlare)
+        _l('Erős becsillanást érzékelek.', 'Strong glare detected.', 'Starke Spiegelung erkannt.'),
+      if (q.documentTooSmall)
+        _l('A dokumentum túl kicsi a képen.', 'The document is too small in the image.', 'Das Dokument ist im Bild zu klein.'),
+    ];
+  }
+
+  Future<bool> _confirmScanQuality(ScanProcessingResult result) async {
+    if (!result.shouldSuggestRetake) return true;
+    if (!mounted) return false;
+    final warnings = _qualityWarnings(result);
+    return await showDialog<bool>(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => AlertDialog(
+            backgroundColor: const Color(0xFF101216),
+            title: Text(
+              _l('Érdemes újrafotózni', 'Retake recommended', 'Neues Foto empfohlen'),
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _l(
+                    'Minőség: ${result.quality.score}/100 · keret: ${(result.cornerConfidence * 100).round()}%',
+                    'Quality: ${result.quality.score}/100 · frame: ${(result.cornerConfidence * 100).round()}%',
+                    'Qualität: ${result.quality.score}/100 · Rahmen: ${(result.cornerConfidence * 100).round()}%',
+                  ),
+                ),
+                const SizedBox(height: 10),
+                for (final warning in warnings)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 5),
+                    child: Text('• $warning'),
+                  ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: Text(_l('HASZNÁLOM', 'USE ANYWAY', 'TROTZDEM VERWENDEN')),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: Text(_l('ÚJRAFOTÓZOM', 'RETAKE', 'NEU AUFNEHMEN')),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+  }
+
+  Future<void> _deleteArtifact(String? path) async {
+    if (path == null || path.trim().isEmpty) return;
+    try {
+      final file = File(path);
+      if (await file.exists()) await file.delete();
+    } catch (_) {}
+  }
+
   Future<void> _setFlashMode(_ScannerFlashMode mode) async {
     final controller = _controller;
     if (controller == null || !controller.value.isInitialized || _processing || _flashChanging || mode == _flashMode) return;
@@ -211,21 +304,35 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
 
     final ocr = OcrService();
     XFile? shot;
+    String? processedPath;
+    String? signaturePath;
+    var keepArtifacts = false;
     try {
+      await _prepareCapture(controller);
+      if (!mounted) return;
+      setState(() => _phase = _l('Fotó készítése…', 'Taking photo…', 'Foto wird aufgenommen…'));
       shot = await controller.takePicture();
+      final shotFile = File(shot.path);
+      if (!await shotFile.exists() || await shotFile.length() < 4096) {
+        throw const FormatException('capture_file_invalid');
+      }
       if (!mounted) return;
       setState(() => _phase = _l('Kereten kívüli rész levágása…', 'Cropping outside the frame…', 'Bereich außerhalb des Rahmens wird zugeschnitten…'));
 
       final temp = await getTemporaryDirectory();
       final stamp = DateTime.now().microsecondsSinceEpoch;
-      final processed = '${temp.path}/aims_smart_$stamp.jpg';
-      final signature = '${temp.path}/aims_signature_$stamp.jpg';
+      processedPath = '${temp.path}/aims_smart_$stamp.jpg';
+      signaturePath = '${temp.path}/aims_signature_$stamp.jpg';
       final result = await const AimsScanEngine().process(
         inputPath: shot.path,
-        outputPath: processed,
-        signatureOutputPath: signature,
+        outputPath: processedPath,
+        signatureOutputPath: signaturePath,
         frameCrop: FrameCropSpec(viewportAspect: _viewportAspect),
       );
+
+      if (!await _confirmScanQuality(result)) {
+        return;
+      }
 
       if (!mounted) return;
       setState(() => _phase = _l(
@@ -244,6 +351,7 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
 
       if (!mounted) return;
       await _disposeCamera();
+      keepArtifacts = true;
       if (!mounted) return;
       if (widget.returnDocumentIdOnSave) {
         final documentId = await Navigator.of(context).push<String>(
@@ -262,6 +370,12 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
         if (documentId != null && documentId.isNotEmpty) {
           Navigator.of(context).pop(documentId);
           return;
+        }
+        if (mounted) {
+          setState(() {
+            _processing = false;
+            _phase = '';
+          });
         }
         await _initialize();
       } else {
@@ -294,9 +408,17 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
     } finally {
       await ocr.dispose();
       if (shot != null) {
-        try {
-          await File(shot.path).delete();
-        } catch (_) {}
+        await _deleteArtifact(shot.path);
+      }
+      if (!keepArtifacts) {
+        await _deleteArtifact(processedPath);
+        await _deleteArtifact(signaturePath);
+      }
+      if (mounted && _processing && _controller != null) {
+        setState(() {
+          _processing = false;
+          _phase = '';
+        });
       }
     }
   }
