@@ -215,6 +215,78 @@ class DriverRestModeState {
       );
 }
 
+class DriverAutopilotStatus {
+  const DriverAutopilotStatus({
+    required this.mode,
+    required this.actionCode,
+    required this.severity,
+    required this.reference,
+    required this.seen,
+    required this.accepted,
+    required this.totalStops,
+    required this.completedStops,
+    required this.gpsFresh,
+    required this.documentsRequired,
+    required this.sequenceAnomaly,
+    this.jobId,
+    this.gpsAgeMinutes,
+    this.stationaryMinutes,
+    this.stopDwellMinutes,
+    this.distanceKm,
+    this.etaMinutes,
+    this.plannedAt,
+    this.timeBufferMinutes,
+    this.nextStop,
+  });
+
+  final String mode;
+  final String actionCode;
+  final String severity;
+  final String reference;
+  final bool seen;
+  final bool accepted;
+  final int totalStops;
+  final int completedStops;
+  final bool gpsFresh;
+  final bool documentsRequired;
+  final bool sequenceAnomaly;
+  final int? jobId;
+  final int? gpsAgeMinutes;
+  final int? stationaryMinutes;
+  final int? stopDwellMinutes;
+  final double? distanceKm;
+  final int? etaMinutes;
+  final String? plannedAt;
+  final int? timeBufferMinutes;
+  final Map<String, dynamic>? nextStop;
+
+  factory DriverAutopilotStatus.fromJson(Map<String, dynamic> json) =>
+      DriverAutopilotStatus(
+        mode: json['mode']?.toString() ?? 'idle',
+        actionCode: json['actionCode']?.toString() ?? 'wait_job',
+        severity: json['severity']?.toString() ?? 'info',
+        reference: json['reference']?.toString() ?? '',
+        seen: json['seen'] == true,
+        accepted: json['accepted'] == true,
+        totalStops: (json['totalStops'] as num?)?.toInt() ?? 0,
+        completedStops: (json['completedStops'] as num?)?.toInt() ?? 0,
+        gpsFresh: json['gpsFresh'] == true,
+        documentsRequired: json['documentsRequired'] == true,
+        sequenceAnomaly: json['sequenceAnomaly'] == true,
+        jobId: (json['jobId'] as num?)?.toInt(),
+        gpsAgeMinutes: (json['gpsAgeMinutes'] as num?)?.toInt(),
+        stationaryMinutes: (json['stationaryMinutes'] as num?)?.toInt(),
+        stopDwellMinutes: (json['stopDwellMinutes'] as num?)?.toInt(),
+        distanceKm: (json['distanceKm'] as num?)?.toDouble(),
+        etaMinutes: (json['etaMinutes'] as num?)?.toInt(),
+        plannedAt: json['plannedAt']?.toString(),
+        timeBufferMinutes: (json['timeBufferMinutes'] as num?)?.toInt(),
+        nextStop: json['nextStop'] is Map
+            ? Map<String, dynamic>.from(json['nextStop'] as Map)
+            : null,
+      );
+}
+
 class DriverApiService {
   const DriverApiService();
 
@@ -270,6 +342,25 @@ class DriverApiService {
       await Future<void>.delayed(Duration(milliseconds: 350 * (attempt + 1)));
     }
     throw StateError(lastError?.toString() ?? 'Hálózati hiba');
+  }
+
+  Future<DriverAutopilotStatus?> fetchAutopilot(String plate) async {
+    _ensureConfigured();
+    final normalized = plate.trim().toUpperCase();
+    final response = await http
+        .get(
+          Uri.parse(
+            '${_base()}/driver_autopilot.php?plate=${Uri.encodeQueryComponent(normalized)}',
+          ),
+          headers: _headers,
+        )
+        .timeout(const Duration(seconds: 10));
+    final body = _decodeResponse(response);
+    final raw = body['autopilot'];
+    if (raw is! Map) return null;
+    return DriverAutopilotStatus.fromJson(
+      Map<String, dynamic>.from(raw),
+    );
   }
 
   Future<void> acknowledge({
