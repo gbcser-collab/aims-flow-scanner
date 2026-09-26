@@ -287,6 +287,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
   bool _autopilotRefreshing = false;
   int _autopilotFailureCount = 0;
   DateTime? _autopilotLastSuccessAt;
+  bool _appInForeground = true;
   final Set<int> _preArrivalBriefedStops = <int>{};
   DateTime? _lastPreArrivalCheckAt;
   DriverRestModeState _restMode = const DriverRestModeState(active: false);
@@ -1566,7 +1567,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
 
   void _scheduleAutopilotRefresh([int seconds = 30]) {
     _autopilotTimer?.cancel();
-    if (_plate.isEmpty) return;
+    if (_plate.isEmpty || !_appInForeground) return;
     final safeSeconds = seconds.clamp(8, 120).toInt();
     _autopilotTimer = Timer(Duration(seconds: safeSeconds), () {
       if (_plate.isNotEmpty) {
@@ -3261,7 +3262,9 @@ class _DriverShellScreenState extends State<DriverShellScreen>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.hidden ||
         state == AppLifecycleState.detached) {
+      _appInForeground = false;
       _autopilotTimer?.cancel();
       _officeMessageTimer?.cancel();
       return;
@@ -3269,6 +3272,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
     if (state != AppLifecycleState.resumed || !mounted || _plate.isEmpty) {
       return;
     }
+    _appInForeground = true;
     _officeMessageTimer?.cancel();
     _officeMessageTimer = Timer.periodic(const Duration(seconds: 15), (_) {
       if (_plate.isNotEmpty) {
@@ -3884,11 +3888,19 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                 _autopilotMetric(
                   ap.isLate
                       ? _l('KÉSÉS', 'LATE', 'VERSPÄTET')
-                      : _l('PUFFER', 'BUFFER', 'PUFFER'),
+                      : ap.timeBufferMinutes! < 0
+                          ? _l('HATÁRON', 'GRACE', 'TOLERANZ')
+                          : _l('PUFFER', 'BUFFER', 'PUFFER'),
                   ap.isLate
                       ? '${ap.timeBufferMinutes!.abs()} p'
-                      : '${ap.timeBufferMinutes} p',
-                  accent: ap.isLate ? const Color(0xFFFF5C68) : _green,
+                      : ap.timeBufferMinutes! < 0
+                          ? '${ap.timeBufferMinutes!.abs()} p'
+                          : '${ap.timeBufferMinutes} p',
+                  accent: ap.isLate
+                      ? const Color(0xFFFF5C68)
+                      : ap.timeBufferMinutes! < 0
+                          ? const Color(0xFFFFC857)
+                          : _green,
                 ),
               if (ap.stopDwellMinutes != null)
                 _autopilotMetric(
