@@ -153,17 +153,19 @@ jobs:
               'minSdk = flutter.minSdkVersion',
               'minSdk = 23',
           )
-          signing='''    signingConfigs {
-        create("release") {
-            keyAlias = System.getenv("AIMS_SIGN_KEY_ALIAS")
-            keyPassword = System.getenv("AIMS_SIGN_KEY_PASSWORD")
-            storeFile = file(System.getenv("AIMS_SIGN_STORE_FILE"))
-            storePassword = System.getenv("AIMS_SIGN_STORE_PASSWORD")
-            storeType = "PKCS12"
-        }
-    }
-
-'''
+          signing='\n'.join([
+              '    signingConfigs {',
+              '        create("release") {',
+              '            keyAlias = System.getenv("AIMS_SIGN_KEY_ALIAS")',
+              '            keyPassword = System.getenv("AIMS_SIGN_KEY_PASSWORD")',
+              '            storeFile = file(System.getenv("AIMS_SIGN_STORE_FILE"))',
+              '            storePassword = System.getenv("AIMS_SIGN_STORE_PASSWORD")',
+              '            storeType = "PKCS12"',
+              '        }',
+              '    }',
+              '',
+              '',
+          ])
           if 'create("release")' not in text:
               text=text.replace('    buildTypes {',signing+'    buildTypes {',1)
           text=text.replace(
