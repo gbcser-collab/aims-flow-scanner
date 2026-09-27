@@ -13,7 +13,6 @@ required = [
     "constraints.maxWidth < 470",
     "const AimsFlowLogo(width: 60, height: 60)",
     "scale: 1.36",
-    "childAspectRatio: .90",
     "height: 38",
     "maxLines: 3",
     "FittedBox(",
@@ -22,6 +21,12 @@ required = [
 for needle in required:
     if needle not in shell:
         raise SystemExit(f"R101 guard missing: {needle}")
+
+if (
+    "childAspectRatio: .90" not in shell
+    and "childAspectRatio: singleColumn ? 1.78 : .90" not in shell
+):
+    raise SystemExit("R101 guard missing: signal tile ratio")
 
 # The old 42px header logo and one-line signal title caused the reported clipping/overflow.
 if "const AimsFlowLogo(width: 42, height: 42)" in shell:
