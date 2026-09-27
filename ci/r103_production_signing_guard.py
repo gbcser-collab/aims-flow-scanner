@@ -9,7 +9,7 @@ required = [
     'signingConfigs.getByName("release")',
     "AIMS_SIGN_CERT_SHA256",
     "Unexpected AIMS production certificate fingerprint",
-    "AIMS-Flow-R103-PRODUCTION-SIGNED",
+    "PRODUCTION-SIGNED",
 ]
 for needle in required:
     if needle not in workflow:
@@ -29,4 +29,7 @@ for forbidden in [
 if "aims-flow-release.p12" in workflow.split("path: |")[-1]:
     raise SystemExit("R103 signing guard: private keystore must never be uploaded as an artifact")
 
-print("R103 persistent production signing guard: PASS")
+if "AIMS-Flow-R103-PRODUCTION-SIGNED" not in workflow and "AIMS-Flow-R104-PRODUCTION-SIGNED" not in workflow:
+    raise SystemExit("Production signing guard missing a versioned production artifact")
+
+print("Persistent production signing guard: PASS")
