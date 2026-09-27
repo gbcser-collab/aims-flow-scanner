@@ -1280,21 +1280,71 @@ class _DriverShellScreenState extends State<DriverShellScreen>
     });
     _pushSub = _push.events.listen(_handlePush);
     _sync.addListener(_documentSyncChanged);
-    unawaited(_sync.initialize());
+    unawaited(_initializeSyncSafely());
     _trackingSub = _tracking.statusStream.listen((status) {
       if (mounted) setState(() => _trackingStatus = status);
       final position = status.lastPosition;
       if (position != null) {
-        unawaited(
-          AimsDisplayModeController.instance.updateLocation(
-            position.latitude,
-            position.longitude,
-          ),
-        );
+        unawaited(_updateDisplayLocationSafely(position.latitude, position.longitude));
       }
-      unawaited(_maybeAnnouncePreArrival(status));
+      unawaited(_maybeAnnouncePreArrivalSafely(status));
     });
-    unawaited(_initialize());
+    unawaited(_initializeSafely());
+  }
+
+  Future<void> _initializeSyncSafely() async {
+    try {
+      await _sync.initialize();
+    } catch (_) {
+      // Scanner/document sync is additive. The driver shell must remain usable.
+    }
+  }
+
+  Future<void> _updateDisplayLocationSafely(
+    double latitude,
+    double longitude,
+  ) async {
+    try {
+      await AimsDisplayModeController.instance.updateLocation(
+        latitude,
+        longitude,
+      );
+    } catch (_) {
+      // Day/night automation must never break GPS or the driver workflow.
+    }
+  }
+
+  Future<void> _maybeAnnouncePreArrivalSafely(
+    VehicleTrackingStatus status,
+  ) async {
+    try {
+      await _maybeAnnouncePreArrival(status);
+    } catch (_) {
+      // Voice guidance is best-effort; core navigation stays independent.
+    }
+  }
+
+  Future<void> _initializeSafely() async {
+    try {
+      await _initialize();
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _message = _l(
+          'A Flow részben helyreállt. Húzd le a képernyőt a frissítéshez.',
+          'Flow recovered in safe mode. Pull down to refresh.',
+          'Flow wurde im Sicherheitsmodus wiederhergestellt. Zum Aktualisieren nach unten ziehen.',
+        );
+      });
+      _snack(
+        _l(
+          'Egy háttérszolgáltatás nem indult el, de az app használható maradt.',
+          'A background service failed to start, but the app remains usable.',
+          'Ein Hintergrunddienst konnte nicht starten, die App bleibt jedoch nutzbar.',
+        ),
+      );
+    }
   }
 
   double _distanceMeters(
@@ -3307,23 +3357,32 @@ class _DriverShellScreenState extends State<DriverShellScreen>
     } catch (_) {
       // Job refresh must still run even if the tracking status is unavailable.
     }
+
+    Future<void> safe(Future<void> Function() action) async {
+      try {
+        await action();
+      } catch (_) {
+        // Resume is a recovery sweep: one failed subsystem must not stop others.
+      }
+    }
+
     if (_pendingStopActions.isNotEmpty) {
-      await _flushPendingStopActions(refreshAfter: false);
+      await safe(() => _flushPendingStopActions(refreshAfter: false));
     }
     if (_pendingSignals.isNotEmpty) {
-      await _flushPendingSignals();
+      await safe(_flushPendingSignals);
     }
     if (_pendingRegistrationPoints.isNotEmpty) {
-      await _flushPendingRegistrationPoints();
+      await safe(_flushPendingRegistrationPoints);
     }
     if (_pendingOfficeMessages.isNotEmpty) {
-      await _flushPendingOfficeMessages();
+      await safe(_flushPendingOfficeMessages);
     }
-    await _refreshJobCmrStates();
-    await _finalizeDocumentGateIfPossible();
-    await _refreshJobs(showLoading: false);
-    await _refreshRestMode(silent: true);
-    await _refreshOfficeMessages(silent: true);
+    await safe(_refreshJobCmrStates);
+    await safe(_finalizeDocumentGateIfPossible);
+    await safe(() => _refreshJobs(showLoading: false));
+    await safe(() => _refreshRestMode(silent: true));
+    await safe(() => _refreshOfficeMessages(silent: true));
   }
 
   @override
@@ -3451,257 +3510,136 @@ class _DriverShellScreenState extends State<DriverShellScreen>
         ),
       );
 
-  Widget _header() => Column(
+  Widget _headerIdentity() => Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Row(
-            children: [
-              const AimsFlowLogo(width: 42, height: 42),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Text(
-                      'AIMS FLOW',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: _blue,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 1.4,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      [
-                        _l('SOFŐR', 'DRIVER', 'FAHRER'),
-                        if (_plate.isNotEmpty) _displayPlate(_plate),
-                        if (_plate.isEmpty && _driverName.isNotEmpty) _driverName,
-                      ].join(' • '),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Colors.white70,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: .6,
-                      ),
-                    ),
-                  ],
-                ),
+          SizedBox(
+            width: 60,
+            height: 60,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(14),
+              child: Transform.scale(
+                scale: 1.36,
+                child: const AimsFlowLogo(width: 60, height: 60),
               ),
-              const SizedBox(width: 8),
-              _status(
-                _trackingStatus?.running == true
-                    ? _l('GPS AKTÍV', 'GPS ACTIVE', 'GPS AKTIV')
-                    : 'GPS',
-                _trackingStatus?.running == true ? _green : Colors.white38,
-              ),
-              const SizedBox(width: 2),
-              IconButton(
-                tooltip: _restMode.active
-                    ? _l('Pihenőmód aktív', 'Rest mode active', 'Ruhemodus aktiv')
-                    : _l('Pihenőmód', 'Rest mode', 'Ruhemodus'),
-                onPressed: _restModeBusy ? null : _showRestModeSheet,
-                icon: Icon(
-                  _restMode.active
-                      ? Icons.bedtime_rounded
-                      : Icons.bedtime_outlined,
-                  color: _restMode.active
-                      ? _green
-                      : Colors.white54,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Flexible(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'AIMS FLOW',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: _blue,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 1.4,
+                  ),
                 ),
-              ),
-              const SizedBox(width: 2),
-              IconButton(
-                tooltip: _l(
-                  'Night Driver Mode: ${AimsDisplayModeController.instance.label(AimsLocaleController.instance.languageCode)}',
-                  'Night Driver Mode: ${AimsDisplayModeController.instance.label(AimsLocaleController.instance.languageCode)}',
-                  'Night Driver Mode: ${AimsDisplayModeController.instance.label(AimsLocaleController.instance.languageCode)}',
+                const SizedBox(height: 3),
+                Text(
+                  [
+                    _l('SOFŐR', 'DRIVER', 'FAHRER'),
+                    if (_plate.isNotEmpty) _displayPlate(_plate),
+                    if (_plate.isEmpty && _driverName.isNotEmpty) _driverName,
+                  ].join(' • '),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white70,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: .45,
+                  ),
                 ),
-                onPressed: () => unawaited(
-                  AimsDisplayModeController.instance.cycleMode(),
-                ),
-                icon: Icon(
-                  switch (AimsDisplayModeController.instance.mode) {
-                    AimsDisplayMode.auto => Icons.brightness_auto_rounded,
-                    AimsDisplayMode.light => Icons.light_mode_rounded,
-                    AimsDisplayMode.dark => Icons.dark_mode_rounded,
-                  },
-                  color: AimsDisplayModeController.instance.isDark
-                      ? const Color(0xFF8BD8FF)
-                      : const Color(0xFFFFC857),
-                ),
-              ),
-              const SizedBox(width: 2),
-              const AimsLanguageSelector(compact: true),
-            ],
+              ],
+            ),
           ),
         ],
       );
 
-  String _autopilotActionLabel(String code) {
-    switch (code) {
-      case 'open_job':
-        return _l('FUVAR MEGNYITÁSA', 'OPEN JOB', 'AUFTRAG ÖFFNEN');
-      case 'accept_job':
-        return _l('FUVAR ELFOGADÁSA', 'ACCEPT JOB', 'AUFTRAG ANNEHMEN');
-      case 'navigate_next':
-        return _l('INDULJ A KÖVETKEZŐ STOPHOZ', 'GO TO NEXT STOP', 'ZUM NÄCHSTEN STOPP');
-      case 'finish_pickup':
-        return _l('FELRAKÁS BEFEJEZÉSE', 'FINISH PICKUP', 'BELADUNG ABSCHLIESSEN');
-      case 'finish_delivery':
-        return _l('LERAKÁS BEFEJEZÉSE', 'FINISH DELIVERY', 'ENTLADUNG ABSCHLIESSEN');
-      case 'scan_documents':
-        return _l('CMR / POD SCANNELÉS', 'SCAN CMR / POD', 'CMR / POD SCANNEN');
-      case 'refresh_job':
-        return _l('FUVAR FRISSÍTÉSE', 'REFRESH JOB', 'AUFTRAG AKTUALISIEREN');
-      default:
-        return _l('KÉSZENLÉT', 'STANDBY', 'BEREITSCHAFT');
-    }
-  }
-
-  String _autopilotSecondaryLabel(String code) {
-    switch (code) {
-      case 'signal_delay':
-        return _l('JELZEM A KÉSÉST', 'REPORT DELAY', 'VERSPÄTUNG MELDEN');
-      case 'signal_waiting':
-        return _l('JELZEM A VÁRAKOZÁST', 'REPORT WAITING', 'WARTEZEIT MELDEN');
-      case 'message_office':
-        return _l('ÍROK AZ IRODÁNAK', 'MESSAGE OFFICE', 'DISPOSITION SCHREIBEN');
-      case 'quick_signal':
-        return _l('GYORS JELZÉS', 'QUICK SIGNAL', 'SCHNELLMELDUNG');
-      default:
-        return '';
-    }
-  }
-
-  String _autopilotReasonLabel(String code) {
-    switch (code) {
-      case 'job_unseen':
-        return _l('Fuvar még nincs megnyitva', 'Job not opened yet', 'Auftrag noch nicht geöffnet');
-      case 'job_unaccepted':
-        return _l('Fuvar még nincs elfogadva', 'Job not accepted yet', 'Auftrag noch nicht angenommen');
-      case 'gps_missing':
-        return _l('Nincs GPS-adat', 'No GPS data', 'Keine GPS-Daten');
-      case 'gps_stale':
-        return _l('Régi GPS-adat', 'Stale GPS data', 'Veraltete GPS-Daten');
-      case 'gps_low_accuracy':
-        return _l('Pontatlan GPS', 'Low GPS accuracy', 'Ungenaues GPS');
-      case 'dwell_15':
-        return _l('15+ perc várakozás', '15+ min waiting', '15+ Min. Wartezeit');
-      case 'dwell_30':
-        return _l('30+ perc várakozás', '30+ min waiting', '30+ Min. Wartezeit');
-      case 'dwell_60':
-        return _l('60+ perc várakozás', '60+ min waiting', '60+ Min. Wartezeit');
-      case 'late':
-        return _l('Késési kockázat', 'Delay risk', 'Verspätungsrisiko');
-      case 'time_buffer_low':
-        return _l('Kevés időpuffer', 'Low time buffer', 'Kleiner Zeitpuffer');
-      case 'stop_sequence_anomaly':
-        return _l('Stopsorrend eltérés', 'Stop sequence anomaly', 'Abweichende Stopp-Reihenfolge');
-      case 'next_stop_no_coordinates':
-        return _l('Hiányzó stop-koordináta', 'Missing stop coordinates', 'Fehlende Stopp-Koordinaten');
-      case 'schedule_missing':
-        return _l('Nincs időablak', 'No time window', 'Kein Zeitfenster');
-      case 'documents_pending':
-        return _l('Dokumentum szükséges', 'Document required', 'Dokument erforderlich');
-      case 'long_stationary':
-        return _l('Hosszú állás', 'Long stationary period', 'Langer Stillstand');
-      default:
-        return code.replaceAll('_', ' ');
-    }
-  }
-
-  Future<void> _runAutopilotAction() async {
-    final ap = _autopilot;
-    if (ap == null || _actionBusy) return;
-    switch (ap.actionCode) {
-      case 'open_job':
-        if (ap.jobId != null) _showJobDialog(jobId: ap.jobId!);
-        return;
-      case 'accept_job':
-        if (ap.jobId != null) await _acceptAndNavigate(ap.jobId!);
-        return;
-      case 'navigate_next':
-        await _openMaps();
-        return;
-      case 'finish_pickup':
-      case 'finish_delivery':
-        await _runPrimaryStopAction();
-        return;
-      case 'scan_documents':
-        if (mounted) setState(() => _index = 3);
-        await _openCmrScanner();
-        return;
-      case 'refresh_job':
-        await _refreshJobs();
-        return;
-      default:
-        return;
-    }
-  }
-
-  Future<void> _runAutopilotSecondaryAction() async {
-    final ap = _autopilot;
-    if (ap == null || _actionBusy) return;
-    switch (ap.secondaryActionCode) {
-      case 'signal_delay':
-        await _sendSignal('Késés');
-        return;
-      case 'signal_waiting':
-        await _sendSignal('Várakozás');
-        return;
-      case 'message_office':
-      case 'quick_signal':
-        if (mounted) setState(() => _index = 2);
-        return;
-      default:
-        return;
-    }
-  }
-
-  Widget _autopilotMetric(
-    String label,
-    String value, {
-    Color? accent,
-  }) {
-    final color = accent ?? Colors.white70;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      decoration: BoxDecoration(
-        color: const Color(0xFF06131F),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withValues(alpha: .28)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _headerControls() => Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Text(
-            label,
-            style: const TextStyle(
-              color: Colors.white38,
-              fontSize: 8,
-              fontWeight: FontWeight.w900,
-              letterSpacing: .7,
+          _status(
+            _trackingStatus?.running == true
+                ? _l('GPS AKTÍV', 'GPS ACTIVE', 'GPS AKTIV')
+                : 'GPS',
+            _trackingStatus?.running == true ? _green : Colors.white38,
+          ),
+          const SizedBox(width: 2),
+          IconButton(
+            tooltip: _restMode.active
+                ? _l('Pihenőmód aktív', 'Rest mode active', 'Ruhemodus aktiv')
+                : _l('Pihenőmód', 'Rest mode', 'Ruhemodus'),
+            onPressed: _restModeBusy ? null : _showRestModeSheet,
+            visualDensity: VisualDensity.compact,
+            icon: Icon(
+              _restMode.active
+                  ? Icons.bedtime_rounded
+                  : Icons.bedtime_outlined,
+              color: _restMode.active ? _green : Colors.white54,
             ),
           ),
-          const SizedBox(height: 2),
-          Text(
-            value,
-            style: TextStyle(
-              color: color,
-              fontSize: 12,
-              fontWeight: FontWeight.w900,
+          IconButton(
+            tooltip: _l(
+              'Night Driver Mode: ${AimsDisplayModeController.instance.label(AimsLocaleController.instance.languageCode)}',
+              'Night Driver Mode: ${AimsDisplayModeController.instance.label(AimsLocaleController.instance.languageCode)}',
+              'Night Driver Mode: ${AimsDisplayModeController.instance.label(AimsLocaleController.instance.languageCode)}',
+            ),
+            onPressed: () => unawaited(
+              AimsDisplayModeController.instance.cycleMode(),
+            ),
+            visualDensity: VisualDensity.compact,
+            icon: Icon(
+              switch (AimsDisplayModeController.instance.mode) {
+                AimsDisplayMode.auto => Icons.brightness_auto_rounded,
+                AimsDisplayMode.light => Icons.light_mode_rounded,
+                AimsDisplayMode.dark => Icons.dark_mode_rounded,
+              },
+              color: AimsDisplayModeController.instance.isDark
+                  ? const Color(0xFF8BD8FF)
+                  : const Color(0xFFFFC857),
             ),
           ),
+          const AimsLanguageSelector(compact: true),
         ],
-      ),
-    );
-  }
+      );
+
+  Widget _header() => LayoutBuilder(
+        builder: (context, constraints) {
+          final compact = constraints.maxWidth < 470;
+          if (!compact) {
+            return Row(
+              children: [
+                Expanded(child: _headerIdentity()),
+                const SizedBox(width: 12),
+                _headerControls(),
+              ],
+            );
+          }
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _headerIdentity(),
+              const SizedBox(height: 6),
+              Align(
+                alignment: Alignment.centerRight,
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerRight,
+                  child: _headerControls(),
+                ),
+              ),
+            ],
+          );
+        },
+      );
 
   Widget _autopilotCard() {
     final ap = _autopilot;
@@ -5062,7 +5000,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
           physics: const NeverScrollableScrollPhysics(),
           mainAxisSpacing: 12,
           crossAxisSpacing: 12,
-          childAspectRatio: 1.02,
+          childAspectRatio: .90,
           children: [
             _signal(
               Icons.schedule_rounded,
@@ -5847,52 +5785,69 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                         ],
                       ),
                       const Spacer(),
-                      Text(
-                        title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: .1,
-                        ),
-                      ),
-                      const SizedBox(height: 5),
-                      Text(
-                        detail,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Colors.white60,
-                          fontSize: 11,
-                          height: 1.25,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 9),
-                      Row(
-                        children: [
-                          Icon(
-                            Icons.touch_app_rounded,
-                            size: 13,
-                            color: accent.withValues(alpha: .82),
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            _l(
-                              'KOPPINTS A KÜLDÉSHEZ',
-                              'TAP TO SEND',
-                              'ZUM SENDEN TIPPEN',
-                            ),
-                            style: TextStyle(
-                              color: accent.withValues(alpha: .90),
-                              fontSize: 9,
+                      SizedBox(
+                        height: 38,
+                        child: Align(
+                          alignment: Alignment.bottomLeft,
+                          child: Text(
+                            title,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 15,
+                              height: 1.08,
                               fontWeight: FontWeight.w900,
-                              letterSpacing: .55,
+                              letterSpacing: .05,
                             ),
                           ),
-                        ],
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Expanded(
+                        child: Align(
+                          alignment: Alignment.topLeft,
+                          child: Text(
+                            detail,
+                            maxLines: 3,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Colors.white60,
+                              fontSize: 10.5,
+                              height: 1.22,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerLeft,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.touch_app_rounded,
+                              size: 13,
+                              color: accent.withValues(alpha: .82),
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              _l(
+                                'KOPPINTS A KÜLDÉSHEZ',
+                                'TAP TO SEND',
+                                'ZUM SENDEN TIPPEN',
+                              ),
+                              style: TextStyle(
+                                color: accent.withValues(alpha: .90),
+                                fontSize: 8.5,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: .35,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ],
                   ),
