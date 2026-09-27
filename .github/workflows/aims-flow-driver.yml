@@ -2,7 +2,7 @@ name: Build AIMS Flow Driver Android
 
 on:
   push:
-    branches: [aims-flow-driver-v1, aims-flow-driver-v1-r87-recovery, aims-flow-driver-v1-r88-fixes, aims-flow-r94-full-system-hardening, aims-flow-r95-autopilot-v3, aims-flow-r100-ui-message-stability, aims-flow-r101-runtime-ui-hardening, aims-flow-r102-driver-first-stability]
+    branches: [aims-flow-driver-v1, aims-flow-driver-v1-r87-recovery, aims-flow-driver-v1-r88-fixes, aims-flow-r94-full-system-hardening, aims-flow-r95-autopilot-v3, aims-flow-r100-ui-message-stability, aims-flow-r101-runtime-ui-hardening, aims-flow-r102-driver-first-stability, aims-flow-r103-production-signing]
     paths:
       - 'lib/**'
       - 'test/**'
@@ -55,6 +55,18 @@ jobs:
           rm -rf /tmp/aims_template
           flutter create --platforms=android --org hu.logisticaims --project-name aims_flow_scanner /tmp/aims_template
           cp -R /tmp/aims_template/android ./android
+
+      - name: Generate protected production signing key
+        shell: bash
+        run: |
+          set -euo pipefail
+          PASS="$(openssl rand -hex 32)"
+          echo "::add-mask::$PASS"
+          echo "AIMS_SIGN_STORE_PASSWORD=$PASS" >> "$GITHUB_ENV"
+          echo "AIMS_SIGN_KEY_PASSWORD=$PASS" >> "$GITHUB_ENV"
+          echo "AIMS_SIGN_KEY_ALIAS=aimsflow" >> "$GITHUB_ENV"
+          echo "AIMS_SIGN_STORE_FILE=aims-flow-release.p12" >> "$GITHUB_ENV"
+          keytool -genkeypair -storetype PKCS12 -keystore android/app/aims-flow-release.p12 -storepass "$PASS" -keypass "$PASS" -alias aimsflow -keyalg RSA -keysize 4096 -validity 10000 -dname "CN=AIMS Flow, OU=Software, O=Logistic-AIMS Kft, C=HU"
 
       - name: Configure Android for driver mode
         run: |
@@ -141,16 +153,36 @@ jobs:
               'minSdk = flutter.minSdkVersion',
               'minSdk = 23',
           )
+          signing='''    signingConfigs {
+        create("release") {
+            keyAlias = System.getenv("AIMS_SIGN_KEY_ALIAS")
+            keyPassword = System.getenv("AIMS_SIGN_KEY_PASSWORD")
+            storeFile = file(System.getenv("AIMS_SIGN_STORE_FILE"))
+            storePassword = System.getenv("AIMS_SIGN_STORE_PASSWORD")
+            storeType = "PKCS12"
+        }
+    }
+
+'''
+          if 'create("release")' not in text:
+              text=text.replace('    buildTypes {',signing+'    buildTypes {',1)
+          text=text.replace(
+              'signingConfig = signingConfigs.getByName("debug")',
+              'signingConfig = signingConfigs.getByName("release")',
+              1,
+          )
           # ML Kit's text plugin references optional CJK/Devanagari classes
           # that are not bundled because Flow uses Latin OCR. Keep release
           # AOT optimization, but disable R8 shrinking so those optional
           # references cannot break the installer build.
           if 'isMinifyEnabled = false' not in text:
               text=text.replace(
-                  'signingConfig = signingConfigs.getByName("debug")',
-                  'signingConfig = signingConfigs.getByName("debug")\n            isMinifyEnabled = false\n            isShrinkResources = false',
+                  'signingConfig = signingConfigs.getByName("release")',
+                  'signingConfig = signingConfigs.getByName("release")\n            isMinifyEnabled = false\n            isShrinkResources = false',
                   1,
               )
+          if 'signingConfigs.getByName("debug")' in text:
+              raise SystemExit('Debug signing still present in release build')
           if 'isCoreLibraryDesugaringEnabled = true' not in text:
               text=text.replace(
                   'compileOptions {',
@@ -212,20 +244,51 @@ jobs:
             --dart-define=AIMS_FIREBASE_ANDROID_APP_ID="$AIMS_FIREBASE_ANDROID_APP_ID" \
             --dart-define=AIMS_FIREBASE_STORAGE_BUCKET="$AIMS_FIREBASE_STORAGE_BUCKET"
 
-      - name: APK sanity check
+      - name: Verify production certificate and prepare protected owner backup
+        shell: bash
         run: |
+          set -euo pipefail
           test -s build/app/outputs/flutter-apk/app-release.apk
           unzip -t build/app/outputs/flutter-apk/app-release.apk > /tmp/apk-test.txt
-          tail -5 /tmp/apk-test.txt
-          cp build/app/outputs/flutter-apk/app-release.apk AIMS-Flow-R102.apk
-          sha256sum AIMS-Flow-R102.apk | tee AIMS-Flow-R102.sha256
-          ls -lh AIMS-Flow-R102.apk
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)"
+          test -x "$APKSIGNER"
+          "$APKSIGNER" verify --verbose --print-certs build/app/outputs/flutter-apk/app-release.apk | tee signing-certificate.txt
+          if grep -qi 'Android Debug' signing-certificate.txt; then
+            echo "Debug certificate detected in production APK" >&2
+            exit 1
+          fi
+          cp build/app/outputs/flutter-apk/app-release.apk AIMS-Flow-R103.apk
+          sha256sum AIMS-Flow-R103.apk | tee AIMS-Flow-R103.sha256
+          cat > /tmp/aims-wrap-public.pem <<'EOF'
+          -----BEGIN PUBLIC KEY-----
+          MIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEAx9uHrFzj12r513/ul+27
+          OS8f3lbZYUJSlrQX/oRkCUw/LJlChf3KH+ABEo6Gfo6KeKxwHulFvBXkVgRSh5VR
+          PzTNCXZV88ku6tH7tAs/ZWo5+fRKrOIByo9eO/Qq6Jt24vwziAVQaoUg+oHrZrBp
+          fuqqFgz7yK65PO67U0pMqmSGRrg0ooquTmEQgbFRDG053Gzk/UlhE2Q0zSiHu4Xf
+          r4hxDg0+kMezDoYL6vHSwdf1r4eyt2A0awxbp/7u8B7+fEI30Uqmxwb+OhzWUkX5
+          NiCjqx6V8S4B0hGyFmPP7wnHGsvx9tlmXK+Vc5uaY3N+vxPKc2YtRj0NkI5uetQJ
+          XO9FYnFyTjZvnzBeKJqszJYe2uwVutEduc1IqJsaMunWPt2hbL7y6rnN2ENV8vb+
+          EzoOIobiHei2eCA0mSTIOO0D77jWNXIekCgbcfEHgYZB2xmoKELaOrxKcyIZ727U
+          7aSzRDX9awl8gKsBaOQ2jsff5dwm657B5WEcqMBaeR35kr3Oa//tkLpM3B5raBx3
+          rE2xuSDxN7bcyxnR957Igc6aEOlNhhcv7bXSUJYCcb95RVNelmLac/GQfW/669Fo
+          gfrWC6DXCf38Hu6qlNMFKriTD6XgZynwJ5EQgzRs6abY2gTltZRjByFIG+2p+1lL
+          VhKuUnzG1woqHtGTIzhXGrECAwEAAQ==
+          -----END PUBLIC KEY-----
+          EOF
+          sed -i 's/^          //' /tmp/aims-wrap-public.pem
+          printf '%s' "$AIMS_SIGN_STORE_PASSWORD" | openssl pkeyutl -encrypt -pubin -inkey /tmp/aims-wrap-public.pem -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:sha256 -out signing-password.oaep
+          cp android/app/aims-flow-release.p12 aims-flow-release.p12
+          ls -lh AIMS-Flow-R103.apk aims-flow-release.p12 signing-password.oaep
 
-      - name: Upload APK
+      - name: Upload production-signed APK and encrypted signing backup
         uses: actions/upload-artifact@v4
         with:
-          name: AIMS-Flow-R102-ANDROID
+          name: AIMS-Flow-R103-PRODUCTION-SIGNED
           path: |
-            AIMS-Flow-R102.apk
-            AIMS-Flow-R102.sha256
+            AIMS-Flow-R103.apk
+            AIMS-Flow-R103.sha256
+            signing-certificate.txt
+            aims-flow-release.p12
+            signing-password.oaep
           if-no-files-found: error
+          retention-days: 1
