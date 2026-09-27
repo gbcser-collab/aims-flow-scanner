@@ -1,0 +1,261 @@
+name: Build AIMS Flow R103 Production Signed
+
+on:
+  push:
+    branches: [aims-flow-r103-production-signing]
+    paths:
+      - 'lib/**'
+      - 'test/**'
+      - 'pubspec.yaml'
+      - 'native/**'
+      - '.github/workflows/r103-production-signing.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: aims-flow-r103-production-signing
+  cancel-in-progress: true
+
+env:
+  AIMS_FIREBASE_API_KEY_FALLBACK: AIzaSyAAi61i7YCVXJ7Lh5QY0cYnZ42LISC-vNQ
+  AIMS_FIREBASE_PROJECT_ID_FALLBACK: aims-flow
+  AIMS_FIREBASE_MESSAGING_SENDER_ID_FALLBACK: '271406385287'
+  AIMS_FIREBASE_ANDROID_APP_ID_FALLBACK: '1:271406385287:android:83e6c1cdc361ebfe289022'
+  AIMS_FIREBASE_STORAGE_BUCKET_FALLBACK: aims-flow.firebasestorage.app
+
+jobs:
+  build-production-signed:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Generate Android platform
+        run: |
+          rm -rf /tmp/aims_template
+          flutter create --platforms=android --org hu.logisticaims --project-name aims_flow_scanner /tmp/aims_template
+          cp -R /tmp/aims_template/android ./android
+
+      - name: Generate protected production signing key
+        shell: bash
+        run: |
+          set -euo pipefail
+          PASS="$(openssl rand -hex 32)"
+          echo "::add-mask::$PASS"
+          echo "AIMS_SIGN_STORE_PASSWORD=$PASS" >> "$GITHUB_ENV"
+          echo "AIMS_SIGN_KEY_PASSWORD=$PASS" >> "$GITHUB_ENV"
+          echo "AIMS_SIGN_KEY_ALIAS=aimsflow" >> "$GITHUB_ENV"
+          echo "AIMS_SIGN_STORE_FILE=aims-flow-release.p12" >> "$GITHUB_ENV"
+          keytool -genkeypair             -storetype PKCS12             -keystore android/app/aims-flow-release.p12             -storepass "$PASS"             -keypass "$PASS"             -alias aimsflow             -keyalg RSA             -keysize 4096             -validity 10000             -dname "CN=AIMS Flow, OU=Software, O=Logistic-AIMS Kft, C=HU"
+
+      - name: Configure Android for production signing
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import shutil
+
+          p=Path('android/app/src/main/AndroidManifest.xml')
+          s=p.read_text()
+          permissions=[
+            'android.permission.CAMERA',
+            'android.permission.INTERNET',
+            'android.permission.ACCESS_COARSE_LOCATION',
+            'android.permission.ACCESS_FINE_LOCATION',
+            'android.permission.ACCESS_BACKGROUND_LOCATION',
+            'android.permission.FOREGROUND_SERVICE',
+            'android.permission.FOREGROUND_SERVICE_LOCATION',
+            'android.permission.FOREGROUND_SERVICE_MICROPHONE',
+            'android.permission.RECORD_AUDIO',
+            'android.permission.WAKE_LOCK',
+            'android.permission.USE_BIOMETRIC',
+            'android.permission.POST_NOTIFICATIONS',
+            'android.permission.VIBRATE',
+          ]
+          permission_block='\n'.join(
+              f'    <uses-permission android:name="{name}" />'
+              for name in permissions
+          )
+          queries='\n'.join([
+              '    <queries>',
+              '        <intent>',
+              '            <action android:name="android.speech.RecognitionService" />',
+              '        </intent>',
+              '        <intent>',
+              '            <action android:name="android.intent.action.TTS_SERVICE" />',
+              '        </intent>',
+              '    </queries>',
+          ])
+          s=s.replace('<application',permission_block+'\n'+queries+'\n    <application',1)
+          s=s.replace('android:label="aims_flow_scanner"','android:label="AIMS Flow"')
+
+          assist='\n'.join([
+              '            <intent-filter>',
+              '                <action android:name="android.intent.action.ASSIST" />',
+              '                <category android:name="android.intent.category.DEFAULT" />',
+              '            </intent-filter>',
+              '',
+          ])
+          activity_end=s.find('</activity>')
+          if activity_end < 0:
+              raise SystemExit('MainActivity closing tag not found')
+          s=s[:activity_end]+assist+s[activity_end:]
+
+          service='\n'.join([
+              '        <service',
+              '            android:name=".AimsHandsFreeService"',
+              '            android:enabled="true"',
+              '            android:exported="false"',
+              '            android:foregroundServiceType="microphone" />',
+              '',
+          ])
+          s=s.replace('</application>',service+'    </application>',1)
+          p.write_text(s)
+
+          native=Path('native/android')
+          target=Path('android/app/src/main/kotlin/hu/logisticaims/aims_flow_scanner')
+          target.mkdir(parents=True,exist_ok=True)
+          shutil.copy2(native/'MainActivity.kt',target/'MainActivity.kt')
+          shutil.copy2(native/'AimsHandsFreeService.kt',target/'AimsHandsFreeService.kt')
+
+          g=Path('android/app/build.gradle.kts')
+          text=g.read_text()
+          text=text.replace('minSdk = flutter.minSdkVersion','minSdk = 23')
+          signing='''    signingConfigs {
+        create("release") {
+            keyAlias = System.getenv("AIMS_SIGN_KEY_ALIAS")
+            keyPassword = System.getenv("AIMS_SIGN_KEY_PASSWORD")
+            storeFile = file(System.getenv("AIMS_SIGN_STORE_FILE"))
+            storePassword = System.getenv("AIMS_SIGN_STORE_PASSWORD")
+            storeType = "PKCS12"
+        }
+    }
+
+'''
+          if 'create("release")' not in text:
+              text=text.replace('    buildTypes {',signing+'    buildTypes {',1)
+          text=text.replace(
+              'signingConfig = signingConfigs.getByName("debug")',
+              'signingConfig = signingConfigs.getByName("release")',
+              1,
+          )
+          if 'isMinifyEnabled = false' not in text:
+              text=text.replace(
+                  'signingConfig = signingConfigs.getByName("release")',
+                  'signingConfig = signingConfigs.getByName("release")\n            isMinifyEnabled = false\n            isShrinkResources = false',
+                  1,
+              )
+          if 'isCoreLibraryDesugaringEnabled = true' not in text:
+              text=text.replace(
+                  'compileOptions {',
+                  'compileOptions {\n        isCoreLibraryDesugaringEnabled = true',
+                  1,
+              )
+          if 'coreLibraryDesugaring(' not in text:
+              if 'dependencies {' in text:
+                  text=text.replace(
+                      'dependencies {',
+                      'dependencies {\n    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")',
+                      1,
+                  )
+              else:
+                  text += '\n\ndependencies {\n    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")\n}\n'
+          if 'getByName("debug")' in text:
+              raise SystemExit('Debug signing still present in release build')
+          g.write_text(text)
+          PY
+
+      - name: Install AIMS Flow notification voices
+        run: |
+          mkdir -p android/app/src/main/res/raw
+          base64 -d native/android/raw/aims_new_job.mp3.b64 > android/app/src/main/res/raw/aims_new_job.mp3
+          base64 -d native/android/raw/aims_new_message.mp3.b64 > android/app/src/main/res/raw/aims_new_message.mp3
+          test -s android/app/src/main/res/raw/aims_new_job.mp3
+          test -s android/app/src/main/res/raw/aims_new_message.mp3
+
+      - name: Dependencies
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Unit tests
+        run: flutter test
+
+      - name: Build production release APK
+        env:
+          AIMS_TRACKING_TOKEN: ${{ secrets.AIMS_TRACKING_TOKEN }}
+          AIMS_FIREBASE_API_KEY: ${{ secrets.AIMS_FIREBASE_API_KEY }}
+          AIMS_FIREBASE_PROJECT_ID: ${{ secrets.AIMS_FIREBASE_PROJECT_ID }}
+          AIMS_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.AIMS_FIREBASE_MESSAGING_SENDER_ID }}
+          AIMS_FIREBASE_ANDROID_APP_ID: ${{ secrets.AIMS_FIREBASE_ANDROID_APP_ID }}
+          AIMS_FIREBASE_STORAGE_BUCKET: ${{ secrets.AIMS_FIREBASE_STORAGE_BUCKET }}
+        run: |
+          set -euo pipefail
+          test -n "$AIMS_TRACKING_TOKEN"
+          AIMS_FIREBASE_API_KEY="${AIMS_FIREBASE_API_KEY:-$AIMS_FIREBASE_API_KEY_FALLBACK}"
+          AIMS_FIREBASE_PROJECT_ID="${AIMS_FIREBASE_PROJECT_ID:-$AIMS_FIREBASE_PROJECT_ID_FALLBACK}"
+          AIMS_FIREBASE_MESSAGING_SENDER_ID="${AIMS_FIREBASE_MESSAGING_SENDER_ID:-$AIMS_FIREBASE_MESSAGING_SENDER_ID_FALLBACK}"
+          AIMS_FIREBASE_ANDROID_APP_ID="${AIMS_FIREBASE_ANDROID_APP_ID:-$AIMS_FIREBASE_ANDROID_APP_ID_FALLBACK}"
+          AIMS_FIREBASE_STORAGE_BUCKET="${AIMS_FIREBASE_STORAGE_BUCKET:-$AIMS_FIREBASE_STORAGE_BUCKET_FALLBACK}"
+          flutter build apk --release             --dart-define=AIMS_TRACKING_BASE_URL=https://logistic-aims.hu/api/aims-tracking             --dart-define=AIMS_TRACKING_TOKEN="$AIMS_TRACKING_TOKEN"             --dart-define=AIMS_FIREBASE_API_KEY="$AIMS_FIREBASE_API_KEY"             --dart-define=AIMS_FIREBASE_PROJECT_ID="$AIMS_FIREBASE_PROJECT_ID"             --dart-define=AIMS_FIREBASE_MESSAGING_SENDER_ID="$AIMS_FIREBASE_MESSAGING_SENDER_ID"             --dart-define=AIMS_FIREBASE_ANDROID_APP_ID="$AIMS_FIREBASE_ANDROID_APP_ID"             --dart-define=AIMS_FIREBASE_STORAGE_BUCKET="$AIMS_FIREBASE_STORAGE_BUCKET"
+
+      - name: Verify production certificate
+        shell: bash
+        run: |
+          set -euo pipefail
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)"
+          test -x "$APKSIGNER"
+          "$APKSIGNER" verify --verbose --print-certs build/app/outputs/flutter-apk/app-release.apk | tee signing-certificate.txt
+          if grep -qi 'Android Debug' signing-certificate.txt; then
+            echo "Debug certificate detected in production APK" >&2
+            exit 1
+          fi
+          cp build/app/outputs/flutter-apk/app-release.apk AIMS-Flow-R103.apk
+          sha256sum AIMS-Flow-R103.apk | tee AIMS-Flow-R103.sha256
+
+      - name: Wrap signing password for owner backup
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > /tmp/aims-wrap-public.pem <<'EOF'
+-----BEGIN PUBLIC KEY-----
+MIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEAx9uHrFzj12r513/ul+27
+OS8f3lbZYUJSlrQX/oRkCUw/LJlChf3KH+ABEo6Gfo6KeKxwHulFvBXkVgRSh5VR
+PzTNCXZV88ku6tH7tAs/ZWo5+fRKrOIByo9eO/Qq6Jt24vwziAVQaoUg+oHrZrBp
+fuqqFgz7yK65PO67U0pMqmSGRrg0ooquTmEQgbFRDG053Gzk/UlhE2Q0zSiHu4Xf
+r4hxDg0+kMezDoYL6vHSwdf1r4eyt2A0awxbp/7u8B7+fEI30Uqmxwb+OhzWUkX5
+NiCjqx6V8S4B0hGyFmPP7wnHGsvx9tlmXK+Vc5uaY3N+vxPKc2YtRj0NkI5uetQJ
+XO9FYnFyTjZvnzBeKJqszJYe2uwVutEduc1IqJsaMunWPt2hbL7y6rnN2ENV8vb+
+EzoOIobiHei2eCA0mSTIOO0D77jWNXIekCgbcfEHgYZB2xmoKELaOrxKcyIZ727U
+7aSzRDX9awl8gKsBaOQ2jsff5dwm657B5WEcqMBaeR35kr3Oa//tkLpM3B5raBx3
+rE2xuSDxN7bcyxnR957Igc6aEOlNhhcv7bXSUJYCcb95RVNelmLac/GQfW/669Fo
+gfrWC6DXCf38Hu6qlNMFKriTD6XgZynwJ5EQgzRs6abY2gTltZRjByFIG+2p+1lL
+VhKuUnzG1woqHtGTIzhXGrECAwEAAQ==
+-----END PUBLIC KEY-----
+EOF
+          printf '%s' "$AIMS_SIGN_STORE_PASSWORD" |             openssl pkeyutl -encrypt -pubin               -inkey /tmp/aims-wrap-public.pem               -pkeyopt rsa_padding_mode:oaep               -pkeyopt rsa_oaep_md:sha256               -out signing-password.oaep
+          cp android/app/aims-flow-release.p12 aims-flow-release.p12
+
+      - name: Upload signed APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: AIMS-Flow-R103-PRODUCTION-SIGNED
+          path: |
+            AIMS-Flow-R103.apk
+            AIMS-Flow-R103.sha256
+            signing-certificate.txt
+            aims-flow-release.p12
+            signing-password.oaep
+          if-no-files-found: error
+          retention-days: 1
