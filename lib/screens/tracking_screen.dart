@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../models/tracking_models.dart';
 import '../services/tracking_runtime.dart';
 
 class TrackingScreen extends StatefulWidget {
