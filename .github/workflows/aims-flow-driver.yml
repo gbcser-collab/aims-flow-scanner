@@ -2,7 +2,7 @@ name: Build AIMS Flow Driver Android
 
 on:
   push:
-    branches: [aims-flow-driver-v1, aims-flow-driver-v1-r87-recovery, aims-flow-driver-v1-r88-fixes, aims-flow-r94-full-system-hardening, aims-flow-r95-autopilot-v3, aims-flow-r100-ui-message-stability]
+    branches: [aims-flow-driver-v1, aims-flow-driver-v1-r87-recovery, aims-flow-driver-v1-r88-fixes, aims-flow-r94-full-system-hardening, aims-flow-r95-autopilot-v3, aims-flow-r100-ui-message-stability, aims-flow-r101-runtime-ui-hardening]
     paths:
       - 'lib/**'
       - 'test/**'
@@ -217,15 +217,15 @@ jobs:
           test -s build/app/outputs/flutter-apk/app-release.apk
           unzip -t build/app/outputs/flutter-apk/app-release.apk > /tmp/apk-test.txt
           tail -5 /tmp/apk-test.txt
-          cp build/app/outputs/flutter-apk/app-release.apk AIMS-Flow-R100.apk
-          sha256sum AIMS-Flow-R100.apk | tee AIMS-Flow-R100.sha256
-          ls -lh AIMS-Flow-R100.apk
+          cp build/app/outputs/flutter-apk/app-release.apk AIMS-Flow-R101.apk
+          sha256sum AIMS-Flow-R101.apk | tee AIMS-Flow-R101.sha256
+          ls -lh AIMS-Flow-R101.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: AIMS-Flow-R100-ANDROID
+          name: AIMS-Flow-R101-ANDROID
           path: |
-            AIMS-Flow-R100.apk
-            AIMS-Flow-R100.sha256
+            AIMS-Flow-R101.apk
+            AIMS-Flow-R101.sha256
           if-no-files-found: error
