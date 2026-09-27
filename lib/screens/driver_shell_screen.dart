@@ -3243,17 +3243,120 @@ class _DriverShellScreenState extends State<DriverShellScreen>
         );
       case AimsVoiceIntent.trackingStatus:
         final running = _trackingStatus?.running == true;
+        final score = _trackingStatus?.gpsScore ?? 0;
         return running
             ? _l(
-                'A GPS követés aktív.',
-                'GPS tracking is active.',
-                'GPS-Tracking ist aktiv.',
+                'A GPS követés aktív. A jel minősége $score százalék.',
+                'GPS tracking is active. Signal quality is $score percent.',
+                'GPS-Tracking ist aktiv. Die Signalqualität beträgt $score Prozent.',
               )
             : _l(
                 'A GPS követés jelenleg nem aktív.',
                 'GPS tracking is not active right now.',
                 'GPS-Tracking ist derzeit nicht aktiv.',
               );
+      case AimsVoiceIntent.assistantHealth:
+        final gps = _trackingStatus;
+        final gpsOk = gps?.running == true && (gps?.gpsScore ?? 0) >= 55;
+        final pending =
+            _driverPendingCount + (gps?.queueDepth ?? 0);
+        final networkOk = _jobRefreshFailures == 0 && _lastJobSyncAt != null;
+        return _l(
+          'AIMS állapot. GPS: ${gpsOk ? 'rendben' : 'ellenőrzést kér'}. Kapcsolat: ${networkOk ? 'rendben' : 'offline vagy bizonytalan'}. Függő sor: $pending tétel. Hangvezérlés: ${_voiceState.enabled ? 'aktív' : 'kikapcsolva'}.',
+          'AIMS status. GPS: ${gpsOk ? 'healthy' : 'needs attention'}. Connection: ${networkOk ? 'healthy' : 'offline or uncertain'}. Pending queue: $pending item(s). Voice control: ${_voiceState.enabled ? 'active' : 'off'}.',
+          'AIMS-Status. GPS: ${gpsOk ? 'in Ordnung' : 'prüfen'}. Verbindung: ${networkOk ? 'in Ordnung' : 'offline oder unsicher'}. Warteschlange: $pending Einträge. Sprachsteuerung: ${_voiceState.enabled ? 'aktiv' : 'aus'}.',
+        );
+      case AimsVoiceIntent.readReference:
+        final job = _job;
+        if (job == null) {
+          return _l(
+            'Nincs aktív fuvar, ezért nincs felolvasható referencia.',
+            'There is no active job, so there is no reference to read.',
+            'Es gibt keinen aktiven Auftrag und damit keine Referenz.',
+          );
+        }
+        final candidates = <String>[
+          job.reference,
+          job.orderData['customer_reference']?.toString() ?? '',
+          job.orderData['pickup_reference']?.toString() ?? '',
+          job.orderData['delivery_reference']?.toString() ?? '',
+        ];
+        final references = <String>[];
+        for (final value in candidates) {
+          final cleaned = value.trim();
+          if (cleaned.isNotEmpty && !references.contains(cleaned)) {
+            references.add(cleaned);
+          }
+        }
+        return references.isEmpty
+            ? _l(
+                'Ehhez a fuvarhoz nincs megadott referencia.',
+                'No reference is available for this job.',
+                'Für diesen Auftrag ist keine Referenz hinterlegt.',
+              )
+            : _l(
+                'A fuvar referenciája: ${references.join('. ')}.',
+                'Job reference: ${references.join('. ')}.',
+                'Auftragsreferenz: ${references.join('. ')}.',
+              );
+      case AimsVoiceIntent.readLastMessage:
+        DriverChatMessage? latestOfficeMessage;
+        for (final message in _officeMessages.reversed) {
+          if (!message.fromDriver && message.body.trim().isNotEmpty) {
+            latestOfficeMessage = message;
+            break;
+          }
+        }
+        return latestOfficeMessage == null
+            ? _l(
+                'Nincs felolvasható diszpécserüzenet.',
+                'There is no dispatcher message to read.',
+                'Es gibt keine Dispositionsnachricht zum Vorlesen.',
+              )
+            : _l(
+                'A diszpécser utolsó üzenete: ${latestOfficeMessage.body}.',
+                'The latest dispatcher message says: ${latestOfficeMessage.body}.',
+                'Die letzte Nachricht der Disposition lautet: ${latestOfficeMessage.body}.',
+              );
+      case AimsVoiceIntent.documentStatus:
+        final job = _job;
+        if (job == null) {
+          return _l(
+            'Nincs aktív fuvar.',
+            'There is no active job.',
+            'Es gibt keinen aktiven Auftrag.',
+          );
+        }
+        final state = _jobCmrStates[job.id];
+        if (!_hasJobCmr(job)) {
+          return _l(
+            'Ehhez a fuvarhoz még nincs CMR elmentve.',
+            'No CMR has been saved for this job yet.',
+            'Für diesen Auftrag wurde noch kein CMR gespeichert.',
+          );
+        }
+        return switch (state) {
+          CmrSyncState.approved => _l(
+              'A CMR megvan, fel van töltve és jóváhagyott.',
+              'The CMR is uploaded and approved.',
+              'Das CMR ist hochgeladen und bestätigt.',
+            ),
+          CmrSyncState.emailed => _l(
+              'A CMR megvan, fel van töltve és e-mailben elküldve.',
+              'The CMR is uploaded and has been emailed.',
+              'Das CMR ist hochgeladen und per E-Mail gesendet.',
+            ),
+          CmrSyncState.uploaded => _l(
+              'A CMR megvan és fel van töltve a szerverre.',
+              'The CMR is saved and uploaded to the server.',
+              'Das CMR ist gespeichert und auf den Server hochgeladen.',
+            ),
+          CmrSyncState.failed || CmrSyncState.pending || null => _l(
+              'A CMR megvan a telefonon, de még szinkronizálásra vár.',
+              'The CMR is safe on the phone and is still waiting to sync.',
+              'Das CMR ist sicher auf dem Telefon und wartet noch auf die Synchronisierung.',
+            ),
+        };
       case AimsVoiceIntent.navigatePickup:
         final stop = _nextStopOfType('pickup');
         if (stop == null) {
