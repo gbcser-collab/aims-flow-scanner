@@ -10,6 +10,7 @@ on:
       - aims-flow-r100-ui-message-stability
       - aims-flow-r101-runtime-ui-hardening
       - aims-flow-r102-driver-first-stability
+      - aims-flow-r103-production-signing
   workflow_dispatch:
 
 concurrency:
@@ -162,6 +163,9 @@ jobs:
 
       - name: R102 driver-first stability guard
         run: python3 ci/r102_driver_first_guard.py
+
+      - name: R103 persistent production signing guard
+        run: python3 ci/r103_production_signing_guard.py
 
       - name: R94 tracking contract guard
         run: python3 ci/r94_tracking_contract_guard.py
