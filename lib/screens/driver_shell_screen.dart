@@ -2082,6 +2082,57 @@ class _DriverShellScreenState extends State<DriverShellScreen>
     await _openMapsForStop(stop);
   }
 
+  Future<bool> _launchNavigationTarget({
+    required String destination,
+    String label = '',
+  }) async {
+    final cleaned = destination.trim();
+    if (cleaned.isEmpty) return false;
+
+    // Prefer Google's turn-by-turn navigation URI on Android. If Maps is not
+    // installed, fall back to the platform geo handler, then to web Maps.
+    final googleNavigation = Uri(
+      scheme: 'google.navigation',
+      queryParameters: {
+        'q': cleaned,
+        'mode': 'd',
+      },
+    );
+    try {
+      if (await launchUrl(
+        googleNavigation,
+        mode: LaunchMode.externalApplication,
+      )) {
+        return true;
+      }
+    } catch (_) {}
+
+    final geoQuery = label.trim().isEmpty
+        ? cleaned
+        : '$cleaned (${label.trim()})';
+    final geoUri = Uri(
+      scheme: 'geo',
+      path: '0,0',
+      queryParameters: {'q': geoQuery},
+    );
+    try {
+      if (await launchUrl(geoUri, mode: LaunchMode.externalApplication)) {
+        return true;
+      }
+    } catch (_) {}
+
+    final webUri = Uri.parse(
+      'https://www.google.com/maps/dir/?api=1'
+      '&destination=${Uri.encodeQueryComponent(cleaned)}'
+      '&travelmode=driving&dir_action=navigate',
+    );
+    try {
+      return await launchUrl(webUri, mode: LaunchMode.externalApplication);
+    } catch (_) {
+      return false;
+    }
+  }
+
   Future<void> _openMapsForStop(DriverStop stop) async {
     final address = stop.address.trim();
     final hasCoordinates = RoamingResilience.validCoordinates(
@@ -2089,41 +2140,30 @@ class _DriverShellScreenState extends State<DriverShellScreen>
       stop.longitude,
     );
     if (address.isEmpty && !hasCoordinates) {
-      _snack(_l('Nincs megnyitható cím.', 'There is no address to open.', 'Es gibt keine Adresse zum Öffnen.'));
+      _snack(_l(
+        'Nincs megnyitható cím.',
+        'There is no address to open.',
+        'Es gibt keine Adresse zum Öffnen.',
+      ));
       return;
     }
 
+    // Coordinates win over a free-text address because they are deterministic
+    // and avoid geocoder ambiguity at industrial parks and depot gates.
     final destination = hasCoordinates
         ? '${stop.latitude},${stop.longitude}'
         : address;
-    final nativeUri = hasCoordinates
-        ? Uri.parse('geo:$destination?q=$destination')
-        : Uri(
-            scheme: 'geo',
-            path: '0,0',
-            queryParameters: {'q': address},
-          );
-
-    try {
-      if (await launchUrl(nativeUri, mode: LaunchMode.externalApplication)) {
-        return;
-      }
-    } catch (_) {}
-
-    final webUri = Uri.parse(
-      'https://www.google.com/maps/dir/?api=1&destination=${Uri.encodeQueryComponent(destination)}&travelmode=driving',
+    final opened = await _launchNavigationTarget(
+      destination: destination,
+      label: stop.company,
     );
-    try {
-      if (await launchUrl(webUri, mode: LaunchMode.externalApplication)) {
-        return;
-      }
-    } catch (_) {}
-
-    _snack(_l(
-      'A navigációs alkalmazás nem nyitható meg.',
-      'The navigation app could not be opened.',
-      'Die Navigations-App konnte nicht geöffnet werden.',
-    ));
+    if (!opened) {
+      _snack(_l(
+        'A navigációs alkalmazás nem nyitható meg.',
+        'The navigation app could not be opened.',
+        'Die Navigations-App konnte nicht geöffnet werden.',
+      ));
+    }
   }
 
   Future<CameraDescription?> _backCamera() async {
@@ -2846,32 +2886,30 @@ class _DriverShellScreenState extends State<DriverShellScreen>
   Future<void> _openRegistrationMaps(DriverStop stop) async {
     final lat = stop.registrationLatitude;
     final lng = stop.registrationLongitude;
-    if (lat == null || lng == null) {
+    if (lat == null ||
+        lng == null ||
+        !RoamingResilience.validCoordinates(lat, lng)) {
       await _openMapsForStop(stop);
       return;
     }
-    final destination = '$lat,$lng';
-    final nativeUri = Uri.parse('geo:$destination?q=$destination');
-    try {
-      if (await launchUrl(nativeUri, mode: LaunchMode.externalApplication)) {
-        return;
-      }
-    } catch (_) {}
-    final webUri = Uri.parse(
-      'https://www.google.com/maps/dir/?api=1&destination=${Uri.encodeQueryComponent(destination)}&travelmode=driving',
-    );
-    try {
-      if (await launchUrl(webUri, mode: LaunchMode.externalApplication)) {
-        return;
-      }
-    } catch (_) {}
-    _snack(
-      _l(
-        'A regisztrációs pont navigációja nem nyitható meg.',
-        'Registration-point navigation could not be opened.',
-        'Die Navigation zum Registrierungspunkt konnte nicht geöffnet werden.',
+
+    final opened = await _launchNavigationTarget(
+      destination: '$lat,$lng',
+      label: _l(
+        'Regisztráció / porta',
+        'Registration / gate',
+        'Anmeldung / Tor',
       ),
     );
+    if (!opened) {
+      _snack(
+        _l(
+          'A regisztrációs pont navigációja nem nyitható meg.',
+          'Registration-point navigation could not be opened.',
+          'Die Navigation zum Registrierungspunkt konnte nicht geöffnet werden.',
+        ),
+      );
+    }
   }
 
   Future<void> _registerCurrentStop(DriverJob job, DriverStop stop) async {
