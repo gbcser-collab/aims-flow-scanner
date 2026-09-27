@@ -622,22 +622,35 @@ class DriverApiService {
       '${_base()}/driver_messages.php?plate=${Uri.encodeQueryComponent(normalized)}&after=$after',
     );
 
-    final response = await http
-        .get(uri, headers: _headers)
-        .timeout(const Duration(seconds: 12));
-    final body = _decodeResponse(response);
-    final rawMessages = body['messages'];
-    if (rawMessages is! List) {
-      throw const DriverApiException(502, 'invalid_messages_response');
+    Object? lastError;
+    for (var attempt = 0; attempt < 2; attempt++) {
+      try {
+        final response = await http
+            .get(uri, headers: _headers)
+            .timeout(const Duration(seconds: 10));
+        final body = _decodeResponse(response);
+        final rawMessages = body['messages'];
+        if (rawMessages is! List) {
+          throw const DriverApiException(502, 'invalid_messages_response');
+        }
+        return rawMessages
+            .whereType<Map>()
+            .map(
+              (item) => DriverChatMessage.fromJson(
+                Map<String, dynamic>.from(item),
+              ),
+            )
+            .toList();
+      } on DriverApiException catch (error) {
+        lastError = error;
+        if (!error.retryable || attempt == 1) rethrow;
+      } catch (error) {
+        lastError = error;
+        if (attempt == 1) rethrow;
+      }
+      await Future<void>.delayed(Duration(milliseconds: 300 * (attempt + 1)));
     }
-    return rawMessages
-        .whereType<Map>()
-        .map(
-          (item) => DriverChatMessage.fromJson(
-            Map<String, dynamic>.from(item),
-          ),
-        )
-        .toList();
+    throw StateError(lastError?.toString() ?? 'Message network error');
   }
 
   Future<DriverChatMessage> sendMessage({
@@ -649,22 +662,40 @@ class DriverApiService {
     final text = message.trim();
     if (text.isEmpty) throw StateError('Az üzenet üres.');
 
-    final response = await http
-        .post(
-          Uri.parse('${_base()}/driver_messages.php'),
-          headers: _headers,
-          body: jsonEncode({
-            'plate': plate.trim().toUpperCase(),
-            'message': text,
-            if (clientMessageId?.trim().isNotEmpty == true)
-              'clientMessageId': clientMessageId!.trim(),
-          }),
-        )
-        .timeout(const Duration(seconds: 12));
-    final body = _decodeResponse(response);
-    final raw = body['message'];
-    if (raw is! Map) throw StateError('invalid_message_response');
-    return DriverChatMessage.fromJson(Map<String, dynamic>.from(raw));
+    final stableClientId = clientMessageId?.trim() ?? '';
+    final attempts = stableClientId.isNotEmpty ? 2 : 1;
+    Object? lastError;
+
+    for (var attempt = 0; attempt < attempts; attempt++) {
+      try {
+        final response = await http
+            .post(
+              Uri.parse('${_base()}/driver_messages.php'),
+              headers: _headers,
+              body: jsonEncode({
+                'plate': plate.trim().toUpperCase(),
+                'message': text,
+                if (stableClientId.isNotEmpty)
+                  'clientMessageId': stableClientId,
+              }),
+            )
+            .timeout(const Duration(seconds: 10));
+        final body = _decodeResponse(response);
+        final raw = body['message'];
+        if (raw is! Map) {
+          throw const DriverApiException(502, 'invalid_message_response');
+        }
+        return DriverChatMessage.fromJson(Map<String, dynamic>.from(raw));
+      } on DriverApiException catch (error) {
+        lastError = error;
+        if (!error.retryable || attempt + 1 >= attempts) rethrow;
+      } catch (error) {
+        lastError = error;
+        if (attempt + 1 >= attempts) rethrow;
+      }
+      await Future<void>.delayed(Duration(milliseconds: 350 * (attempt + 1)));
+    }
+    throw StateError(lastError?.toString() ?? 'Message network error');
   }
 
   Map<String, dynamic> _decodeResponse(http.Response response) {
