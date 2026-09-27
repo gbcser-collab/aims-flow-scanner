@@ -287,7 +287,7 @@ jobs:
             echo "Debug certificate detected in production APK" >&2
             exit 1
           fi
-          CERT_DIGEST="$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' signing-certificate.txt | head -1 | tr 'A-F' 'a-f' | tr -d ':')"
+          CERT_DIGEST="$(grep -m1 'certificate SHA-256 digest:' signing-certificate.txt | sed 's/^.*certificate SHA-256 digest: //' | tr 'A-F' 'a-f' | tr -d ':')"
           test -n "$CERT_DIGEST"
           test "$CERT_DIGEST" = "$AIMS_SIGN_CERT_SHA256"
           cp build/app/outputs/flutter-apk/app-release.apk AIMS-Flow-R103.apk
