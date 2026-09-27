@@ -62,6 +62,12 @@ class AimsVoiceService {
   String _lastHeard = '';
   String _commandBuffer = '';
   Timer? _commandTimeout;
+  AimsVoiceCommand? _pendingConfirmation;
+  Timer? _confirmationTimeout;
+  String _lastCompletedSpeech = '';
+  String _lastAnnouncement = '';
+  DateTime? _lastAnnouncementAt;
+  int _speechErrorCount = 0;
 
   Stream<AimsVoiceState> get states => _states.stream;
   bool get enabled => _enabled;
@@ -88,6 +94,7 @@ class AimsVoiceService {
       }
 
       await _applyLanguage();
+      _speechErrorCount = 0;
 
       _assistantInvocationSub ??=
           AimsHandsFreePlatform.assistantInvoked.listen((_) {
@@ -160,6 +167,8 @@ class AimsVoiceService {
     _commandMode = false;
     _commandBuffer = '';
     _commandTimeout?.cancel();
+    _confirmationTimeout?.cancel();
+    _pendingConfirmation = null;
     _restartTimer?.cancel();
     await _speech.cancel();
     await _tts.stop();
@@ -196,6 +205,18 @@ class AimsVoiceService {
   Future<void> announce(String text) async {
     final value = text.trim();
     if (value.isEmpty) return;
+
+    // Background services can report the same event through multiple paths.
+    // Never shout the same announcement at the driver repeatedly.
+    final now = DateTime.now();
+    if (_lastAnnouncement == value &&
+        _lastAnnouncementAt != null &&
+        now.difference(_lastAnnouncementAt!) < const Duration(seconds: 12)) {
+      return;
+    }
+    _lastAnnouncement = value;
+    _lastAnnouncementAt = now;
+
     final ok = await initialize();
     if (!ok) return;
     final resumeWakeWord = _enabled;
@@ -237,6 +258,24 @@ class AimsVoiceService {
     await _startListening(
       mode: AimsVoiceMode.command,
       message: _assistantGreeting(),
+      wakeOnly: false,
+    );
+  }
+
+  Future<void> _startConfirmationListening() async {
+    final pending = _pendingConfirmation;
+    if (pending == null || !_enabled || _speaking || _handlingResult) return;
+    _commandMode = true;
+    _commandBuffer = '';
+    _commandTimeout?.cancel();
+    _commandTimeout = Timer(const Duration(seconds: 9), () {
+      if (_pendingConfirmation != null && !_handlingResult) {
+        unawaited(_expireConfirmation());
+      }
+    });
+    await _startListening(
+      mode: AimsVoiceMode.command,
+      message: _confirmationPrompt(pending),
       wakeOnly: false,
     );
   }
@@ -315,6 +354,7 @@ class AimsVoiceService {
         onResult: _onResult,
         listenOptions: options,
       );
+      _speechErrorCount = 0;
     } catch (_) {
       if (!wakeOnly) rethrow;
 
@@ -351,6 +391,7 @@ class AimsVoiceService {
     final heard = result.recognizedWords.trim();
     if (heard.isEmpty) return;
     _lastHeard = heard;
+    _speechErrorCount = 0;
 
     if (_commandMode) {
       _commandBuffer = heard;
@@ -438,12 +479,24 @@ class AimsVoiceService {
     _handlingResult = true;
     try {
       await _speech.stop();
-      await _speak('Nem hallottam jól. Mondd még egyszer.');
+      if (_pendingConfirmation != null) {
+        await _speak(_yesNoPrompt());
+      } else {
+        await _speak(_l(
+          'Nem hallottam jól. Mondd még egyszer.',
+          'I did not hear that clearly. Please say it again.',
+          'Ich habe das nicht klar verstanden. Bitte noch einmal.',
+        ));
+      }
       _commandMode = true;
     } finally {
       _handlingResult = false;
     }
-    await _startCommandListening();
+    if (_pendingConfirmation != null) {
+      await _startConfirmationListening();
+    } else {
+      await _startCommandListening();
+    }
   }
 
   Future<void> _executeCommandText(String text) async {
@@ -455,16 +508,56 @@ class AimsVoiceService {
 
     try {
       await _speech.stop();
-      final command = _parser.parse(
-        text,
-        language: _locale.languageCode,
-      );
-      if (command.intent == AimsVoiceIntent.unknown) {
-        await _speak(_locale.t('not_understood'));
+
+      final pending = _pendingConfirmation;
+      if (pending != null) {
+        if (_isConfirmationYes(text)) {
+          _clearConfirmation();
+          final response = await onCommand(pending);
+          if (response.trim().isNotEmpty) await _speak(response);
+        } else if (_isConfirmationNo(text)) {
+          _clearConfirmation();
+          await _speak(_l(
+            'Rendben, nem hajtom végre.',
+            'Okay, I will not execute it.',
+            'Okay, ich führe es nicht aus.',
+          ));
+        } else {
+          await _speak(_yesNoPrompt());
+        }
       } else {
-        final response = await onCommand(command);
-        if (response.trim().isNotEmpty) {
-          await _speak(response);
+        final command = _parser.parse(
+          text,
+          language: _locale.languageCode,
+        );
+
+        if (command.intent == AimsVoiceIntent.unknown ||
+            command.confidence < .78) {
+          await _speak(_locale.t('not_understood'));
+        } else if (command.intent == AimsVoiceIntent.repeatLast) {
+          final previous = _lastCompletedSpeech.trim();
+          await _speak(
+            previous.isEmpty
+                ? _l(
+                    'Nincs korábbi bemondásom.',
+                    'There is no previous announcement.',
+                    'Es gibt keine vorherige Ansage.',
+                  )
+                : previous,
+          );
+        } else if (command.requiresConfirmation) {
+          _pendingConfirmation = command;
+          _confirmationTimeout?.cancel();
+          _confirmationTimeout = Timer(
+            const Duration(seconds: 15),
+            () => unawaited(_expireConfirmation()),
+          );
+          await _speak(_confirmationPrompt(command));
+        } else {
+          final response = await onCommand(command);
+          if (response.trim().isNotEmpty) {
+            await _speak(response);
+          }
         }
       }
     } catch (_) {
@@ -474,6 +567,81 @@ class AimsVoiceService {
     }
 
     if (_enabled) {
+      if (_pendingConfirmation != null) {
+        await _startConfirmationListening();
+      } else {
+        await _startWakeListening();
+      }
+    }
+  }
+
+  String _l(String hu, String en, String de) => switch (_locale.languageCode) {
+        'en' => en,
+        'de' => de,
+        _ => hu,
+      };
+
+  bool _isConfirmationYes(String text) {
+    final s = AimsVoiceCommandParser.normalize(text);
+    return switch (_locale.languageCode) {
+      'en' => const {'yes', 'yes do it', 'confirm', 'confirmed', 'do it'}.contains(s),
+      'de' => const {'ja', 'ja machen', 'bestatigen', 'bestatigt', 'mach es'}.contains(s),
+      _ => const {'igen', 'igen csinald', 'megerositem', 'mehet', 'csinald'}.contains(s),
+    };
+  }
+
+  bool _isConfirmationNo(String text) {
+    final s = AimsVoiceCommandParser.normalize(text);
+    return switch (_locale.languageCode) {
+      'en' => const {'no', 'cancel', 'do not', 'dont'}.contains(s),
+      'de' => const {'nein', 'abbrechen', 'nicht machen'}.contains(s),
+      _ => const {'nem', 'megse', 'ne', 'ne csinald'}.contains(s),
+    };
+  }
+
+  String _yesNoPrompt() => _l(
+        'Mondd: igen vagy nem.',
+        'Say yes or no.',
+        'Sag ja oder nein.',
+      );
+
+  String _confirmationPrompt(AimsVoiceCommand command) {
+    return switch (command.intent) {
+      AimsVoiceIntent.pickupComplete => _l(
+          'A felrakást készre jelöljem? Mondd: igen vagy nem.',
+          'Mark the pickup complete? Say yes or no.',
+          'Beladung als abgeschlossen markieren? Sag ja oder nein.',
+        ),
+      AimsVoiceIntent.deliveryComplete => _l(
+          'A lerakást készre jelöljem? Mondd: igen vagy nem.',
+          'Mark the delivery complete? Say yes or no.',
+          'Entladung als abgeschlossen markieren? Sag ja oder nein.',
+        ),
+      AimsVoiceIntent.urgentSignal => _l(
+          'Sürgős jelzést küldjek a diszpécsernek? Mondd: igen vagy nem.',
+          'Send an urgent alert to dispatch? Say yes or no.',
+          'Dringende Meldung an die Disposition senden? Sag ja oder nein.',
+        ),
+      _ => _yesNoPrompt(),
+    };
+  }
+
+  void _clearConfirmation() {
+    _confirmationTimeout?.cancel();
+    _confirmationTimeout = null;
+    _pendingConfirmation = null;
+  }
+
+  Future<void> _expireConfirmation() async {
+    if (_pendingConfirmation == null) return;
+    _clearConfirmation();
+    _commandMode = false;
+    await _speak(_l(
+      'A műveletet nem hajtottam végre, mert nem érkezett megerősítés.',
+      'I did not execute the action because no confirmation was received.',
+      'Die Aktion wurde nicht ausgeführt, weil keine Bestätigung eingegangen ist.',
+    ));
+    if (_enabled && !_handlingResult) {
       await _startWakeListening();
     }
   }
@@ -499,6 +667,8 @@ class AimsVoiceService {
           message: _locale.t('command_failed'),
           lastHeard: _lastHeard,
         ));
+      } else {
+        _lastCompletedSpeech = text;
       }
     } finally {
       _speaking = false;
@@ -526,7 +696,11 @@ class AimsVoiceService {
         () {
           if (!_enabled || _speaking || _handlingResult) return;
           if (_commandMode) {
-            unawaited(_startCommandListening());
+            if (_pendingConfirmation != null) {
+              unawaited(_startConfirmationListening());
+            } else {
+              unawaited(_startCommandListening());
+            }
           } else {
             unawaited(_startWakeListening());
           }
@@ -550,10 +724,16 @@ class AimsVoiceService {
     );
 
     if (!error.permanent) {
+      _speechErrorCount++;
+      final seconds = _speechErrorCount > 5 ? 5 : _speechErrorCount;
       _restartTimer?.cancel();
-      _restartTimer = Timer(const Duration(seconds: 1), () {
+      _restartTimer = Timer(Duration(seconds: seconds), () {
         if (_enabled && !_speaking && !_handlingResult) {
-          unawaited(_startWakeListening());
+          if (_pendingConfirmation != null) {
+            unawaited(_startConfirmationListening());
+          } else {
+            unawaited(_startWakeListening());
+          }
         }
       });
     }
@@ -673,7 +853,11 @@ class AimsVoiceService {
     await _tts.stop();
     await _applyLanguage();
     if (_enabled && !_speaking && !_handlingResult) {
-      await _startWakeListening();
+      if (_pendingConfirmation != null) {
+        await _startConfirmationListening();
+      } else {
+        await _startWakeListening();
+      }
     }
   }
 
@@ -686,6 +870,9 @@ class AimsVoiceService {
   Future<void> dispose() async {
     _enabled = false;
     _restartTimer?.cancel();
+    _commandTimeout?.cancel();
+    _confirmationTimeout?.cancel();
+    _pendingConfirmation = null;
     await _assistantInvocationSub?.cancel();
     await _speech.cancel();
     await _tts.stop();
