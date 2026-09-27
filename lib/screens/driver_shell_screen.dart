@@ -303,6 +303,10 @@ class _DriverShellScreenState extends State<DriverShellScreen>
   int _officeMessageNonce = 0;
   Timer? _officeMessageTimer;
   Timer? _autopilotTimer;
+  Timer? _runtimeHealthTimer;
+  bool _runtimeHealthBusy = false;
+  DateTime? _lastPushRecoveryAt;
+  DateTime? _lastVoiceRecoveryAt;
   String? _lastAutopilotSpokenSignature;
   DateTime? _lastAutopilotSpokenAt;
   bool _autopilotRefreshing = false;
@@ -1512,6 +1516,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
     } else {
       await _tracking.setVehicleLabel(_plate);
       await _activateDriverServices();
+      _startRuntimeSupervisor();
       await _refreshRestMode(silent: true);
       await _refreshOfficeMessages(silent: true);
       _officeMessageTimer?.cancel();
@@ -1601,6 +1606,81 @@ class _DriverShellScreenState extends State<DriverShellScreen>
     ];
     if (issues.isNotEmpty) {
       setState(() => _message = issues.join(' • '));
+    }
+  }
+
+  void _startRuntimeSupervisor() {
+    _runtimeHealthTimer?.cancel();
+    _runtimeHealthTimer = Timer.periodic(
+      const Duration(seconds: 60),
+      (_) => unawaited(_runtimeRecoverySweep()),
+    );
+    unawaited(_runtimeRecoverySweep());
+  }
+
+  Future<void> _runtimeRecoverySweep() async {
+    if (_runtimeHealthBusy ||
+        !_appInForeground ||
+        _plate.isEmpty ||
+        !mounted) {
+      return;
+    }
+    _runtimeHealthBusy = true;
+
+    Future<void> safe(Future<void> Function() action) async {
+      try {
+        await action();
+      } catch (_) {
+        // The watchdog never lets one optional subsystem stop another one.
+      }
+    }
+
+    try {
+      await safe(() async {
+        await _tracking.recover();
+        final tracking = await _tracking.currentStatus();
+        if (mounted) setState(() => _trackingStatus = tracking);
+      });
+
+      if (_pendingStopActions.isNotEmpty) {
+        await safe(() => _flushPendingStopActions(refreshAfter: false));
+      }
+      if (_pendingSignals.isNotEmpty) {
+        await safe(_flushPendingSignals);
+      }
+      if (_pendingOfficeMessages.isNotEmpty) {
+        await safe(_flushPendingOfficeMessages);
+      }
+      if (_pendingRegistrationPoints.isNotEmpty) {
+        await safe(_flushPendingRegistrationPoints);
+      }
+      if (_sync.pendingCount > 0) {
+        await safe(_sync.syncNow);
+      }
+
+      final now = DateTime.now();
+      final pushDue = _lastPushRecoveryAt == null ||
+          now.difference(_lastPushRecoveryAt!) > const Duration(minutes: 10);
+      if (pushDue) {
+        _lastPushRecoveryAt = now;
+        await safe(() => _push.registerForPlate(_plate));
+      }
+
+      final voiceDue = _voiceState.mode == AimsVoiceMode.error &&
+          (_lastVoiceRecoveryAt == null ||
+              now.difference(_lastVoiceRecoveryAt!) >
+                  const Duration(minutes: 3));
+      if (voiceDue) {
+        _lastVoiceRecoveryAt = now;
+        final prefs = await SharedPreferences.getInstance();
+        if (prefs.getBool(_prefsHandsFree) ?? true) {
+          await safe(() async {
+            await _voice.enableHandsFree();
+          });
+        }
+      }
+    } finally {
+      _runtimeHealthBusy = false;
     }
   }
 
@@ -3517,6 +3597,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
     }
     _lastResumeRefreshAt = now;
     unawaited(_refreshAfterResume());
+    unawaited(_runtimeRecoverySweep());
   }
 
   Future<void> _refreshAfterResume() async {
@@ -3752,6 +3833,8 @@ class _DriverShellScreenState extends State<DriverShellScreen>
     _officeMessageTimer = null;
     _autopilotTimer?.cancel();
     _autopilotTimer = null;
+    _runtimeHealthTimer?.cancel();
+    _runtimeHealthTimer = null;
     _pushSub?.cancel();
     _trackingSub?.cancel();
     _voiceSub?.cancel();
