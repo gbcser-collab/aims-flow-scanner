@@ -300,7 +300,15 @@ jobs:
             --dart-define=AIMS_FIREBASE_STORAGE_BUCKET="$AIMS_FIREBASE_STORAGE_BUCKET"
           test -s build/app/outputs/bundle/release/app-release.aab
           cp build/app/outputs/bundle/release/app-release.aab AIMS-Flow-R103.aab
-          jarsigner -verify -strict AIMS-Flow-R103.aab
+          jarsigner -verify AIMS-Flow-R103.aab
+          AAB_CERT_SHA256="$(keytool -printcert -jarfile AIMS-Flow-R103.aab             | sed -n 's/^[[:space:]]*SHA256: //p'             | head -1             | tr 'A-F' 'a-f'             | tr -d ':[:space:]')"
+          test -n "$AAB_CERT_SHA256"
+          if [ "$AAB_CERT_SHA256" != "$AIMS_SIGN_CERT_SHA256" ]; then
+            echo "AAB signing certificate mismatch" >&2
+            echo "Expected: $AIMS_SIGN_CERT_SHA256" >&2
+            echo "Actual:   $AAB_CERT_SHA256" >&2
+            exit 1
+          fi
           sha256sum AIMS-Flow-R103.aab | tee AIMS-Flow-R103.aab.sha256
 
       - name: Verify production certificate
