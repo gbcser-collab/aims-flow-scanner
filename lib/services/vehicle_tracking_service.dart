@@ -79,6 +79,7 @@ class VehicleTrackingService {
   Position? _lastAcceptedPosition;
   DateTime? _lastFixAt;
   DateTime? _lastSentAt;
+  DateTime? _streamStartedAt;
   String? _lastError;
   String _gpsQuality = 'unknown';
   int _gpsScore = 0;
@@ -204,6 +205,7 @@ class VehicleTrackingService {
     _retryTimer = null;
     _streamRecoveryTimer?.cancel();
     _streamRecoveryTimer = null;
+    _streamStartedAt = null;
     _streamFailures = 0;
     _emit();
   }
@@ -272,6 +274,7 @@ class VehicleTrackingService {
       cancelOnError: false,
     );
     _streamFailures = 0;
+    _streamStartedAt = DateTime.now();
 
     _heartbeatTimer?.cancel();
     _heartbeatTimer = Timer.periodic(const Duration(seconds: 30), (_) {
@@ -280,14 +283,41 @@ class VehicleTrackingService {
     _healthTimer?.cancel();
     _healthTimer = Timer.periodic(const Duration(seconds: 45), (_) {
       if (!_enabled) return;
-      if (_subscription == null) {
-        unawaited(recover());
+      final now = DateTime.now();
+      final noFixTooLong = _lastFixAt == null &&
+          _streamStartedAt != null &&
+          now.difference(_streamStartedAt!) > const Duration(seconds: 75);
+      final staleFix = _lastFixAt != null &&
+          now.difference(_lastFixAt!) > const Duration(seconds: 120);
+      if (_subscription == null || noFixTooLong || staleFix) {
+        unawaited(_restartLocationStream());
       } else {
         unawaited(_requestFlush());
       }
     });
     unawaited(_requestFlush());
     _emit();
+  }
+
+  Future<void> _restartLocationStream() async {
+    if (!_enabled) return;
+    final current = _subscription;
+    _subscription = null;
+    if (current != null) {
+      try {
+        await current.cancel();
+      } catch (_) {}
+    }
+    _streamStartedAt = null;
+    _lastError = 'GPS kapcsolat újraindítása…';
+    _emit();
+    try {
+      await _startLocationStream(requestPermission: false);
+    } catch (error) {
+      _lastError = 'GPS újraindítási hiba: $error';
+      _emit();
+      _scheduleStreamRecovery();
+    }
   }
 
   void _scheduleStreamRecovery() {
