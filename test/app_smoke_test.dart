@@ -102,8 +102,8 @@ void main() {
     expect(find.text('AIMS FLOW'), findsOneWidget);
     expect(find.byKey(const Key('flow-next-jobs')), findsOneWidget);
     expect(find.byKey(const Key('aims-assistant-talk')), findsOneWidget);
-    expect(find.text('KEZDŐLAP'), findsOneWidget);
-    expect(find.text('FUVAROM'), findsOneWidget);
+    expect(find.text('Kezdő'), findsOneWidget);
+    expect(find.text('Fuvar'), findsOneWidget);
     expect(find.text('JELZÉS'), findsOneWidget);
     expect(find.text('DOKSI'), findsOneWidget);
   });
