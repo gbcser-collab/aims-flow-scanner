@@ -2,7 +2,7 @@ name: Build AIMS Flow Driver Android
 
 on:
   push:
-    branches: [aims-flow-driver-v1, aims-flow-driver-v1-r87-recovery, aims-flow-driver-v1-r88-fixes, aims-flow-r94-full-system-hardening, aims-flow-r95-autopilot-v3, aims-flow-r100-ui-message-stability, aims-flow-r101-runtime-ui-hardening, aims-flow-r102-driver-first-stability]
+    branches: [aims-flow-driver-v1, aims-flow-driver-v1-r87-recovery, aims-flow-driver-v1-r88-fixes, aims-flow-r94-full-system-hardening, aims-flow-r95-autopilot-v3, aims-flow-r100-ui-message-stability, aims-flow-r101-runtime-ui-hardening, aims-flow-r102-driver-first-stability, aims-flow-r103-production-signing]
     paths:
       - 'lib/**'
       - 'test/**'
