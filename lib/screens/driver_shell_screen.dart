@@ -1666,18 +1666,22 @@ class _DriverShellScreenState extends State<DriverShellScreen>
         await safe(() => _push.registerForPlate(_plate));
       }
 
-      final voiceDue = _voiceState.mode == AimsVoiceMode.error &&
-          (_lastVoiceRecoveryAt == null ||
+      final prefs = await SharedPreferences.getInstance();
+      final handsFreeWanted = prefs.getBool(_prefsHandsFree) ?? true;
+      final voiceDue = handsFreeWanted &&
+          (_voiceState.mode == AimsVoiceMode.error ||
+              _lastVoiceRecoveryAt == null ||
               now.difference(_lastVoiceRecoveryAt!) >
-                  const Duration(minutes: 3));
+                  const Duration(minutes: 2));
       if (voiceDue) {
         _lastVoiceRecoveryAt = now;
-        final prefs = await SharedPreferences.getInstance();
-        if (prefs.getBool(_prefsHandsFree) ?? true) {
-          await safe(() async {
+        await safe(() async {
+          if (!_voice.enabled) {
             await _voice.enableHandsFree();
-          });
-        }
+          } else {
+            await _voice.recover();
+          }
+        });
       }
     } finally {
       _runtimeHealthBusy = false;
