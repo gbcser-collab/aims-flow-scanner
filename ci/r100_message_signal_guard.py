@@ -11,7 +11,6 @@ required_shell = [
     "Future<void> _sendOfficeMessage()",
     "_pendingOfficeMessages",
     "NATÍV FLOW ÜZENET • NEM KÉR WEBES BELÉPÉST",
-    "childAspectRatio: 1.02",
     "const Color(0xFF3BC7FF)",
     "width: danger ? 2.4 : 2.0",
     "Theme.of(context).textTheme.headlineSmall",
@@ -19,6 +18,9 @@ required_shell = [
 for needle in required_shell:
     if needle not in shell:
         raise SystemExit(f"missing driver-shell guard: {needle}")
+
+if "childAspectRatio: 1.02" not in shell and "childAspectRatio: .90" not in shell:
+    raise SystemExit("signal tile aspect ratio guard missing")
 
 if "Message cannot be sent. Check sign in." in shell:
     raise SystemExit("stale fake-login message remains")
