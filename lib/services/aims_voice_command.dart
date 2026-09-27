@@ -19,17 +19,45 @@ enum AimsVoiceIntent {
   readJobDetails,
   waitingSignal,
   urgentSignal,
+  repeatLast,
   unknown,
+}
+
+enum AimsVoiceRisk {
+  passive,
+  operational,
+  consequential,
+  emergency,
 }
 
 class AimsVoiceCommand {
   const AimsVoiceCommand({
     required this.intent,
     required this.rawText,
+    this.confidence = .92,
+    this.risk = AimsVoiceRisk.passive,
+    this.requiresConfirmation = false,
   });
 
   final AimsVoiceIntent intent;
   final String rawText;
+  final double confidence;
+  final AimsVoiceRisk risk;
+  final bool requiresConfirmation;
+
+  AimsVoiceCommand copyWith({
+    double? confidence,
+    AimsVoiceRisk? risk,
+    bool? requiresConfirmation,
+  }) =>
+      AimsVoiceCommand(
+        intent: intent,
+        rawText: rawText,
+        confidence: confidence ?? this.confidence,
+        risk: risk ?? this.risk,
+        requiresConfirmation:
+            requiresConfirmation ?? this.requiresConfirmation,
+      );
 }
 
 class AimsVoiceCommandParser {
@@ -67,17 +95,94 @@ class AimsVoiceCommandParser {
 
   AimsVoiceCommand parse(String rawText, {String language = 'hu'}) {
     final s = normalize(rawText);
-    return switch (language) {
+    if (s.isEmpty) {
+      return const AimsVoiceCommand(
+        intent: AimsVoiceIntent.unknown,
+        rawText: '',
+        confidence: 0,
+      );
+    }
+
+    // Explicit negation should never trigger an operational action.
+    if (_looksNegated(s, language)) {
+      return AimsVoiceCommand(
+        intent: AimsVoiceIntent.unknown,
+        rawText: rawText,
+        confidence: .15,
+      );
+    }
+
+    final parsed = switch (language) {
       'en' => _parseEn(rawText, s),
       'de' => _parseDe(rawText, s),
       _ => _parseHu(rawText, s),
     };
+    return _decorate(parsed, s);
+  }
+
+  bool _looksNegated(String s, String language) {
+    final tokens = s.split(' ');
+    if (tokens.length > 10) return false;
+    return switch (language) {
+      'en' => s.startsWith('do not ') || s.startsWith("don't ") ||
+          s.startsWith('dont ') || s.startsWith('no '),
+      'de' => s.startsWith('nicht ') || s.startsWith('kein ') ||
+          s.startsWith('keine '),
+      _ => s.startsWith('ne ') || s.startsWith('nem '),
+    };
+  }
+
+  AimsVoiceCommand _decorate(AimsVoiceCommand command, String normalized) {
+    if (command.intent == AimsVoiceIntent.unknown) {
+      return command.copyWith(
+        confidence: 0,
+        risk: AimsVoiceRisk.passive,
+        requiresConfirmation: false,
+      );
+    }
+
+    var confidence = .96;
+    if (normalized.split(' ').length <= 1) confidence = .82;
+
+    final risk = switch (command.intent) {
+      AimsVoiceIntent.pickupComplete ||
+      AimsVoiceIntent.deliveryComplete => AimsVoiceRisk.consequential,
+      AimsVoiceIntent.urgentSignal => AimsVoiceRisk.emergency,
+      AimsVoiceIntent.arrivePickup ||
+      AimsVoiceIntent.arriveDelivery ||
+      AimsVoiceIntent.delaySignal ||
+      AimsVoiceIntent.waitingSignal ||
+      AimsVoiceIntent.technicalIssue ||
+      AimsVoiceIntent.callContact => AimsVoiceRisk.operational,
+      _ => AimsVoiceRisk.passive,
+    };
+
+    var confirm = risk == AimsVoiceRisk.consequential;
+    if (risk == AimsVoiceRisk.emergency) {
+      final explicit = normalized.contains('kuldd') ||
+          normalized.contains('jelentsd') ||
+          normalized.contains('send ') ||
+          normalized.startsWith('send') ||
+          normalized.contains('melde') ||
+          normalized.contains('sende');
+      confirm = !explicit;
+      confidence = explicit ? .98 : .90;
+    }
+
+    return command.copyWith(
+      confidence: confidence,
+      risk: risk,
+      requiresConfirmation: confirm,
+    );
   }
 
   AimsVoiceCommand _parseHu(String raw, String s) {
     bool has(String value) => s.contains(value);
     bool any(List<String> values) => values.any(has);
 
+    if (any(['ismeteld', 'mondd ujra', 'utolso uzenet', 'mit mondtal'])) {
+      return AimsVoiceCommand(intent: AimsVoiceIntent.repeatLast, rawText: raw);
+    }
     if (any(['mit tudsz', 'segits', 'segitseg', 'parancsok', 'miben tudsz segiteni'])) {
       return AimsVoiceCommand(intent: AimsVoiceIntent.assistantHelp, rawText: raw);
     }
@@ -151,6 +256,9 @@ class AimsVoiceCommandParser {
     bool has(String value) => s.contains(value);
     bool any(List<String> values) => values.any(has);
 
+    if (any(['repeat', 'say that again', 'repeat last', 'what did you say'])) {
+      return AimsVoiceCommand(intent: AimsVoiceIntent.repeatLast, rawText: raw);
+    }
     if (any(['what can you do', 'help me', 'commands', 'voice commands'])) {
       return AimsVoiceCommand(intent: AimsVoiceIntent.assistantHelp, rawText: raw);
     }
@@ -220,6 +328,9 @@ class AimsVoiceCommandParser {
     bool has(String value) => s.contains(value);
     bool any(List<String> values) => values.any(has);
 
+    if (any(['wiederholen', 'noch einmal', 'letzte ansage', 'was hast du gesagt'])) {
+      return AimsVoiceCommand(intent: AimsVoiceIntent.repeatLast, rawText: raw);
+    }
     if (any(['was kannst du', 'hilfe', 'befehle', 'sprachbefehle'])) {
       return AimsVoiceCommand(intent: AimsVoiceIntent.assistantHelp, rawText: raw);
     }
