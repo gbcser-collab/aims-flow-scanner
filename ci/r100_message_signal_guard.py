@@ -19,7 +19,11 @@ for needle in required_shell:
     if needle not in shell:
         raise SystemExit(f"missing driver-shell guard: {needle}")
 
-if "childAspectRatio: 1.02" not in shell and "childAspectRatio: .90" not in shell:
+if (
+    "childAspectRatio: 1.02" not in shell
+    and "childAspectRatio: .90" not in shell
+    and "childAspectRatio: singleColumn ? 1.78 : .90" not in shell
+):
     raise SystemExit("signal tile aspect ratio guard missing")
 
 if "Message cannot be sent. Check sign in." in shell:
