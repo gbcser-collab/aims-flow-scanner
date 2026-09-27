@@ -15,9 +15,11 @@ for needle in required:
     if needle not in workflow:
         raise SystemExit(f"R103 signing guard missing: {needle}")
 
+if "signingConfigs.getByName(\"debug\")' in text:" not in workflow:
+    raise SystemExit("R103 signing guard missing runtime debug-signing rejection")
+
 for forbidden in [
     "keytool -genkeypair",
-    'signingConfigs.getByName("debug")',
     "signing-password.oaep",
     "aims-flow-release.p12\n            AIMS-Flow",
 ]:
