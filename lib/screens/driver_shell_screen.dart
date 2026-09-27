@@ -213,9 +213,26 @@ class DriverShellScreen extends StatefulWidget {
 
 class _DriverShellScreenState extends State<DriverShellScreen>
     with WidgetsBindingObserver {
-  static const _blue = Color(0xFF1CB8FF);
-  static const _green = Color(0xFF4DE3A4);
-  static const _panelColor = Color(0xFF071725);
+  static const _blue = Color(0xFF1478FF);
+  static const _green = Color(0xFF16A66A);
+
+  bool get _isDark => Theme.of(context).brightness == Brightness.dark;
+  Color get _pageBackground =>
+      _isDark ? const Color(0xFF020813) : const Color(0xFFF5F9FC);
+  Color get _headerColor =>
+      _isDark ? const Color(0xFF06162A) : const Color(0xFFFFFFFF);
+  Color get _panelColor =>
+      _isDark ? const Color(0xFF071725) : const Color(0xFFFFFFFF);
+  Color get _surfaceAlt =>
+      _isDark ? const Color(0xFF06131F) : const Color(0xFFEEF6FB);
+  Color get _lineColor =>
+      _isDark ? const Color(0xFF173B54) : const Color(0xFFD5E2EB);
+  Color get _textPrimary =>
+      _isDark ? Colors.white : const Color(0xFF0A1C2E);
+  Color get _textMuted =>
+      _isDark ? Colors.white70 : const Color(0xFF536B7A);
+  Color get _textFaint =>
+      _isDark ? Colors.white38 : const Color(0xFF8093A0);
   static const _prefsPlate = 'aims_driver_plate';
   static const _prefsDriverName = 'aims_driver_name';
   static const _prefsHandsFree = 'aims_hands_free';
@@ -3454,8 +3471,8 @@ class _DriverShellScreenState extends State<DriverShellScreen>
             const SizedBox(width: 5),
             Text(
               '$label ',
-              style: const TextStyle(
-                color: Colors.white54,
+              style: TextStyle(
+                color: _textMuted,
                 fontSize: 9,
                 fontWeight: FontWeight.w800,
                 letterSpacing: .35,
@@ -3503,7 +3520,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                   ? const Color(0xFFFFC857)
                   : const Color(0xFFFF6571);
           return Material(
-            color: const Color(0xFF04101A),
+            color: _isDark ? const Color(0xFF04101A) : const Color(0xFFF8FBFD),
             child: InkWell(
               onTap: _healthRefreshBusy
                   ? null
@@ -3511,9 +3528,9 @@ class _DriverShellScreenState extends State<DriverShellScreen>
               child: Container(
                 width: double.infinity,
                 padding: const EdgeInsets.fromLTRB(12, 7, 12, 8),
-                decoration: const BoxDecoration(
+                decoration: BoxDecoration(
                   border: Border(
-                    bottom: BorderSide(color: Color(0xFF102D42)),
+                    bottom: BorderSide(color: _lineColor),
                   ),
                 ),
                 child: FittedBox(
@@ -3607,12 +3624,12 @@ class _DriverShellScreenState extends State<DriverShellScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF020813),
+      backgroundColor: _pageBackground,
       body: Column(
         children: [
           Container(
             width: double.infinity,
-            color: const Color(0xFF06162A),
+            color: _headerColor,
             child: SafeArea(
               bottom: false,
               child: Padding(
@@ -3652,7 +3669,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
           }
           setState(() => _index = value);
         },
-        backgroundColor: const Color(0xFF030D16),
+        backgroundColor: _panelColor,
         indicatorColor: _blue.withValues(alpha: .18),
         destinations: [
           NavigationDestination(
@@ -3685,11 +3702,21 @@ class _DriverShellScreenState extends State<DriverShellScreen>
     ScrollController? controller,
   }) =>
       Container(
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: [Color(0xFF071E3D), Color(0xFF030A13), Color(0xFF02070E)],
+            colors: _isDark
+                ? const [
+                    Color(0xFF071E3D),
+                    Color(0xFF030A13),
+                    Color(0xFF02070E),
+                  ]
+                : const [
+                    Color(0xFFF9FCFF),
+                    Color(0xFFF3F8FC),
+                    Color(0xFFEDF5FA),
+                  ],
           ),
         ),
         child: SafeArea(
@@ -3746,8 +3773,8 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                   ].join(' • '),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Colors.white70,
+                  style: TextStyle(
+                    color: _textMuted,
                     fontSize: 11,
                     fontWeight: FontWeight.w800,
                     letterSpacing: .45,
@@ -3766,7 +3793,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
             _trackingStatus?.running == true
                 ? _l('GPS AKTÍV', 'GPS ACTIVE', 'GPS AKTIV')
                 : 'GPS',
-            _trackingStatus?.running == true ? _green : Colors.white38,
+            _trackingStatus?.running == true ? _green : _textFaint,
           ),
           const SizedBox(width: 2),
           IconButton(
@@ -3963,11 +3990,11 @@ class _DriverShellScreenState extends State<DriverShellScreen>
     String value, {
     Color? accent,
   }) {
-    final color = accent ?? Colors.white70;
+    final color = accent ?? _textMuted;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
-        color: const Color(0xFF06131F),
+        color: _surfaceAlt,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: color.withValues(alpha: .28)),
       ),
@@ -3976,8 +4003,8 @@ class _DriverShellScreenState extends State<DriverShellScreen>
         children: [
           Text(
             label,
-            style: const TextStyle(
-              color: Colors.white38,
+            style: TextStyle(
+              color: _textFaint,
               fontSize: 8,
               fontWeight: FontWeight.w900,
               letterSpacing: .7,
@@ -4127,7 +4154,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                 address,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(color: Colors.white70, height: 1.35),
+                style: TextStyle(color: _textMuted, height: 1.35),
               ),
           ],
           if (ap.totalStops > 0) ...[
@@ -4401,7 +4428,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                     'Tracking and notifications continue in the background.',
                     'Tracking und Benachrichtigungen laufen im Hintergrund.',
                   ),
-                  style: const TextStyle(color: Colors.white54, height: 1.35),
+                  style: TextStyle(color: _textMuted, height: 1.35),
                 ),
               ] else if (stop == null) ...[
                 Text(
@@ -4737,7 +4764,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                   'A new job triggers an audible push. It also appears on the lock screen until you acknowledge it.',
                   'Bei einem neuen Auftrag kommt eine hörbare Push-Meldung. Sie bleibt auch auf dem Sperrbildschirm sichtbar, bis du sie bestätigst.',
                 ),
-                style: const TextStyle(color: Colors.white70, height: 1.35),
+                style: TextStyle(color: _textMuted, height: 1.35),
               ),
             ),
           ],
@@ -4891,7 +4918,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
               const SizedBox(height: 10),
               Text(
                 _voiceState.message,
-                style: const TextStyle(color: Colors.white70, height: 1.35),
+                style: TextStyle(color: _textMuted, height: 1.35),
               ),
             ],
             if (_voiceState.lastHeard.trim().isNotEmpty) ...[
@@ -5058,7 +5085,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                         border: Border.all(
                           color: job.id == _job?.id
                               ? _green.withValues(alpha: .45)
-                              : const Color(0xFF173B54),
+                              : _lineColor,
                         ),
                       ),
                       child: Column(
@@ -5194,7 +5221,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                         const SizedBox(height: 4),
                       SelectableText(
                         stop.address,
-                        style: const TextStyle(color: Colors.white70, height: 1.35),
+                        style: TextStyle(color: _textMuted, height: 1.35),
                       ),
                       if (stop.phone.trim().isNotEmpty) ...[
                         const SizedBox(height: 5),
@@ -5755,7 +5782,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                         'Bei einer regulären Pause aktivieren. Flow zählt die Ruhezeit nicht zur Wartezeit.',
                       ),
                 textAlign: TextAlign.center,
-                style: const TextStyle(color: Colors.white54, height: 1.35),
+                style: TextStyle(color: _textMuted, height: 1.35),
               ),
               const SizedBox(height: 14),
               if (_restMode.active)
@@ -5846,7 +5873,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                   'Ein Tippen. Flow hängt Auftrag, Fahrzeug, Zeit und GPS automatisch an.',
                 ),
                 textAlign: TextAlign.center,
-                style: const TextStyle(color: Colors.white54, height: 1.35),
+                style: TextStyle(color: _textMuted, height: 1.35),
               ),
               const SizedBox(height: 14),
               for (final option in <({String code, IconData icon, String hu, String en, String de, bool urgent})>[
@@ -5999,7 +6026,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                   const SizedBox(height: 3),
                   Text(
                     stop.address,
-                    style: const TextStyle(color: Colors.white54, height: 1.3),
+                    style: TextStyle(color: _textMuted, height: 1.3),
                   ),
                   const SizedBox(height: 4),
                   Text(
@@ -6071,14 +6098,12 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
                 colors: danger
-                    ? const [
-                        Color(0xFF361019),
-                        Color(0xFF19090F),
-                      ]
-                    : const [
-                        Color(0xFF103B5C),
-                        Color(0xFF071B2B),
-                      ],
+                    ? (_isDark
+                        ? const [Color(0xFF361019), Color(0xFF19090F)]
+                        : const [Color(0xFFFFF7F7), Color(0xFFFFE9EC)])
+                    : (_isDark
+                        ? const [Color(0xFF103B5C), Color(0xFF071B2B)]
+                        : const [Color(0xFFFFFFFF), Color(0xFFEAF5FF)]),
               ),
               borderRadius: BorderRadius.circular(18),
               border: Border.all(
@@ -6146,7 +6171,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                             ),
                             child: const Icon(
                               Icons.chevron_right_rounded,
-                              color: Colors.white54,
+                              color: _textMuted,
                               size: 18,
                             ),
                           ),
@@ -6161,8 +6186,8 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                             title,
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              color: Colors.white,
+                            style: TextStyle(
+                              color: _textPrimary,
                               fontSize: 15,
                               height: 1.08,
                               fontWeight: FontWeight.w900,
@@ -6179,8 +6204,8 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                             detail,
                             maxLines: 3,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              color: Colors.white60,
+                            style: TextStyle(
+                              color: _textMuted,
                               fontSize: 10.5,
                               height: 1.22,
                               fontWeight: FontWeight.w600,
@@ -6231,9 +6256,18 @@ class _DriverShellScreenState extends State<DriverShellScreen>
   Widget _panel(Widget child) => Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: const Color(0xCC081725),
+          color: _panelColor,
           borderRadius: BorderRadius.circular(22),
-          border: Border.all(color: const Color(0xFF24557D)),
+          border: Border.all(color: _lineColor),
+          boxShadow: _isDark
+              ? const []
+              : [
+                  BoxShadow(
+                    color: const Color(0xFF10324A).withValues(alpha: .06),
+                    blurRadius: 20,
+                    offset: const Offset(0, 6),
+                  ),
+                ],
         ),
         child: child,
       );
@@ -6258,21 +6292,25 @@ class _DriverShellScreenState extends State<DriverShellScreen>
   Widget _metric(String label, String value) => Container(
         padding: const EdgeInsets.all(10),
         decoration: BoxDecoration(
-          color: const Color(0xFF06131F),
+          color: _surfaceAlt,
           borderRadius: BorderRadius.circular(13),
-          border: Border.all(color: const Color(0xFF173B54)),
+          border: Border.all(color: _lineColor),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
               label,
-              style: const TextStyle(color: Colors.white38, fontSize: 9),
+              style: TextStyle(color: _textFaint, fontSize: 9),
             ),
             const SizedBox(height: 3),
             Text(
               value,
-              style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 11),
+              style: TextStyle(
+                color: _textPrimary,
+                fontWeight: FontWeight.w900,
+                fontSize: 11,
+              ),
             ),
           ],
         ),
@@ -6285,6 +6323,6 @@ class _DriverShellScreenState extends State<DriverShellScreen>
           borderRadius: BorderRadius.circular(14),
           border: Border.all(color: Colors.orange.withValues(alpha: .28)),
         ),
-        child: Text(value, style: const TextStyle(color: Colors.white70)),
+        child: Text(value, style: TextStyle(color: _textMuted)),
       );
 }
