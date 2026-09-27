@@ -3504,9 +3504,9 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                     bottom: BorderSide(color: Color(0xFF102D42)),
                   ),
                 ),
-                child: SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  physics: const BouncingScrollPhysics(),
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
                   child: Row(
                     children: [
                       _healthPill(
