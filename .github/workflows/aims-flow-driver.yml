@@ -274,6 +274,35 @@ jobs:
             --dart-define=AIMS_FIREBASE_ANDROID_APP_ID="$AIMS_FIREBASE_ANDROID_APP_ID" \
             --dart-define=AIMS_FIREBASE_STORAGE_BUCKET="$AIMS_FIREBASE_STORAGE_BUCKET"
 
+      - name: Build Google Play App Bundle
+        env:
+          AIMS_TRACKING_TOKEN: ${{ secrets.AIMS_TRACKING_TOKEN }}
+          AIMS_FIREBASE_API_KEY: ${{ secrets.AIMS_FIREBASE_API_KEY }}
+          AIMS_FIREBASE_PROJECT_ID: ${{ secrets.AIMS_FIREBASE_PROJECT_ID }}
+          AIMS_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.AIMS_FIREBASE_MESSAGING_SENDER_ID }}
+          AIMS_FIREBASE_ANDROID_APP_ID: ${{ secrets.AIMS_FIREBASE_ANDROID_APP_ID }}
+          AIMS_FIREBASE_STORAGE_BUCKET: ${{ secrets.AIMS_FIREBASE_STORAGE_BUCKET }}
+        run: |
+          set -euo pipefail
+          test -n "$AIMS_TRACKING_TOKEN"
+          AIMS_FIREBASE_API_KEY="${AIMS_FIREBASE_API_KEY:-$AIMS_FIREBASE_API_KEY_FALLBACK}"
+          AIMS_FIREBASE_PROJECT_ID="${AIMS_FIREBASE_PROJECT_ID:-$AIMS_FIREBASE_PROJECT_ID_FALLBACK}"
+          AIMS_FIREBASE_MESSAGING_SENDER_ID="${AIMS_FIREBASE_MESSAGING_SENDER_ID:-$AIMS_FIREBASE_MESSAGING_SENDER_ID_FALLBACK}"
+          AIMS_FIREBASE_ANDROID_APP_ID="${AIMS_FIREBASE_ANDROID_APP_ID:-$AIMS_FIREBASE_ANDROID_APP_ID_FALLBACK}"
+          AIMS_FIREBASE_STORAGE_BUCKET="${AIMS_FIREBASE_STORAGE_BUCKET:-$AIMS_FIREBASE_STORAGE_BUCKET_FALLBACK}"
+          flutter build appbundle --release \
+            --dart-define=AIMS_TRACKING_BASE_URL=https://logistic-aims.hu/api/aims-tracking \
+            --dart-define=AIMS_TRACKING_TOKEN="$AIMS_TRACKING_TOKEN" \
+            --dart-define=AIMS_FIREBASE_API_KEY="$AIMS_FIREBASE_API_KEY" \
+            --dart-define=AIMS_FIREBASE_PROJECT_ID="$AIMS_FIREBASE_PROJECT_ID" \
+            --dart-define=AIMS_FIREBASE_MESSAGING_SENDER_ID="$AIMS_FIREBASE_MESSAGING_SENDER_ID" \
+            --dart-define=AIMS_FIREBASE_ANDROID_APP_ID="$AIMS_FIREBASE_ANDROID_APP_ID" \
+            --dart-define=AIMS_FIREBASE_STORAGE_BUCKET="$AIMS_FIREBASE_STORAGE_BUCKET"
+          test -s build/app/outputs/bundle/release/app-release.aab
+          cp build/app/outputs/bundle/release/app-release.aab AIMS-Flow-R103.aab
+          jarsigner -verify -strict AIMS-Flow-R103.aab
+          sha256sum AIMS-Flow-R103.aab | tee AIMS-Flow-R103.aab.sha256
+
       - name: Verify production certificate
         shell: bash
         run: |
@@ -301,6 +330,8 @@ jobs:
           path: |
             AIMS-Flow-R103.apk
             AIMS-Flow-R103.sha256
+            AIMS-Flow-R103.aab
+            AIMS-Flow-R103.aab.sha256
             signing-certificate.txt
           if-no-files-found: error
           retention-days: 30
