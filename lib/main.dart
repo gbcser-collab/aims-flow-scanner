@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
@@ -8,10 +10,23 @@ import 'services/driver_push_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await AimsLocaleController.instance.initialize();
-  await AimsDisplayModeController.instance.initialize();
-  await DriverPushService.instance.initialize();
+
+  // Local UI preferences should never prevent the driver app from opening.
+  try {
+    await AimsLocaleController.instance.initialize();
+  } catch (_) {}
+  try {
+    await AimsDisplayModeController.instance.initialize();
+  } catch (_) {}
+
   runApp(const AimsFlowApp());
+
+  // Push is important, but a Firebase/network problem must not block startup.
+  unawaited(
+    DriverPushService.instance.initialize().catchError((_) {
+      // DriverShell will retry registration after identity recovery.
+    }),
+  );
 }
 
 class AimsFlowApp extends StatelessWidget {
