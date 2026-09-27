@@ -542,7 +542,7 @@ class _FlowLoginScreenState extends State<FlowLoginScreen> {
                                             const SizedBox(height: 2),
                                             Text(
                                               t('admin_2fa_note'),
-                                              style: const TextStyle(
+                                              style: TextStyle(
                                                 color: dark ? Colors.white38 : const Color(0xFF8093A0),
                                               ),
                                             ),
