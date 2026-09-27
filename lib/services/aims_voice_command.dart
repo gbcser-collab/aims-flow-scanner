@@ -17,6 +17,10 @@ enum AimsVoiceIntent {
   cmrDocument,
   technicalIssue,
   readJobDetails,
+  readReference,
+  readLastMessage,
+  documentStatus,
+  assistantHealth,
   waitingSignal,
   urgentSignal,
   repeatLast,
@@ -189,6 +193,18 @@ class AimsVoiceCommandParser {
     if (any(['gps allapot', 'megy a gps', 'mukodik a gps', 'kovetes allapot', 'megy a kovetes'])) {
       return AimsVoiceCommand(intent: AimsVoiceIntent.trackingStatus, rawText: raw);
     }
+    if (any(['aims allapot', 'rendszer allapot', 'minden mukodik', 'flow allapot'])) {
+      return AimsVoiceCommand(intent: AimsVoiceIntent.assistantHealth, rawText: raw);
+    }
+    if (any(['mi a referencia', 'referencia szam', 'rakodasi referencia', 'fuvar referencia'])) {
+      return AimsVoiceCommand(intent: AimsVoiceIntent.readReference, rawText: raw);
+    }
+    if (any(['olvasd fel az utolso uzenetet', 'utolso diszpecser uzenet', 'mit irt a diszpecser', 'utolso uzenet'])) {
+      return AimsVoiceCommand(intent: AimsVoiceIntent.readLastMessage, rawText: raw);
+    }
+    if (any(['dokumentum allapot', 'cmr allapot', 'elkuldted a cmr', 'megvan a cmr'])) {
+      return AimsVoiceCommand(intent: AimsVoiceIntent.documentStatus, rawText: raw);
+    }
     if (any(['kovetkezo feladat', 'kovetkezo munka', 'kovetkezo fuvar', 'mi a kovetkezo feladat'])) {
       return AimsVoiceCommand(intent: AimsVoiceIntent.showNextJobs, rawText: raw);
     }
@@ -265,6 +281,18 @@ class AimsVoiceCommandParser {
     if (any(['gps status', 'is gps working', 'tracking status'])) {
       return AimsVoiceCommand(intent: AimsVoiceIntent.trackingStatus, rawText: raw);
     }
+    if (any(['aims status', 'system status', 'is everything working', 'flow status'])) {
+      return AimsVoiceCommand(intent: AimsVoiceIntent.assistantHealth, rawText: raw);
+    }
+    if (any(['what is the reference', 'reference number', 'job reference', 'pickup reference'])) {
+      return AimsVoiceCommand(intent: AimsVoiceIntent.readReference, rawText: raw);
+    }
+    if (any(['read the last message', 'last dispatcher message', 'what did dispatch say', 'last message'])) {
+      return AimsVoiceCommand(intent: AimsVoiceIntent.readLastMessage, rawText: raw);
+    }
+    if (any(['document status', 'cmr status', 'did you send the cmr', 'is the cmr ready'])) {
+      return AimsVoiceCommand(intent: AimsVoiceIntent.documentStatus, rawText: raw);
+    }
     if (any(['next task', 'next job', 'next assigned job', 'what is my next job'])) {
       return AimsVoiceCommand(intent: AimsVoiceIntent.showNextJobs, rawText: raw);
     }
@@ -336,6 +364,18 @@ class AimsVoiceCommandParser {
     }
     if (any(['gps status', 'funktioniert gps', 'tracking status'])) {
       return AimsVoiceCommand(intent: AimsVoiceIntent.trackingStatus, rawText: raw);
+    }
+    if (any(['aims status', 'systemstatus', 'funktioniert alles', 'flow status'])) {
+      return AimsVoiceCommand(intent: AimsVoiceIntent.assistantHealth, rawText: raw);
+    }
+    if (any(['was ist die referenz', 'referenznummer', 'auftragsreferenz', 'ladereferenz'])) {
+      return AimsVoiceCommand(intent: AimsVoiceIntent.readReference, rawText: raw);
+    }
+    if (any(['letzte nachricht vorlesen', 'letzte disposition nachricht', 'was hat die disposition geschrieben', 'letzte nachricht'])) {
+      return AimsVoiceCommand(intent: AimsVoiceIntent.readLastMessage, rawText: raw);
+    }
+    if (any(['dokument status', 'cmr status', 'cmr gesendet', 'ist das cmr fertig'])) {
+      return AimsVoiceCommand(intent: AimsVoiceIntent.documentStatus, rawText: raw);
     }
     if (any(['nachste aufgabe', 'nachster auftrag', 'nachster job', 'was ist der nachste auftrag'])) {
       return AimsVoiceCommand(intent: AimsVoiceIntent.showNextJobs, rawText: raw);
