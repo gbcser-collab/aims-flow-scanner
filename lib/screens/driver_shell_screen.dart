@@ -1395,8 +1395,8 @@ class _DriverShellScreenState extends State<DriverShellScreen>
     }
 
     final distance = _distanceMeters(
-      position.latitude,
-      position.longitude,
+      status.stableLatitude ?? position.latitude,
+      status.stableLongitude ?? position.longitude,
       stop.latitude,
       stop.longitude,
     );
@@ -3282,6 +3282,10 @@ class _DriverShellScreenState extends State<DriverShellScreen>
             urgent: true, message: 'Voice command');
         return _l('Sürgős jelzést küldtem.', 'I sent an urgent alert.',
             'Ich habe eine dringende Meldung gesendet.');
+      case AimsVoiceIntent.repeatLast:
+        // Handled inside AimsVoiceService so it can repeat the exact previous
+        // announcement without inventing or re-reading operational data.
+        return '';
       case AimsVoiceIntent.unknown:
         return AimsLocaleController.instance.t('not_understood');
     }
@@ -3359,6 +3363,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
 
   Future<void> _refreshAfterResume() async {
     try {
+      await _tracking.recover();
       final status = await _tracking.currentStatus();
       if (mounted) setState(() => _trackingStatus = status);
     } catch (_) {
@@ -3415,6 +3420,9 @@ class _DriverShellScreenState extends State<DriverShellScreen>
     if (_healthRefreshBusy || _plate.isEmpty) return;
     setState(() => _healthRefreshBusy = true);
     try {
+      await _tracking.recover();
+      final tracking = await _tracking.currentStatus();
+      if (mounted) setState(() => _trackingStatus = tracking);
       await _refreshJobs(showLoading: false);
       await _refreshOfficeMessages(silent: true);
       await _refreshRestMode(silent: true);
@@ -3469,12 +3477,16 @@ class _DriverShellScreenState extends State<DriverShellScreen>
         animation: _sync,
         builder: (context, _) {
           final gps = _trackingStatus;
-          final gpsAge = gps?.lastSentAt == null
+          final gpsAge = gps?.lastFixAt == null
               ? null
-              : DateTime.now().difference(gps!.lastSentAt!).inMinutes;
+              : DateTime.now().difference(gps!.lastFixAt!).inMinutes;
           final gpsGood = gps?.running == true &&
-              (gpsAge == null || gpsAge <= 2) &&
-              (gps?.lastError == null || gps!.lastError!.isEmpty);
+              gps!.gpsScore >= 55 &&
+              gps.gpsQuality != 'rejected' &&
+              (gpsAge == null || gpsAge <= 2);
+          final gpsExcellent = gpsGood && gps.gpsScore >= 85;
+          final voiceHealthy = _voiceState.enabled &&
+              _voiceState.mode != AimsVoiceMode.error;
           final online = _jobRefreshFailures == 0 && _lastJobSyncAt != null;
           final hasCache = _jobs.isNotEmpty;
           final pending = _driverPendingCount;
@@ -3524,27 +3536,40 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                             : Icons.gps_off_rounded,
                         label: 'GPS',
                         value: gpsGood
-                            ? (gpsAge == null || gpsAge == 0
-                                ? _l('AKTÍV', 'ACTIVE', 'AKTIV')
-                                : '$gpsAge p')
+                            ? (gpsExcellent
+                                ? '100%'
+                                : '${gps.gpsScore}%')
                             : _l('ELLENŐRIZD', 'CHECK', 'PRÜFEN'),
                         color: gpsGood ? _green : const Color(0xFFFFC857),
                       ),
                       const SizedBox(width: 7),
                       _healthPill(
-                        icon: pending == 0
+                        icon: pending == 0 && (gps?.queueDepth ?? 0) == 0
                             ? Icons.check_circle_outline_rounded
                             : Icons.cloud_upload_outlined,
                         label: _l('SOR', 'QUEUE', 'WART'),
-                        value: '$pending',
-                        color: pending == 0 ? _green : const Color(0xFFFFC857),
+                        value: '${pending + (gps?.queueDepth ?? 0)}',
+                        color: pending == 0 && (gps?.queueDepth ?? 0) == 0
+                            ? _green
+                            : const Color(0xFFFFC857),
+                      ),
+                      const SizedBox(width: 7),
+                      _healthPill(
+                        icon: voiceHealthy
+                            ? Icons.record_voice_over_rounded
+                            : Icons.mic_off_rounded,
+                        label: 'AIMS',
+                        value: voiceHealthy
+                            ? _l('KÉSZ', 'READY', 'BEREIT')
+                            : _l('CHECK', 'CHECK', 'PRÜFEN'),
+                        color: voiceHealthy ? _green : const Color(0xFFFFC857),
                       ),
                       const SizedBox(width: 7),
                       _healthPill(
                         icon: Icons.sync_rounded,
                         label: _l('UTOLSÓ', 'LAST', 'LETZTE'),
                         value: _ageLabel(_lastJobSyncAt),
-                        color: Colors.white70,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
                       ),
                     ],
                   ),
