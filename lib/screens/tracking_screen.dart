@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../services/tracking_runtime.dart';
 
@@ -10,8 +11,14 @@ class TrackingScreen extends StatefulWidget {
 }
 
 class _TrackingScreenState extends State<TrackingScreen> {
-  static const _blue = Color(0xFF1CB8FF);
-  static const _panel = Color(0xFF0A1727);
+  static const _blue = Color(0xFF1478FF);
+  bool get _dark => Theme.of(context).brightness == Brightness.dark;
+  Color get _page => _dark ? const Color(0xFF020813) : const Color(0xFFF5F9FC);
+  Color get _panel => _dark ? const Color(0xFF0A1727) : Colors.white;
+  Color get _text => _dark ? Colors.white : const Color(0xFF0A1C2E);
+  Color get _muted => _dark ? Colors.white70 : const Color(0xFF536B7A);
+  Color get _faint => _dark ? Colors.white38 : const Color(0xFF8093A0);
+  Color get _line => _dark ? const Color(0xFF24557D) : const Color(0xFFD5E2EB);
   final _runtime = TrackingRuntime.instance;
   late final TextEditingController _plate;
   late final TextEditingController _reference;
@@ -62,6 +69,21 @@ class _TrackingScreenState extends State<TrackingScreen> {
     }
   }
 
+  Future<void> _openLiveMap(TrackingPoint point) async {
+    final coordinate =
+        '${point.latitude.toStringAsFixed(6)},${point.longitude.toStringAsFixed(6)}';
+    final uri = Uri.parse(
+      'https://www.google.com/maps/search/?api=1&query='
+      '${Uri.encodeQueryComponent(coordinate)}',
+    );
+    final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!opened && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('A térkép nem nyitható meg.')),
+      );
+    }
+  }
+
   Future<void> _stop() async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -92,10 +114,10 @@ class _TrackingScreenState extends State<TrackingScreen> {
         final point = _runtime.latestPoint;
         final session = _runtime.session;
         return Scaffold(
-          backgroundColor: const Color(0xFF020813),
+          backgroundColor: _page,
           appBar: AppBar(
-            backgroundColor: const Color(0xFF020813),
-            foregroundColor: Colors.white,
+            backgroundColor: _page,
+            foregroundColor: _text,
             title: const Text('AIMS Flow • Nyomkövetés'),
             actions: [
               IconButton(
@@ -106,13 +128,7 @@ class _TrackingScreenState extends State<TrackingScreen> {
             ],
           ),
           body: Container(
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [Color(0xFF071E3D), Color(0xFF041427), Color(0xFF02070E)],
-              ),
-            ),
+            color: _page,
             child: SafeArea(
               child: ListView(
                 padding: const EdgeInsets.all(16),
@@ -120,7 +136,9 @@ class _TrackingScreenState extends State<TrackingScreen> {
                   Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      color: _runtime.active ? const Color(0xFF0B2420) : _panel,
+                      color: _runtime.active
+                          ? (_dark ? const Color(0xFF0B2420) : const Color(0xFFEAF9F2))
+                          : _panel,
                       borderRadius: BorderRadius.circular(18),
                       border: Border.all(color: (_runtime.active ? const Color(0xFF48D597) : _blue).withValues(alpha: .48)),
                     ),
@@ -142,7 +160,7 @@ class _TrackingScreenState extends State<TrackingScreen> {
                                 _runtime.active
                                     ? 'Csak az aktív fuvar alatt követ. Androidon állandó értesítés jelzi a nyomkövetést.'
                                     : 'A követés nem fut a háttérben addig, amíg itt el nem indítod a fuvart.',
-                                style: const TextStyle(color: Colors.white70, height: 1.35),
+                                style: TextStyle(color: _muted, height: 1.35),
                               ),
                             ],
                           ),
@@ -190,6 +208,20 @@ class _TrackingScreenState extends State<TrackingScreen> {
                     ),
                     const SizedBox(height: 10),
                     _metric('Valós koordináta', point == null ? 'GPS-jelre vár…' : '${point.latitude.toStringAsFixed(6)}, ${point.longitude.toStringAsFixed(6)}'),
+                    if (point != null) ...[
+                      const SizedBox(height: 10),
+                      OutlinedButton.icon(
+                        onPressed: () => _openLiveMap(point),
+                        icon: const Icon(Icons.map_rounded),
+                        label: const Text('Élő helyzet megnyitása térképen'),
+                        style: OutlinedButton.styleFrom(
+                          minimumSize: const Size.fromHeight(50),
+                          foregroundColor: _blue,
+                          side: const BorderSide(color: _blue),
+                          textStyle: const TextStyle(fontWeight: FontWeight.w900),
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 10),
                     Row(
                       children: [
@@ -235,7 +267,7 @@ class _TrackingScreenState extends State<TrackingScreen> {
                         Text('Eszköz státusz: ${_runtime.deviceState.toUpperCase()}', style: const TextStyle(color: _blue, fontWeight: FontWeight.w800)),
                         if (_runtime.statusMessage != null) ...[
                           const SizedBox(height: 6),
-                          Text(_runtime.statusMessage!, style: const TextStyle(color: Colors.white60, height: 1.35)),
+                          Text(_runtime.statusMessage!, style: TextStyle(color: _muted, height: 1.35)),
                         ],
                       ],
                     ),
@@ -255,14 +287,14 @@ class _TrackingScreenState extends State<TrackingScreen> {
       child: TextField(
         controller: controller,
         textCapitalization: capitalization,
-        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+        style: TextStyle(color: _text, fontWeight: FontWeight.w700),
         decoration: InputDecoration(
           labelText: label,
-          labelStyle: const TextStyle(color: Colors.white54),
+          labelStyle: TextStyle(color: _muted),
           filled: true,
           fillColor: _panel,
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
-          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Color(0xFF24557D))),
+          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: _line)),
           focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: _blue)),
         ),
       ),
@@ -280,9 +312,9 @@ class _TrackingScreenState extends State<TrackingScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label, style: const TextStyle(color: Colors.white38, fontSize: 12, fontWeight: FontWeight.w700)),
+          Text(label, style: TextStyle(color: _faint, fontSize: 12, fontWeight: FontWeight.w700)),
           const SizedBox(height: 4),
-          Text(value, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900)),
+          Text(value, style: TextStyle(color: _text, fontWeight: FontWeight.w900)),
         ],
       ),
     );
