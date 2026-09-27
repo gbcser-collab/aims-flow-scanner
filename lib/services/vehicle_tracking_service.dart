@@ -21,6 +21,13 @@ class VehicleTrackingStatus {
     this.lastPosition,
     this.lastSentAt,
     this.lastError,
+    this.gpsQuality = 'unknown',
+    this.gpsScore = 0,
+    this.queueDepth = 0,
+    this.lastFixAt,
+    this.rejectedFixes = 0,
+    this.stableLatitude,
+    this.stableLongitude,
   });
 
   final bool enabled;
@@ -30,6 +37,13 @@ class VehicleTrackingStatus {
   final Position? lastPosition;
   final DateTime? lastSentAt;
   final String? lastError;
+  final String gpsQuality;
+  final int gpsScore;
+  final int queueDepth;
+  final DateTime? lastFixAt;
+  final int rejectedFixes;
+  final double? stableLatitude;
+  final double? stableLongitude;
 }
 
 class VehicleTrackingService {
@@ -50,16 +64,26 @@ class VehicleTrackingService {
   final _statusController = StreamController<VehicleTrackingStatus>.broadcast();
   StreamSubscription<Position>? _subscription;
   Timer? _heartbeatTimer;
+  Timer? _healthTimer;
   Timer? _retryTimer;
+  Timer? _streamRecoveryTimer;
   Future<void> _queueIoTail = Future<void>.value();
   Future<void> _positionTail = Future<void>.value();
   bool _flushRunning = false;
   bool _flushAgain = false;
   int _flushFailures = 0;
+  int _streamFailures = 0;
+  int _queueDepth = 0;
+  int _rejectedFixes = 0;
   Position? _lastPosition;
   Position? _lastAcceptedPosition;
+  DateTime? _lastFixAt;
   DateTime? _lastSentAt;
   String? _lastError;
+  String _gpsQuality = 'unknown';
+  int _gpsScore = 0;
+  double? _stableLatitude;
+  double? _stableLongitude;
   String _deviceId = '';
   String _vehicleLabel = '';
   bool _enabled = false;
@@ -73,7 +97,23 @@ class VehicleTrackingService {
 
   Future<Position?> currentPositionForAction() async {
     await _loadIdentity();
-    if (_lastPosition != null) return _lastPosition;
+
+    bool usable(Position? position) {
+      if (position == null) return false;
+      final assessment = GpsPointQuality.assess(
+        latitude: position.latitude,
+        longitude: position.longitude,
+        accuracy: RoamingResilience.finiteOrZero(position.accuracy),
+        speedMps: max(0.0, RoamingResilience.finiteOrZero(position.speed)),
+        capturedAt: position.timestamp,
+      );
+      return assessment.accepted &&
+          assessment.quality != GpsFixQuality.stale &&
+          assessment.score >= 55;
+    }
+
+    if (usable(_lastAcceptedPosition)) return _lastAcceptedPosition;
+
     try {
       final enabled = await Geolocator.isLocationServiceEnabled();
       if (!enabled) return null;
@@ -83,7 +123,8 @@ class VehicleTrackingService {
       }
       if (permission == LocationPermission.denied ||
           permission == LocationPermission.deniedForever) {
-        return await Geolocator.getLastKnownPosition();
+        final fallback = await Geolocator.getLastKnownPosition();
+        return usable(fallback) ? fallback : null;
       }
       final position = await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(
@@ -91,14 +132,30 @@ class VehicleTrackingService {
           timeLimit: Duration(seconds: 8),
         ),
       );
+      if (!usable(position)) return null;
       _lastPosition = position;
+      _lastAcceptedPosition = position;
+      _lastFixAt = position.timestamp;
       _emit();
       return position;
     } on TimeoutException {
-      return _lastPosition ?? await Geolocator.getLastKnownPosition();
+      final fallback =
+          _lastAcceptedPosition ?? await Geolocator.getLastKnownPosition();
+      return usable(fallback) ? fallback : null;
     } catch (_) {
-      return _lastPosition ?? await Geolocator.getLastKnownPosition();
+      final fallback =
+          _lastAcceptedPosition ?? await Geolocator.getLastKnownPosition();
+      return usable(fallback) ? fallback : null;
     }
+  }
+
+  Future<void> recover() async {
+    await _loadIdentity();
+    if (!_enabled) return;
+    if (_subscription == null) {
+      await _startLocationStream(requestPermission: false);
+    }
+    unawaited(_requestFlush());
   }
 
   Future<void> startIfEnabled() async {
@@ -141,8 +198,13 @@ class VehicleTrackingService {
     _subscription = null;
     _heartbeatTimer?.cancel();
     _heartbeatTimer = null;
+    _healthTimer?.cancel();
+    _healthTimer = null;
     _retryTimer?.cancel();
     _retryTimer = null;
+    _streamRecoveryTimer?.cancel();
+    _streamRecoveryTimer = null;
+    _streamFailures = 0;
     _emit();
   }
 
@@ -202,18 +264,47 @@ class VehicleTrackingService {
     _subscription = Geolocator.getPositionStream(locationSettings: settings).listen(
       _enqueuePosition,
       onError: (Object error) {
-        _lastError = error.toString();
+        _lastError = 'GPS stream hiba: $error';
         _emit();
+        _scheduleStreamRecovery();
       },
+      onDone: _scheduleStreamRecovery,
       cancelOnError: false,
     );
+    _streamFailures = 0;
 
     _heartbeatTimer?.cancel();
     _heartbeatTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       unawaited(_sendHeartbeat());
     });
+    _healthTimer?.cancel();
+    _healthTimer = Timer.periodic(const Duration(seconds: 45), (_) {
+      if (!_enabled) return;
+      if (_subscription == null) {
+        unawaited(recover());
+      } else {
+        unawaited(_requestFlush());
+      }
+    });
     unawaited(_requestFlush());
     _emit();
+  }
+
+  void _scheduleStreamRecovery() {
+    if (!_enabled) return;
+    _streamFailures++;
+    final current = _subscription;
+    _subscription = null;
+    if (current != null) {
+      unawaited(current.cancel());
+    }
+    _streamRecoveryTimer?.cancel();
+    final delay = RoamingResilience.retryDelay(_streamFailures);
+    _streamRecoveryTimer = Timer(delay, () {
+      if (_enabled && _subscription == null) {
+        unawaited(recover());
+      }
+    });
   }
 
   void _enqueuePosition(Position position) {
@@ -226,7 +317,12 @@ class VehicleTrackingService {
   }
 
   Future<void> _sendHeartbeat() async {
-    if (!_enabled || _subscription == null) return;
+    if (!_enabled) return;
+    if (_subscription == null) {
+      try {
+        await _startLocationStream(requestPermission: false);
+      } catch (_) {}
+    }
     if (_lastSentAt != null &&
         DateTime.now().difference(_lastSentAt!) < const Duration(seconds: 25)) {
       return;
@@ -279,6 +375,7 @@ class VehicleTrackingService {
       final lines = (await file.readAsLines())
           .where((line) => line.trim().isNotEmpty)
           .toList();
+      _queueDepth = lines.length;
       return lines.take(maxLines).toList();
     });
   }
@@ -299,6 +396,7 @@ class VehicleTrackingService {
         remaining.isEmpty ? '' : '${remaining.join('\n')}\n',
         flush: true,
       );
+      _queueDepth = remaining.length;
       return true;
     });
   }
@@ -332,7 +430,7 @@ class VehicleTrackingService {
     final previous = _lastAcceptedPosition;
     final speed = max(0.0, RoamingResilience.finiteOrZero(position.speed));
     final accuracy = RoamingResilience.finiteOrZero(position.accuracy);
-    final accepted = GpsPointQuality.acceptable(
+    final assessment = GpsPointQuality.assess(
       latitude: position.latitude,
       longitude: position.longitude,
       accuracy: accuracy,
@@ -341,26 +439,42 @@ class VehicleTrackingService {
       previousLatitude: previous?.latitude,
       previousLongitude: previous?.longitude,
       previousAccuracy: previous?.accuracy,
+      previousSpeedMps:
+          previous == null ? null : max(0.0, RoamingResilience.finiteOrZero(previous.speed)),
       previousCapturedAt: previous?.timestamp,
     );
-    if (!accepted) {
-      _lastError = 'GPS pontosság gyenge, várok jobb jelre.';
+    if (!assessment.accepted) {
+      _gpsQuality = assessment.quality.name;
+      _gpsScore = assessment.score;
+      _rejectedFixes++;
+      _lastError = assessment.reason == 'impossible_jump'
+          ? 'Hibás GPS-ugrást kiszűrtem.'
+          : 'GPS pontosság gyenge, várok jobb jelre.';
       _emit();
       return;
     }
 
-    if (source == 'stream' &&
-        previous != null &&
-        GpsPointQuality.isStationaryJitter(
-          latitude: position.latitude,
-          longitude: position.longitude,
-          accuracy: accuracy,
-          speedMps: speed,
-          previousLatitude: previous.latitude,
-          previousLongitude: previous.longitude,
-          previousAccuracy: previous.accuracy,
-          previousSpeedMps: max(0.0, previous.speed),
-        )) {
+    final stable = GpsPointQuality.stabilize(
+      latitude: position.latitude,
+      longitude: position.longitude,
+      accuracy: accuracy,
+      speedMps: speed,
+      stationaryJitter: assessment.stationaryJitter,
+      previousLatitude: _stableLatitude,
+      previousLongitude: _stableLongitude,
+    );
+
+    _gpsQuality = assessment.quality.name;
+    _gpsScore = assessment.score;
+    _lastFixAt = position.timestamp;
+    _rejectedFixes = 0;
+    _stableLatitude = stable.latitude;
+    _stableLongitude = stable.longitude;
+
+    if (source == 'stream' && assessment.stationaryJitter) {
+      _lastPosition = previous ?? position;
+      _lastError = null;
+      _emit();
       return;
     }
 
@@ -382,8 +496,12 @@ class VehicleTrackingService {
       'vehicleLabel': _vehicleLabel,
       'countryCode': countryCode,
       'timestamp': position.timestamp.toUtc().toIso8601String(),
-      'latitude': position.latitude,
-      'longitude': position.longitude,
+      'latitude': _stableLatitude ?? position.latitude,
+      'longitude': _stableLongitude ?? position.longitude,
+      'rawLatitude': position.latitude,
+      'rawLongitude': position.longitude,
+      'gpsQuality': _gpsQuality,
+      'gpsScore': _gpsScore,
       'accuracy': accuracy,
       'speedMps': speed,
       'heading': RoamingResilience.finiteOrZero(position.heading),
@@ -398,7 +516,9 @@ class VehicleTrackingService {
         mode: FileMode.append,
         flush: true,
       );
+      _queueDepth++;
     });
+    _emit();
     unawaited(_requestFlush());
   }
 
@@ -437,6 +557,7 @@ class VehicleTrackingService {
     final lines = await _queueSnapshot();
     if (lines.isEmpty) {
       _flushFailures = 0;
+      _queueDepth = 0;
       return;
     }
 
@@ -554,6 +675,13 @@ class VehicleTrackingService {
         lastPosition: _lastPosition,
         lastSentAt: _lastSentAt,
         lastError: _lastError,
+        gpsQuality: _gpsQuality,
+        gpsScore: _gpsScore,
+        queueDepth: _queueDepth,
+        lastFixAt: _lastFixAt,
+        rejectedFixes: _rejectedFixes,
+        stableLatitude: _stableLatitude,
+        stableLongitude: _stableLongitude,
       );
 
   void _emit() {
