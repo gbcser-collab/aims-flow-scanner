@@ -1,0 +1,7 @@
+Első Google Play kiadás.
+• Fuvarok és megállók kezelése
+• GPS és érkezéskövetés
+• Sofőrjelzések és diszpécserüzenetek
+• CMR/dokumentum kezelés
+• Offline sor és stabilabb újraszinkronizálás
+• Magyar, angol és német felület
