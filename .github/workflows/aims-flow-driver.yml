@@ -2,7 +2,7 @@ name: Build AIMS Flow Driver Android
 
 on:
   push:
-    branches: [aims-flow-driver-v1, aims-flow-driver-v1-r87-recovery, aims-flow-driver-v1-r88-fixes, aims-flow-r94-full-system-hardening, aims-flow-r95-autopilot-v3, aims-flow-r100-ui-message-stability, aims-flow-r101-runtime-ui-hardening, aims-flow-r102-driver-first-stability, aims-flow-r103-production-signing]
+    branches: [aims-flow-driver-v1, aims-flow-driver-v1-r87-recovery, aims-flow-driver-v1-r88-fixes, aims-flow-r94-full-system-hardening, aims-flow-r95-autopilot-v3, aims-flow-r100-ui-message-stability, aims-flow-r101-runtime-ui-hardening, aims-flow-r102-driver-first-stability, aims-flow-r103-production-signing, aims-flow-r104-next-level]
     paths:
       - 'lib/**'
       - 'test/**'
@@ -299,9 +299,9 @@ jobs:
             --dart-define=AIMS_FIREBASE_ANDROID_APP_ID="$AIMS_FIREBASE_ANDROID_APP_ID" \
             --dart-define=AIMS_FIREBASE_STORAGE_BUCKET="$AIMS_FIREBASE_STORAGE_BUCKET"
           test -s build/app/outputs/bundle/release/app-release.aab
-          cp build/app/outputs/bundle/release/app-release.aab AIMS-Flow-R103.aab
-          jarsigner -verify AIMS-Flow-R103.aab
-          AAB_CERT_SHA256="$(keytool -printcert -jarfile AIMS-Flow-R103.aab             | sed -n 's/^[[:space:]]*SHA256: //p'             | head -1             | tr 'A-F' 'a-f'             | tr -d ':[:space:]')"
+          cp build/app/outputs/bundle/release/app-release.aab AIMS-Flow-R104.aab
+          jarsigner -verify AIMS-Flow-R104.aab
+          AAB_CERT_SHA256="$(keytool -printcert -jarfile AIMS-Flow-R104.aab             | sed -n 's/^[[:space:]]*SHA256: //p'             | head -1             | tr 'A-F' 'a-f'             | tr -d ':[:space:]')"
           test -n "$AAB_CERT_SHA256"
           if [ "$AAB_CERT_SHA256" != "$AIMS_SIGN_CERT_SHA256" ]; then
             echo "AAB signing certificate mismatch" >&2
@@ -309,7 +309,7 @@ jobs:
             echo "Actual:   $AAB_CERT_SHA256" >&2
             exit 1
           fi
-          sha256sum AIMS-Flow-R103.aab | tee AIMS-Flow-R103.aab.sha256
+          sha256sum AIMS-Flow-R104.aab | tee AIMS-Flow-R104.aab.sha256
 
       - name: Verify production certificate
         shell: bash
@@ -327,19 +327,19 @@ jobs:
           CERT_DIGEST="$(grep -m1 'certificate SHA-256 digest:' signing-certificate.txt | sed 's/^.*certificate SHA-256 digest: //' | tr 'A-F' 'a-f' | tr -d ':')"
           test -n "$CERT_DIGEST"
           test "$CERT_DIGEST" = "$AIMS_SIGN_CERT_SHA256"
-          cp build/app/outputs/flutter-apk/app-release.apk AIMS-Flow-R103.apk
-          sha256sum AIMS-Flow-R103.apk | tee AIMS-Flow-R103.sha256
-          ls -lh AIMS-Flow-R103.apk
+          cp build/app/outputs/flutter-apk/app-release.apk AIMS-Flow-R104.apk
+          sha256sum AIMS-Flow-R104.apk | tee AIMS-Flow-R104.sha256
+          ls -lh AIMS-Flow-R104.apk
 
       - name: Upload production-signed APK
         uses: actions/upload-artifact@v4
         with:
-          name: AIMS-Flow-R103-PRODUCTION-SIGNED
+          name: AIMS-Flow-R104-PRODUCTION-SIGNED
           path: |
-            AIMS-Flow-R103.apk
-            AIMS-Flow-R103.sha256
-            AIMS-Flow-R103.aab
-            AIMS-Flow-R103.aab.sha256
+            AIMS-Flow-R104.apk
+            AIMS-Flow-R104.sha256
+            AIMS-Flow-R104.aab
+            AIMS-Flow-R104.aab.sha256
             signing-certificate.txt
           if-no-files-found: error
           retention-days: 30
