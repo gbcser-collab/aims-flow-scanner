@@ -83,7 +83,7 @@ class _FlowLoginScreenState extends State<FlowLoginScreen> {
       context: context,
       barrierDismissible: false,
       builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF071522),
+        backgroundColor: Theme.of(context).colorScheme.surface,
         title: Text(t('driver_name_question')),
         content: TextField(
           key: const Key('flow-driver-name'),
@@ -230,23 +230,38 @@ class _FlowLoginScreenState extends State<FlowLoginScreen> {
     }
   }
 
-  InputDecoration _decoration(String hint, IconData icon) => InputDecoration(
-        hintText: hint,
-        prefixIcon: Icon(icon, color: const Color(0xFF9EDBFF), size: 25),
-        prefixIconConstraints: const BoxConstraints(minWidth: 54, minHeight: 58),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
-        filled: true,
-        fillColor: const Color(0xFF0A2236),
-        hintStyle: const TextStyle(color: Colors.white38),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: const BorderSide(color: Color(0xFF245A78)),
+  InputDecoration _decoration(
+    BuildContext context,
+    String hint,
+    IconData icon,
+  ) {
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    return InputDecoration(
+      hintText: hint,
+      prefixIcon: Icon(
+        icon,
+        color: dark ? const Color(0xFF9EDBFF) : const Color(0xFF1478FF),
+        size: 25,
+      ),
+      prefixIconConstraints: const BoxConstraints(minWidth: 54, minHeight: 58),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+      filled: true,
+      fillColor: dark ? const Color(0xFF0A2236) : const Color(0xFFF5F9FC),
+      hintStyle: TextStyle(
+        color: dark ? Colors.white38 : const Color(0xFF8194A0),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: BorderSide(
+          color: dark ? const Color(0xFF245A78) : const Color(0xFFD4E1EA),
         ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: const BorderSide(color: _blue, width: 1.5),
-        ),
-      );
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: const BorderSide(color: _blue, width: 1.5),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -255,18 +270,29 @@ class _FlowLoginScreenState extends State<FlowLoginScreen> {
       animation: locale,
       builder: (context, _) {
         final t = locale.t;
+        final dark = Theme.of(context).brightness == Brightness.dark;
+        final primaryText = dark ? Colors.white : const Color(0xFF0A1C2E);
+        final mutedText =
+            dark ? Colors.white54 : const Color(0xFF536B7A);
         return Scaffold(
-          backgroundColor: const Color(0xFF020813),
+          backgroundColor:
+              dark ? const Color(0xFF020813) : const Color(0xFFF5F9FC),
           body: Container(
-            decoration: const BoxDecoration(
+            decoration: BoxDecoration(
               gradient: LinearGradient(
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
-                colors: [
-                  Color(0xFF071E3D),
-                  Color(0xFF030A13),
-                  Color(0xFF02070E),
-                ],
+                colors: dark
+                    ? const [
+                        Color(0xFF071E3D),
+                        Color(0xFF030A13),
+                        Color(0xFF02070E),
+                      ]
+                    : const [
+                        Color(0xFFFFFFFF),
+                        Color(0xFFF5FAFE),
+                        Color(0xFFEDF5FB),
+                      ],
               ),
             ),
             child: SafeArea(
@@ -310,10 +336,10 @@ class _FlowLoginScreenState extends State<FlowLoginScreen> {
                         const SizedBox(height: 12),
                         Image.memory(_logo, width: 96, height: 96),
                         const SizedBox(height: 14),
-                        const Text(
+                        Text(
                           'AIMS FLOW',
                           style: TextStyle(
-                            color: Colors.white,
+                            color: primaryText,
                             fontSize: 30,
                             fontWeight: FontWeight.w900,
                             letterSpacing: 3,
@@ -333,15 +359,21 @@ class _FlowLoginScreenState extends State<FlowLoginScreen> {
                         Container(
                           padding: const EdgeInsets.all(18),
                           decoration: BoxDecoration(
-                            color: const Color(0xDD071725),
-                            borderRadius: BorderRadius.circular(18),
+                            color: dark
+                                ? const Color(0xDD071725)
+                                : const Color(0xFFFFFFFF),
+                            borderRadius: BorderRadius.circular(20),
                             border: Border.all(
-                              color: _blue.withValues(alpha: .5),
+                              color: dark
+                                  ? _blue.withValues(alpha: .5)
+                                  : const Color(0xFFD7E4ED),
                             ),
                             boxShadow: [
                               BoxShadow(
-                                color: _blue.withValues(alpha: .12),
+                                color: const Color(0xFF113A56)
+                                    .withValues(alpha: dark ? .12 : .08),
                                 blurRadius: 30,
+                                offset: const Offset(0, 10),
                               ),
                             ],
                           ),
@@ -362,8 +394,8 @@ class _FlowLoginScreenState extends State<FlowLoginScreen> {
                                       ? 'admin_login_help'
                                       : 'driver_login_help',
                                 ),
-                                style: const TextStyle(
-                                  color: Colors.white54,
+                                style: TextStyle(
+                                  color: mutedText,
                                   height: 1.4,
                                 ),
                               ),
@@ -386,7 +418,7 @@ class _FlowLoginScreenState extends State<FlowLoginScreen> {
                                     fontWeight: FontWeight.w800,
                                     letterSpacing: .8,
                                   ),
-                                  decoration: _decoration(
+                                  decoration: _decoration(context, 
                                     t('plate'),
                                     Icons.local_shipping_outlined,
                                   ).copyWith(
@@ -413,7 +445,7 @@ class _FlowLoginScreenState extends State<FlowLoginScreen> {
                                     fontWeight: FontWeight.w900,
                                     letterSpacing: 3,
                                   ),
-                                  decoration: _decoration(
+                                  decoration: _decoration(context, 
                                     t('driver_code'),
                                     Icons.key_rounded,
                                   ).copyWith(
@@ -458,7 +490,7 @@ class _FlowLoginScreenState extends State<FlowLoginScreen> {
                                   controller: _password,
                                   obscureText: _obscure,
                                   textInputAction: TextInputAction.next,
-                                  decoration: _decoration(
+                                  decoration: _decoration(context, 
                                     t('admin_password'),
                                     Icons.lock_outline_rounded,
                                   ).copyWith(
@@ -511,7 +543,7 @@ class _FlowLoginScreenState extends State<FlowLoginScreen> {
                                             Text(
                                               t('admin_2fa_note'),
                                               style: const TextStyle(
-                                                color: Colors.white38,
+                                                color: dark ? Colors.white38 : const Color(0xFF8093A0),
                                               ),
                                             ),
                                           ],
@@ -540,7 +572,7 @@ class _FlowLoginScreenState extends State<FlowLoginScreen> {
                                   maxLength: 6,
                                   textInputAction: TextInputAction.done,
                                   onSubmitted: (_) => _submit(),
-                                  decoration: _decoration(
+                                  decoration: _decoration(context, 
                                     t('authenticator_code'),
                                     Icons.shield_outlined,
                                   ).copyWith(counterText: ''),
@@ -620,8 +652,8 @@ class _FlowLoginScreenState extends State<FlowLoginScreen> {
                         Text(
                           t('driver_footer'),
                           textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            color: Colors.white38,
+                          style: TextStyle(
+                            color: dark ? Colors.white38 : const Color(0xFF8093A0),
                             height: 1.45,
                             fontSize: 11,
                           ),
