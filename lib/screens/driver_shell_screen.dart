@@ -258,6 +258,9 @@ class _DriverShellScreenState extends State<DriverShellScreen>
   bool _handsFreeBusy = false;
   int _refreshGeneration = 0;
   DateTime? _lastResumeRefreshAt;
+  DateTime? _lastJobSyncAt;
+  int _jobRefreshFailures = 0;
+  bool _healthRefreshBusy = false;
   final Map<int, List<_PendingStopAction>> _pendingStopActions = {};
   final Map<int, String> _jobCmrIds = {};
   final Map<int, CmrSyncState> _jobCmrStates = {};
@@ -1597,6 +1600,8 @@ class _DriverShellScreenState extends State<DriverShellScreen>
         _jobs = jobs;
         _loading = false;
         _message = null;
+        _lastJobSyncAt = DateTime.now();
+        _jobRefreshFailures = 0;
       });
       await _refreshJobCmrStates();
       await _finalizeDocumentGateIfPossible();
@@ -1606,6 +1611,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
       if (!mounted || generation != _refreshGeneration) return;
       setState(() {
         _loading = false;
+        _jobRefreshFailures++;
         _message = _jobs.isNotEmpty
             ? _l(
                 'Nincs stabil kapcsolat. A legutóbbi mentett fuvaradatot mutatom.',
@@ -3385,6 +3391,169 @@ class _DriverShellScreenState extends State<DriverShellScreen>
     await safe(() => _refreshOfficeMessages(silent: true));
   }
 
+  int get _driverPendingCount =>
+      _pendingSignals.length +
+      _pendingOfficeMessages.length +
+      _pendingRegistrationPoints.length +
+      _pendingStopActions.values.fold<int>(
+        0,
+        (sum, items) => sum + items.length,
+      ) +
+      _sync.pendingCount;
+
+  String _ageLabel(DateTime? value) {
+    if (value == null) return '—';
+    final minutes = DateTime.now().difference(value).inMinutes;
+    if (minutes <= 0) return _l('most', 'now', 'jetzt');
+    if (minutes < 60) return '$minutes p';
+    final hours = minutes ~/ 60;
+    return '$hours ó';
+  }
+
+  Future<void> _refreshDriverHealth() async {
+    if (_healthRefreshBusy || _plate.isEmpty) return;
+    setState(() => _healthRefreshBusy = true);
+    try {
+      await _refreshJobs(showLoading: false);
+      await _refreshOfficeMessages(silent: true);
+      await _refreshRestMode(silent: true);
+      await _sync.syncNow();
+    } catch (_) {
+      // Every subsystem has its own offline queue/retry path.
+    } finally {
+      if (mounted) setState(() => _healthRefreshBusy = false);
+    }
+  }
+
+  Widget _healthPill({
+    required IconData icon,
+    required String label,
+    required String value,
+    required Color color,
+  }) =>
+      Container(
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: .08),
+          borderRadius: BorderRadius.circular(11),
+          border: Border.all(color: color.withValues(alpha: .26)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 15, color: color),
+            const SizedBox(width: 5),
+            Text(
+              '$label ',
+              style: const TextStyle(
+                color: Colors.white54,
+                fontSize: 9,
+                fontWeight: FontWeight.w800,
+                letterSpacing: .35,
+              ),
+            ),
+            Text(
+              value,
+              style: TextStyle(
+                color: color,
+                fontSize: 10,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ],
+        ),
+      );
+
+  Widget _driverHealthStrip() => AnimatedBuilder(
+        animation: _sync,
+        builder: (context, _) {
+          final gps = _trackingStatus;
+          final gpsAge = gps?.lastSentAt == null
+              ? null
+              : DateTime.now().difference(gps!.lastSentAt!).inMinutes;
+          final gpsGood = gps?.running == true &&
+              (gpsAge == null || gpsAge <= 2) &&
+              (gps?.lastError == null || gps!.lastError!.isEmpty);
+          final online = _jobRefreshFailures == 0 && _lastJobSyncAt != null;
+          final hasCache = _jobs.isNotEmpty;
+          final pending = _driverPendingCount;
+          final netValue = _healthRefreshBusy
+              ? _l('FRISSÍT', 'SYNCING', 'SYNC')
+              : online
+                  ? _l('ONLINE', 'ONLINE', 'ONLINE')
+                  : hasCache
+                      ? _l('CACHE', 'CACHE', 'CACHE')
+                      : _l('OFFLINE', 'OFFLINE', 'OFFLINE');
+          final netColor = online
+              ? _green
+              : hasCache
+                  ? const Color(0xFFFFC857)
+                  : const Color(0xFFFF6571);
+          return Material(
+            color: const Color(0xFF04101A),
+            child: InkWell(
+              onTap: _healthRefreshBusy
+                  ? null
+                  : () => unawaited(_refreshDriverHealth()),
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.fromLTRB(12, 7, 12, 8),
+                decoration: const BoxDecoration(
+                  border: Border(
+                    bottom: BorderSide(color: Color(0xFF102D42)),
+                  ),
+                ),
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  physics: const BouncingScrollPhysics(),
+                  child: Row(
+                    children: [
+                      _healthPill(
+                        icon: online
+                            ? Icons.cloud_done_rounded
+                            : Icons.cloud_off_rounded,
+                        label: 'NET',
+                        value: netValue,
+                        color: netColor,
+                      ),
+                      const SizedBox(width: 7),
+                      _healthPill(
+                        icon: gpsGood
+                            ? Icons.gps_fixed_rounded
+                            : Icons.gps_off_rounded,
+                        label: 'GPS',
+                        value: gpsGood
+                            ? (gpsAge == null || gpsAge == 0
+                                ? _l('AKTÍV', 'ACTIVE', 'AKTIV')
+                                : '$gpsAge p')
+                            : _l('ELLENŐRIZD', 'CHECK', 'PRÜFEN'),
+                        color: gpsGood ? _green : const Color(0xFFFFC857),
+                      ),
+                      const SizedBox(width: 7),
+                      _healthPill(
+                        icon: pending == 0
+                            ? Icons.check_circle_outline_rounded
+                            : Icons.cloud_upload_outlined,
+                        label: _l('SOR', 'QUEUE', 'WART'),
+                        value: '$pending',
+                        color: pending == 0 ? _green : const Color(0xFFFFC857),
+                      ),
+                      const SizedBox(width: 7),
+                      _healthPill(
+                        icon: Icons.sync_rounded,
+                        label: _l('UTOLSÓ', 'LAST', 'LETZTE'),
+                        value: _ageLabel(_lastJobSyncAt),
+                        color: Colors.white70,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
+      );
+
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
@@ -3426,6 +3595,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
               ),
             ),
           ),
+          _driverHealthStrip(),
           Expanded(
             child: IndexedStack(
               index: _index,
@@ -3462,22 +3632,22 @@ class _DriverShellScreenState extends State<DriverShellScreen>
           NavigationDestination(
             icon: const Icon(Icons.home_outlined),
             selectedIcon: const Icon(Icons.home_rounded),
-            label: AimsLocaleController.instance.t('home'),
+            label: _l('Kezdő', 'Home', 'Start'),
           ),
           NavigationDestination(
             icon: const Icon(Icons.local_shipping_outlined),
             selectedIcon: const Icon(Icons.local_shipping),
-            label: AimsLocaleController.instance.t('my_job'),
+            label: _l('Fuvar', 'Job', 'Auftrag'),
           ),
           NavigationDestination(
             icon: const Icon(Icons.campaign_outlined),
             selectedIcon: const Icon(Icons.campaign),
-            label: AimsLocaleController.instance.t('quick_signal'),
+            label: _l('Jelzés', 'Signal', 'Meldung'),
           ),
           NavigationDestination(
             icon: const Icon(Icons.description_outlined),
             selectedIcon: const Icon(Icons.description),
-            label: AimsLocaleController.instance.t('docs'),
+            label: _l('Doksi', 'Docs', 'Doku'),
           ),
         ],
       ),
