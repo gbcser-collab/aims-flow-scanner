@@ -4,6 +4,7 @@ import 'dart:math' as math;
 
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -5324,14 +5325,19 @@ class _DriverShellScreenState extends State<DriverShellScreen>
           style: Theme.of(context).textTheme.bodyMedium,
         ),
         const SizedBox(height: 16),
-        GridView.count(
-          crossAxisCount: 2,
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          mainAxisSpacing: 12,
-          crossAxisSpacing: 12,
-          childAspectRatio: .90,
-          children: [
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final textScale = MediaQuery.textScalerOf(context).scale(1);
+            final singleColumn =
+                constraints.maxWidth < 350 || textScale > 1.18;
+            return GridView.count(
+              crossAxisCount: singleColumn ? 1 : 2,
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              mainAxisSpacing: 12,
+              crossAxisSpacing: 12,
+              childAspectRatio: singleColumn ? 1.78 : .90,
+              children: [
             _signal(
               Icons.schedule_rounded,
               _l('Késés', 'Delay', 'Verspätung'),
@@ -5381,7 +5387,9 @@ class _DriverShellScreenState extends State<DriverShellScreen>
               _l('Írd le röviden', 'Describe briefly', 'Kurz beschreiben'),
               _otherSignal,
             ),
-          ],
+              ],
+            );
+          },
         ),
         const SizedBox(height: 12),
         _panel(
@@ -6023,7 +6031,12 @@ class _DriverShellScreenState extends State<DriverShellScreen>
         shadowColor: accent.withValues(alpha: .20),
         borderRadius: BorderRadius.circular(18),
         child: InkWell(
-          onTap: _actionBusy ? null : onTap,
+          onTap: _actionBusy
+              ? null
+              : () {
+                  HapticFeedback.selectionClick();
+                  onTap();
+                },
           borderRadius: BorderRadius.circular(18),
           splashColor: accent.withValues(alpha: .16),
           highlightColor: accent.withValues(alpha: .08),
