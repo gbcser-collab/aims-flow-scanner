@@ -85,4 +85,24 @@ void main() {
     expect(command.requiresConfirmation, isFalse);
   });
 
+
+  test('understands context-aware copilot questions', () {
+    expect(
+      parser.parse('Mi a referencia?').intent,
+      AimsVoiceIntent.readReference,
+    );
+    expect(
+      parser.parse('Olvasd fel az utolsó üzenetet').intent,
+      AimsVoiceIntent.readLastMessage,
+    );
+    expect(
+      parser.parse('CMR állapot').intent,
+      AimsVoiceIntent.documentStatus,
+    );
+    expect(
+      parser.parse('AIMS állapot').intent,
+      AimsVoiceIntent.assistantHealth,
+    );
+  });
+
 }
