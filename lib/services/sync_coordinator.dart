@@ -38,10 +38,20 @@ class SyncCoordinator extends ChangeNotifier {
   Future<void> initialize() async {
     if (_initialized) return;
     _initialized = true;
-    await _repository.pruneExpiredApproved();
-    await refreshPendingCount();
-    _timer = Timer.periodic(const Duration(minutes: 2), (_) => unawaited(syncNow()));
-    unawaited(syncNow());
+    try {
+      await _repository.pruneExpiredApproved();
+      await refreshPendingCount();
+      _timer?.cancel();
+      _timer = Timer.periodic(
+        const Duration(minutes: 2),
+        (_) => unawaited(syncNow()),
+      );
+      unawaited(syncNow());
+    } catch (_) {
+      // Allow a later retry instead of getting stuck in a half-initialized state.
+      _initialized = false;
+      rethrow;
+    }
   }
 
   Future<void> refreshPendingCount() async {
@@ -150,9 +160,13 @@ class SyncCoordinator extends ChangeNotifier {
     } catch (_) {
       _lastError = 'Nincs hálózati kapcsolat. Az adatok biztonságosan offline maradnak.';
     } finally {
-      final cmrPending = await _repository.pendingForSync();
-      final smartPending = await _smartRepository.pendingForSync();
-      _pendingCount = cmrPending.length + smartPending.length;
+      try {
+        final cmrPending = await _repository.pendingForSync();
+        final smartPending = await _smartRepository.pendingForSync();
+        _pendingCount = cmrPending.length + smartPending.length;
+      } catch (_) {
+        // Pending-count refresh is informational only. Never leave sync locked.
+      }
       _syncing = false;
       notifyListeners();
     }
