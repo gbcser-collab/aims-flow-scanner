@@ -6393,7 +6393,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                               borderRadius: BorderRadius.circular(9),
                               border: Border.all(color: Colors.white10),
                             ),
-                            child: const Icon(
+                            child: Icon(
                               Icons.chevron_right_rounded,
                               color: _textMuted,
                               size: 18,
