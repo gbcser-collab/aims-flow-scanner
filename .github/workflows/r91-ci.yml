@@ -11,6 +11,7 @@ on:
       - aims-flow-r101-runtime-ui-hardening
       - aims-flow-r102-driver-first-stability
       - aims-flow-r103-production-signing
+      - aims-flow-r104-next-level
   workflow_dispatch:
 
 concurrency:
