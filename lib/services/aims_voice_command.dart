@@ -163,13 +163,13 @@ class AimsVoiceCommandParser {
 
     var confirm = risk == AimsVoiceRisk.consequential;
     if (risk == AimsVoiceRisk.emergency) {
-      final explicit = normalized.contains('kuldd') ||
-          normalized.contains('kuldj') ||
-          normalized.contains('jelentsd') ||
-          normalized.contains('send ') ||
-          normalized.startsWith('send') ||
-          normalized.contains('melde') ||
-          normalized.contains('sende');
+      final tokens = normalized.split(' ').where((e) => e.isNotEmpty).toSet();
+      final explicit = tokens.contains('kuldd') ||
+          tokens.contains('kuldj') ||
+          tokens.contains('jelentsd') ||
+          tokens.contains('send') ||
+          tokens.contains('melde') ||
+          tokens.contains('sende');
       confirm = !explicit;
       confidence = explicit ? .98 : .90;
     }
@@ -185,6 +185,14 @@ class AimsVoiceCommandParser {
     bool has(String value) => s.contains(value);
     bool any(List<String> values) => values.any(has);
 
+    if (any([
+      'olvasd fel az utolso uzenetet',
+      'utolso diszpecser uzenet',
+      'mit irt a diszpecser',
+      'utolso uzenet'
+    ])) {
+      return AimsVoiceCommand(intent: AimsVoiceIntent.readLastMessage, rawText: raw);
+    }
     if (any(['ismeteld', 'mondd ujra', 'mit mondtal'])) {
       return AimsVoiceCommand(intent: AimsVoiceIntent.repeatLast, rawText: raw);
     }
@@ -199,9 +207,6 @@ class AimsVoiceCommandParser {
     }
     if (any(['mi a referencia', 'referencia szam', 'rakodasi referencia', 'fuvar referencia'])) {
       return AimsVoiceCommand(intent: AimsVoiceIntent.readReference, rawText: raw);
-    }
-    if (any(['olvasd fel az utolso uzenetet', 'utolso diszpecser uzenet', 'mit irt a diszpecser', 'utolso uzenet'])) {
-      return AimsVoiceCommand(intent: AimsVoiceIntent.readLastMessage, rawText: raw);
     }
     if (any(['dokumentum allapot', 'cmr allapot', 'elkuldted a cmr', 'megvan a cmr'])) {
       return AimsVoiceCommand(intent: AimsVoiceIntent.documentStatus, rawText: raw);
