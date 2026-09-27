@@ -4,7 +4,12 @@ push=Path("lib/services/driver_push_service.dart").read_text(encoding="utf-8")
 main=Path("lib/main.dart").read_text(encoding="utf-8")
 
 checks={
-    "app initializes push": "await DriverPushService.instance.initialize()" in main,
+    "app initializes push": (
+        "DriverPushService.instance.initialize()" in main
+        and "catchError" in main
+        and main.find("runApp(const AimsFlowApp());")
+            < main.find("DriverPushService.instance.initialize()")
+    ),
     "single-flight initialization": "Future<void>? _initializationFuture" in push,
     "startup catches local notification errors": "await _initializeLocalNotifications();" in push and "catch (error)" in push,
     "foreground events survive notification errors": "finally {" in push and "_events.add(DriverPushEvent(" in push,
