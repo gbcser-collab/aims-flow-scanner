@@ -68,6 +68,7 @@ class AimsVoiceService {
   String _lastAnnouncement = '';
   DateTime? _lastAnnouncementAt;
   int _speechErrorCount = 0;
+  DateTime? _lastWakeAt;
 
   Stream<AimsVoiceState> get states => _states.stream;
   bool get enabled => _enabled;
@@ -228,6 +229,37 @@ class AimsVoiceService {
 
   Future<void> requestAndroidAssistantRole() async {
     await AimsHandsFreePlatform.requestAssistantRole();
+  }
+
+  /// Health probe used by the driver runtime supervisor. It restores the
+  /// foreground microphone service and speech listener independently so a
+  /// single Android subsystem failure cannot silently disable Hands-Free.
+  Future<bool> recover() async {
+    if (!_enabled) return false;
+    final ok = await initialize();
+    if (!ok) return false;
+
+    var nativeRunning = await AimsHandsFreePlatform.isRunning();
+    if (!nativeRunning) {
+      nativeRunning = await AimsHandsFreePlatform.start();
+    }
+
+    if (!_speaking && !_handlingResult && !_speech.isListening) {
+      try {
+        if (_pendingConfirmation != null) {
+          await _startConfirmationListening();
+        } else if (_commandMode) {
+          await _startCommandListening();
+        } else {
+          await _startWakeListening();
+        }
+      } catch (_) {
+        return false;
+      }
+    }
+
+    return nativeRunning &&
+        (_speech.isListening || _speaking || _handlingResult);
   }
 
   Future<void> _startWakeListening() async {
@@ -404,7 +436,15 @@ class AimsVoiceService {
         ),
       );
       if (result.finalResult && !_handlingResult) {
-        unawaited(_executeCommandText(heard));
+        // Android recognizers often return 0 when confidence is unsupported.
+        // Only reject a final result when a real, clearly poor confidence
+        // value was supplied.
+        final confidence = result.confidence;
+        if (confidence > 0 && confidence < .42) {
+          unawaited(_retryCommand());
+        } else {
+          unawaited(_executeCommandText(heard));
+        }
       }
       return;
     }
@@ -412,6 +452,13 @@ class AimsVoiceService {
     final normalized = AimsVoiceCommandParser.normalize(heard);
     final wake = _wakeMatch(normalized);
     if (wake == null || _handlingResult) return;
+
+    final now = DateTime.now();
+    if (_lastWakeAt != null &&
+        now.difference(_lastWakeAt!) < const Duration(milliseconds: 1200)) {
+      return;
+    }
+    _lastWakeAt = now;
 
     // A wake-word hit is user feedback-worthy immediately. Stop the current
     // recognition session so Android cannot swallow the following command
@@ -427,27 +474,32 @@ class AimsVoiceService {
 
   (String, int)? _wakeMatch(String normalized) {
     const aliases = [
-      'aims flow',
-      'aims',
-      'aimsz',
       'aimsz flow',
-      'aim',
-      'ejms',
-      'ejmsz',
+      'aims flow',
       'ejms flow',
-      'ejm',
-      'eims',
-      'eimsz',
-      'ems',
-      'emsz',
-      'ems flow',
-      'emz',
       'emsz flow',
+      'ems flow',
+      'aimsz',
+      'aims',
+      'ejmsz',
+      'eimsz',
+      'emsz',
+      'ejms',
+      'eims',
+      'ems',
+      'emz',
+      'ejm',
+      'aim',
     ];
     for (final alias in aliases) {
-      final index = normalized.indexOf(alias);
-      if (index >= 0) {
-        return (alias, index + alias.length);
+      // Do not wake on substrings such as "claim" merely because they contain
+      // "aim". The alias must be a complete spoken token/phrase.
+      final pattern = RegExp(
+        '(^|\\s)${RegExp.escape(alias)}(?=\\s|\$)',
+      );
+      final match = pattern.firstMatch(normalized);
+      if (match != null) {
+        return (alias, match.end);
       }
     }
     return null;
