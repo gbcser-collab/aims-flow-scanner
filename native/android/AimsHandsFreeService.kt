@@ -45,7 +45,10 @@ class AimsHandsFreeService : Service() {
             startForeground(notificationId, notification)
         }
 
-        return START_NOT_STICKY
+        // Keep the user-enabled hands-free foreground service recoverable after
+        // transient process pressure. Android still shows the ongoing mic
+        // notification and the driver can disable the feature at any time.
+        return START_STICKY
     }
 
     override fun onDestroy() {
