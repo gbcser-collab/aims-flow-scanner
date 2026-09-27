@@ -164,6 +164,7 @@ class AimsVoiceCommandParser {
     var confirm = risk == AimsVoiceRisk.consequential;
     if (risk == AimsVoiceRisk.emergency) {
       final explicit = normalized.contains('kuldd') ||
+          normalized.contains('kuldj') ||
           normalized.contains('jelentsd') ||
           normalized.contains('send ') ||
           normalized.startsWith('send') ||
@@ -184,7 +185,7 @@ class AimsVoiceCommandParser {
     bool has(String value) => s.contains(value);
     bool any(List<String> values) => values.any(has);
 
-    if (any(['ismeteld', 'mondd ujra', 'utolso uzenet', 'mit mondtal'])) {
+    if (any(['ismeteld', 'mondd ujra', 'mit mondtal'])) {
       return AimsVoiceCommand(intent: AimsVoiceIntent.repeatLast, rawText: raw);
     }
     if (any(['mit tudsz', 'segits', 'segitseg', 'parancsok', 'miben tudsz segiteni'])) {
