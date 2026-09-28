@@ -226,8 +226,6 @@ class _DriverShellScreenState extends State<DriverShellScreen>
       _isDark ? const Color(0xFF06131F) : const Color(0xFFEEF6FB);
   Color get _lineColor =>
       _isDark ? const Color(0xFF173B54) : const Color(0xFFD5E2EB);
-  Color get _textPrimary =>
-      _isDark ? Colors.white : const Color(0xFF0A1C2E);
   Color get _textMuted =>
       _isDark ? Colors.white70 : const Color(0xFF536B7A);
   Color get _textFaint =>
@@ -4525,11 +4523,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                         : _isStopArrived(stop)
                             ? _green
                             : const Color(0xFF0F3852),
-                    foregroundColor: Colors.white
-                        ? const Color(0xFF201600)
-                        : _isStopArrived(stop)
-                            ? const Color(0xFF001B12)
-                            : Colors.white,
+                    foregroundColor: Colors.white,
                     textStyle: const TextStyle(
                       fontWeight: FontWeight.w900,
                       fontSize: 15,
