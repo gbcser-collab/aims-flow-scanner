@@ -178,7 +178,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       child: Text(
                         'AIMS FLOW',
                         style: TextStyle(
-                          color: Colors.white54,
+                          color: Colors.white,
                           fontSize: 12,
                           fontWeight: FontWeight.w800,
                           letterSpacing: 4.2,
@@ -202,7 +202,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     TextSpan(
                       children: [
                         TextSpan(text: 'AIMS ', style: TextStyle(color: Colors.white)),
-                        TextSpan(text: 'Flow', style: TextStyle(color: _blue)),
+                        TextSpan(text: 'Flow', style: TextStyle(color: Colors.white)),
                       ],
                     ),
                     style: TextStyle(fontSize: 34, fontWeight: FontWeight.w900, letterSpacing: -.8),
@@ -212,7 +212,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 const Center(
                   child: Text(
                     'S C A N N E R',
-                    style: TextStyle(color: Colors.white70, fontWeight: FontWeight.w700, letterSpacing: 7),
+                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700, letterSpacing: 7),
                   ),
                 ),
                 const SizedBox(height: 28),
@@ -227,7 +227,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   child: Text(
                     'Gyorsabb folyamatok. Okosabb működés.',
                     textAlign: TextAlign.center,
-                    style: TextStyle(color: Color(0xFF8FCFFF), letterSpacing: 1.7, fontWeight: FontWeight.w700),
+                    style: TextStyle(color: Colors.white, letterSpacing: 1.7, fontWeight: FontWeight.w700),
                   ),
                 ),
                 const SizedBox(height: 22),
@@ -302,7 +302,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         borderRadius: BorderRadius.circular(999),
                         border: Border.all(color: _blue.withValues(alpha: .35)),
                       ),
-                      child: Text('${_history.length}', style: const TextStyle(color: _blue, fontWeight: FontWeight.w900)),
+                      child: Text('${_history.length}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900)),
                     ),
                   ],
                 ),
@@ -321,7 +321,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         Expanded(
                           child: Text(
                             'Még nincs mentett CMR. Az első Smart Scan után itt jelenik meg.',
-                            style: TextStyle(color: Colors.white60, height: 1.35),
+                            style: TextStyle(color: Colors.white, height: 1.35),
                           ),
                         ),
                       ],
@@ -333,7 +333,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 const Center(
                   child: Text(
                     'A  H A T É K O N Y A B B  H O L N A P É R T',
-                    style: TextStyle(color: Colors.white38, fontSize: 9, fontWeight: FontWeight.w700, letterSpacing: 1.8),
+                    style: TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w700, letterSpacing: 1.8),
                   ),
                 ),
               ],
@@ -363,11 +363,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(label, style: TextStyle(color: color, fontWeight: FontWeight.w900, fontSize: 12)),
+              Text(label, style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 12)),
               const SizedBox(height: 3),
               Text(
                 _sync.pendingCount == 0 ? 'Nincs várakozó CMR.' : '${_sync.pendingCount} CMR vár automatikus szinkronra.',
-                style: const TextStyle(color: Colors.white60),
+                style: const TextStyle(color: Colors.white),
               ),
             ],
           ),
@@ -432,7 +432,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           padding: const EdgeInsets.only(top: 4),
           child: Text(
             '${secondary.isEmpty ? '' : '$secondary\n'}${_formatDate(document.createdAt)} • $syncText',
-            style: const TextStyle(color: Colors.white54, height: 1.3),
+            style: const TextStyle(color: Colors.white, height: 1.3),
           ),
         ),
         isThreeLine: secondary.isNotEmpty,
@@ -513,7 +513,7 @@ class _FeatureMini extends StatelessWidget {
         Text(
           label,
           textAlign: TextAlign.center,
-          style: const TextStyle(color: Colors.white54, fontSize: 9, height: 1.35, letterSpacing: 1.1, fontWeight: FontWeight.w700),
+          style: const TextStyle(color: Colors.white, fontSize: 9, height: 1.35, letterSpacing: 1.1, fontWeight: FontWeight.w700),
         ),
       ],
     );

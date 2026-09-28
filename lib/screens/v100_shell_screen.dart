@@ -46,7 +46,7 @@ class _V100ShellScreenState extends State<V100ShellScreen> {
             children: [
               Text(title, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900)),
               const SizedBox(height: 8),
-              Text(detail, style: const TextStyle(color: Colors.white60, height: 1.45)),
+              Text(detail, style: const TextStyle(color: Colors.white, height: 1.45)),
               const SizedBox(height: 18),
               FilledButton(
                 onPressed: () {
@@ -98,19 +98,19 @@ class _V100ShellScreenState extends State<V100ShellScreen> {
           children: [
             Row(children: [
               const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('AIMS FLOW', style: TextStyle(letterSpacing: 3.5, color: Colors.white60, fontWeight: FontWeight.w900)),
+                Text('AIMS FLOW', style: TextStyle(letterSpacing: 3.5, color: Colors.white, fontWeight: FontWeight.w900)),
                 SizedBox(height: 3),
-                Text('V100 · DRIVER OPERATIONS', style: TextStyle(fontSize: 10, color: _blue, fontWeight: FontWeight.w800)),
+                Text('V100 · DRIVER OPERATIONS', style: TextStyle(fontSize: 10, color: Colors.white, fontWeight: FontWeight.w800)),
               ])),
               _status('ONLINE', const Color(0xFF4DE3A4)),
             ]),
             const SizedBox(height: 22),
             _panel(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              const Text('AKTÍV FUVAR · EXPRESS', style: TextStyle(color: _blue, fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 1.2)),
+              const Text('AKTÍV FUVAR · EXPRESS', style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 1.2)),
               const SizedBox(height: 8),
               Text(_steps[_step], style: const TextStyle(fontSize: 25, fontWeight: FontWeight.w900)),
               const SizedBox(height: 7),
-              const Text('A rendszer az aktuális fuvarállapotból adja a következő teendőt.', style: TextStyle(color: Colors.white54)),
+              const Text('A rendszer az aktuális fuvarállapotból adja a következő teendőt.', style: TextStyle(color: Colors.white)),
               const SizedBox(height: 18),
               const Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
                 _RoutePoint('GYŐR', 'Felrakó'), Icon(Icons.arrow_forward_rounded, color: _blue), _RoutePoint('BRNO', 'Lerakó'),
@@ -156,7 +156,7 @@ class _V100ShellScreenState extends State<V100ShellScreen> {
           children: [
             const Text('FLOW', style: TextStyle(fontSize: 28, fontWeight: FontWeight.w900)),
             const SizedBox(height: 4),
-            const Text('Fuvar eseménynapló és rendszerállapot', style: TextStyle(color: Colors.white54)),
+            const Text('Fuvar eseménynapló és rendszerállapot', style: TextStyle(color: Colors.white)),
             const SizedBox(height: 16),
             _panel(Column(children: [
               _health(Icons.gps_fixed, 'GPS', 'Aktív'),
@@ -186,13 +186,13 @@ class _V100ShellScreenState extends State<V100ShellScreen> {
   Widget _status(String text, Color color) => Container(
     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
     decoration: BoxDecoration(color: color.withValues(alpha: .12), borderRadius: BorderRadius.circular(99), border: Border.all(color: color.withValues(alpha: .35))),
-    child: Text('● $text', style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.w900)),
+    child: Text('● $text', style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w900)),
   );
 
   Widget _metric(String label, String value) => Container(
     padding: const EdgeInsets.all(10),
     decoration: BoxDecoration(color: const Color(0xFF06131F), borderRadius: BorderRadius.circular(13), border: Border.all(color: const Color(0xFF173B54))),
-    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(label, style: const TextStyle(color: Colors.white38, fontSize: 9)), const SizedBox(height: 3), Text(value, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 11))]),
+    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(label, style: const TextStyle(color: Colors.white, fontSize: 9)), const SizedBox(height: 3), Text(value, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 11))]),
   );
 
   Widget _action(IconData icon, String title, String detail, VoidCallback onTap) => InkWell(
@@ -201,13 +201,13 @@ class _V100ShellScreenState extends State<V100ShellScreen> {
     child: Ink(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(color: const Color(0xFF071725), borderRadius: BorderRadius.circular(16), border: Border.all(color: const Color(0xFF173B54))),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Icon(icon, color: _blue, size: 20), const Spacer(), Text(title, style: const TextStyle(fontWeight: FontWeight.w900)), const SizedBox(height: 2), Text(detail, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white38, fontSize: 9))]),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Icon(icon, color: _blue, size: 20), const Spacer(), Text(title, style: const TextStyle(fontWeight: FontWeight.w900)), const SizedBox(height: 2), Text(detail, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 9))]),
     ),
   );
 
   Widget _health(IconData icon, String title, String value) => Padding(
     padding: const EdgeInsets.symmetric(vertical: 9),
-    child: Row(children: [Icon(icon, color: _blue), const SizedBox(width: 12), Expanded(child: Text(title, style: const TextStyle(fontWeight: FontWeight.w800))), Text(value, style: const TextStyle(color: Color(0xFF4DE3A4), fontWeight: FontWeight.w900))]),
+    child: Row(children: [Icon(icon, color: _blue), const SizedBox(width: 12), Expanded(child: Text(title, style: const TextStyle(fontWeight: FontWeight.w800))), Text(value, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900))]),
   );
 }
 
@@ -216,5 +216,5 @@ class _RoutePoint extends StatelessWidget {
   final String city;
   final String label;
   @override
-  Widget build(BuildContext context) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(city, style: const TextStyle(fontWeight: FontWeight.w900)), Text(label, style: const TextStyle(color: Colors.white38, fontSize: 10))]);
+  Widget build(BuildContext context) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(city, style: const TextStyle(fontWeight: FontWeight.w900)), Text(label, style: const TextStyle(color: Colors.white, fontSize: 10))]);
 }

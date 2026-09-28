@@ -248,7 +248,7 @@ class _FlowLoginScreenState extends State<FlowLoginScreen> {
       filled: true,
       fillColor: dark ? const Color(0xFF0A2236) : const Color(0xFFF5F9FC),
       hintStyle: TextStyle(
-        color: dark ? Colors.white38 : const Color(0xFF8194A0),
+        color: Colors.white,
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(16),
@@ -271,9 +271,6 @@ class _FlowLoginScreenState extends State<FlowLoginScreen> {
       builder: (context, _) {
         final t = locale.t;
         final dark = Theme.of(context).brightness == Brightness.dark;
-        final primaryText = dark ? Colors.white : const Color(0xFF0A1C2E);
-        final mutedText =
-            dark ? Colors.white54 : const Color(0xFF536B7A);
         return Scaffold(
           backgroundColor:
               dark ? const Color(0xFF020813) : const Color(0xFFF5F9FC),
@@ -339,7 +336,7 @@ class _FlowLoginScreenState extends State<FlowLoginScreen> {
                         Text(
                           'AIMS FLOW',
                           style: TextStyle(
-                            color: primaryText,
+                            color: Colors.white,
                             fontSize: 30,
                             fontWeight: FontWeight.w900,
                             letterSpacing: 3,
@@ -349,7 +346,7 @@ class _FlowLoginScreenState extends State<FlowLoginScreen> {
                         const Text(
                           'DRIVER OPERATIONS',
                           style: TextStyle(
-                            color: _blue,
+                            color: Colors.white,
                             fontSize: 10,
                             fontWeight: FontWeight.w900,
                             letterSpacing: 3.2,
@@ -395,7 +392,7 @@ class _FlowLoginScreenState extends State<FlowLoginScreen> {
                                       : 'driver_login_help',
                                 ),
                                 style: TextStyle(
-                                  color: mutedText,
+                                  color: Colors.white,
                                   height: 1.4,
                                 ),
                               ),
@@ -543,7 +540,7 @@ class _FlowLoginScreenState extends State<FlowLoginScreen> {
                                             Text(
                                               t('admin_2fa_note'),
                                               style: TextStyle(
-                                                color: dark ? Colors.white38 : const Color(0xFF8093A0),
+                                                color: Colors.white,
                                               ),
                                             ),
                                           ],
@@ -584,7 +581,7 @@ class _FlowLoginScreenState extends State<FlowLoginScreen> {
                                   _error!,
                                   textAlign: TextAlign.center,
                                   style: const TextStyle(
-                                    color: Colors.redAccent,
+                                    color: Colors.white,
                                     fontWeight: FontWeight.w700,
                                   ),
                                 ),
@@ -608,7 +605,7 @@ class _FlowLoginScreenState extends State<FlowLoginScreen> {
                                 style: FilledButton.styleFrom(
                                   minimumSize: const Size.fromHeight(64),
                                   backgroundColor: _blue,
-                                  foregroundColor: const Color(0xFF00131F),
+                                  foregroundColor: Colors.white,
                                   textStyle: const TextStyle(
                                     fontWeight: FontWeight.w900,
                                     fontSize: 16,
@@ -653,7 +650,7 @@ class _FlowLoginScreenState extends State<FlowLoginScreen> {
                           t('driver_footer'),
                           textAlign: TextAlign.center,
                           style: TextStyle(
-                            color: dark ? Colors.white38 : const Color(0xFF8093A0),
+                            color: Colors.white,
                             height: 1.45,
                             fontSize: 11,
                           ),

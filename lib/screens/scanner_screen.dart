@@ -570,7 +570,7 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
                                     children: [
                                       Icon(_flashIcon(mode), size: 18, color: selected ? Colors.black : Colors.white),
                                       const SizedBox(width: 5),
-                                      Text(_flashLabel(mode), style: TextStyle(color: selected ? Colors.black : Colors.white, fontWeight: FontWeight.w900, fontSize: 12)),
+                                      Text(_flashLabel(mode), style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 12)),
                                     ],
                                   ),
                                 ),
@@ -646,11 +646,11 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
                             children: [
                               const CircularProgressIndicator(color: Color(0xFFE6B85C)),
                               const SizedBox(height: 18),
-                              const Text('SMART SCAN', style: TextStyle(color: Color(0xFFE6B85C), fontWeight: FontWeight.w900, letterSpacing: 1.4)),
+                              const Text('SMART SCAN', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, letterSpacing: 1.4)),
                               const SizedBox(height: 8),
                               Text(_phase, textAlign: TextAlign.center, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w800)),
                               const SizedBox(height: 8),
-                              Text(_l('A vaku feldolgozás közben nem világít.', 'Flash stays off during processing.', 'Der Blitz bleibt während der Verarbeitung aus.'), style: const TextStyle(color: Colors.white54)),
+                              Text(_l('A vaku feldolgozás közben nem világít.', 'Flash stays off during processing.', 'Der Blitz bleibt während der Verarbeitung aus.'), style: const TextStyle(color: Colors.white)),
                             ],
                           ),
                         ),

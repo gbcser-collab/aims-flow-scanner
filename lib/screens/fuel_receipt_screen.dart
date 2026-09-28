@@ -268,7 +268,7 @@ class _FuelReceiptScreenState extends State<FuelReceiptScreen> with WidgetsBindi
       fit: StackFit.expand,
       children: [
         if (_error != null && controller == null)
-          Center(child: Padding(padding: const EdgeInsets.all(24), child: Text(_error!, style: const TextStyle(color: Colors.orangeAccent))))
+          Center(child: Padding(padding: const EdgeInsets.all(24), child: Text(_error!, style: const TextStyle(color: Colors.white))))
         else if (controller == null || !controller.value.isInitialized)
           const Center(child: CircularProgressIndicator(color: Color(0xFFE6B85C)))
         else
@@ -355,7 +355,7 @@ class _FuelReceiptScreenState extends State<FuelReceiptScreen> with WidgetsBindi
         _field(_l('Bizonylatszám', 'Receipt number', 'Belegnummer'), _receipt),
         if (_error != null) ...[
           const SizedBox(height: 8),
-          Text(_error!, style: const TextStyle(color: Colors.orangeAccent)),
+          Text(_error!, style: const TextStyle(color: Colors.white)),
         ],
         const SizedBox(height: 14),
         FilledButton.icon(
@@ -367,7 +367,7 @@ class _FuelReceiptScreenState extends State<FuelReceiptScreen> with WidgetsBindi
           style: FilledButton.styleFrom(
             minimumSize: const Size.fromHeight(64),
             backgroundColor: const Color(0xFFE6B85C),
-            foregroundColor: Colors.black,
+            foregroundColor: Colors.white,
           ),
         ),
         const SizedBox(height: 8),
@@ -383,11 +383,11 @@ class _FuelReceiptScreenState extends State<FuelReceiptScreen> with WidgetsBindi
         ExpansionTile(
           collapsedIconColor: Colors.white54,
           iconColor: const Color(0xFFE6B85C),
-          title: Text(_l('OCR nyers szöveg', 'Raw OCR text', 'OCR-Rohtext'), style: const TextStyle(color: Colors.white70)),
+          title: Text(_l('OCR nyers szöveg', 'Raw OCR text', 'OCR-Rohtext'), style: const TextStyle(color: Colors.white)),
           children: [
             Padding(
               padding: const EdgeInsets.all(12),
-              child: SelectableText(_rawText.isEmpty ? _l('Nem talált szöveget.', 'No text found.', 'Kein Text gefunden.') : _rawText, style: const TextStyle(color: Colors.white60)),
+              child: SelectableText(_rawText.isEmpty ? _l('Nem talált szöveget.', 'No text found.', 'Kein Text gefunden.') : _rawText, style: const TextStyle(color: Colors.white)),
             ),
           ],
         ),
@@ -405,7 +405,7 @@ class _FuelReceiptScreenState extends State<FuelReceiptScreen> with WidgetsBindi
         style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
         decoration: InputDecoration(
           labelText: label,
-          labelStyle: const TextStyle(color: Colors.white54),
+          labelStyle: const TextStyle(color: Colors.white),
           filled: true,
           fillColor: const Color(0xFF171A1F),
           contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 17),

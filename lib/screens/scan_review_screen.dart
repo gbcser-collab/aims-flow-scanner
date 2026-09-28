@@ -286,7 +286,7 @@ class _ScanReviewScreenState extends State<ScanReviewScreen> {
               child: Image.file(
                 File(imagePath),
                 fit: BoxFit.contain,
-                errorBuilder: (_, __, ___) => SizedBox(height: 220, child: Center(child: Text(_l('Az előnézet nem tölthető be.', 'Preview cannot be loaded.', 'Vorschau kann nicht geladen werden.'), style: const TextStyle(color: Colors.white70)))),
+                errorBuilder: (_, __, ___) => SizedBox(height: 220, child: Center(child: Text(_l('Az előnézet nem tölthető be.', 'Preview cannot be loaded.', 'Vorschau kann nicht geladen werden.'), style: const TextStyle(color: Colors.white)))),
               ),
             ),
             const SizedBox(height: 14),
@@ -349,7 +349,7 @@ class _ScanReviewScreenState extends State<ScanReviewScreen> {
                         'Detection confidence: ${(((_savedDocument?.signatureConfidence ?? widget.signatureConfidence) * 100).clamp(0, 100)).round()}%. It is saved as a separate image next to the CMR PDF.',
                         'Erkennungssicherheit: ${(((_savedDocument?.signatureConfidence ?? widget.signatureConfidence) * 100).clamp(0, 100)).round()} %. Beim Speichern wird sie als separates Bild neben dem CMR-PDF gespeichert.',
                       ),
-                      style: const TextStyle(color: Colors.white54, height: 1.35),
+                      style: const TextStyle(color: Colors.white, height: 1.35),
                     ),
                   ],
                 ),
@@ -393,7 +393,7 @@ class _ScanReviewScreenState extends State<ScanReviewScreen> {
                   Row(
                     children: [
                       Expanded(child: Text(_l('Adatkitöltés', 'Data completion', 'Datenerfassung'), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800))),
-                      Text('$filled / 10', style: const TextStyle(color: Color(0xFFE6B85C), fontWeight: FontWeight.w900)),
+                      Text('$filled / 10', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900)),
                     ],
                   ),
                   const SizedBox(height: 9),
@@ -404,7 +404,7 @@ class _ScanReviewScreenState extends State<ScanReviewScreen> {
             const SizedBox(height: 18),
             Text(_l('Felismert CMR adatok', 'Recognized CMR data', 'Erkannte CMR-Daten'), key: const ValueKey('cmr-results-title'), style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w900)),
             const SizedBox(height: 5),
-            Text(_l('Ellenőrizd és javítsd az adatokat. Az OCR-t mindig vesd össze az eredeti dokumentummal.', 'Review and correct the data. Always compare OCR results with the original document.', 'Daten prüfen und korrigieren. OCR-Ergebnisse immer mit dem Originaldokument vergleichen.'), style: const TextStyle(color: Colors.white54)),
+            Text(_l('Ellenőrizd és javítsd az adatokat. Az OCR-t mindig vesd össze az eredeti dokumentummal.', 'Review and correct the data. Always compare OCR results with the original document.', 'Daten prüfen und korrigieren. OCR-Ergebnisse immer mit dem Originaldokument vergleichen.'), style: const TextStyle(color: Colors.white)),
             const SizedBox(height: 12),
             _field(_l('CMR szám', 'CMR number', 'CMR-Nummer'), _cmrNumber),
             _field(_l('Feladó', 'Consignor', 'Absender'), _shipper, maxLines: 2),
@@ -424,7 +424,7 @@ class _ScanReviewScreenState extends State<ScanReviewScreen> {
               children: [
                 Padding(
                   padding: const EdgeInsets.fromLTRB(12, 0, 12, 14),
-                  child: SelectableText(widget.cmr.rawText.trim().isEmpty ? _l('Nem sikerült szöveget felismerni.', 'No text could be recognized.', 'Es konnte kein Text erkannt werden.') : widget.cmr.rawText, style: const TextStyle(color: Colors.white70, height: 1.35)),
+                  child: SelectableText(widget.cmr.rawText.trim().isEmpty ? _l('Nem sikerült szöveget felismerni.', 'No text could be recognized.', 'Es konnte kein Text erkannt werden.') : widget.cmr.rawText, style: const TextStyle(color: Colors.white, height: 1.35)),
                 ),
               ],
             ),
@@ -438,7 +438,7 @@ class _ScanReviewScreenState extends State<ScanReviewScreen> {
                   ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
                   : Icon(_savedDocument == null ? Icons.save_rounded : Icons.check_circle_rounded),
               label: Text(_saving ? _l('Mentés…', 'Saving…', 'Speichern…') : (_savedDocument == null ? _l('Mentés + GPS + automatikus szinkron', 'Save + GPS + automatic sync', 'Speichern + GPS + automatische Synchronisierung') : _l('Módosítások mentése', 'Save changes', 'Änderungen speichern'))),
-              style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(64), backgroundColor: const Color(0xFFE6B85C), foregroundColor: Colors.black, textStyle: const TextStyle(fontWeight: FontWeight.w900, fontSize: 15)),
+              style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(64), backgroundColor: const Color(0xFFE6B85C), foregroundColor: Colors.white, textStyle: const TextStyle(fontWeight: FontWeight.w900, fontSize: 15)),
             ),
             const SizedBox(height: 10),
             OutlinedButton.icon(
@@ -471,14 +471,14 @@ class _ScanReviewScreenState extends State<ScanReviewScreen> {
         children: [
           Text(_l('Mentési és szinkronadat', 'Save and sync data', 'Speicher- und Synchronisierungsdaten'), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900)),
           const SizedBox(height: 7),
-          Text(_l('Idő: ${_formatDate(document.createdAt)}', 'Time: ${_formatDate(document.createdAt)}', 'Zeit: ${_formatDate(document.createdAt)}'), style: const TextStyle(color: Colors.white70)),
+          Text(_l('Idő: ${_formatDate(document.createdAt)}', 'Time: ${_formatDate(document.createdAt)}', 'Zeit: ${_formatDate(document.createdAt)}'), style: const TextStyle(color: Colors.white)),
           const SizedBox(height: 4),
           Text(
             loc == null ? 'GPS: nincs helyadat' : 'GPS: ${loc.latitude.toStringAsFixed(6)}, ${loc.longitude.toStringAsFixed(6)} • ±${loc.accuracy.toStringAsFixed(0)} m',
-            style: const TextStyle(color: Colors.white70),
+            style: const TextStyle(color: Colors.white),
           ),
           const SizedBox(height: 4),
-          Text(_l('Státusz: ${_syncText(document.syncState)}', 'Status: ${_syncText(document.syncState)}', 'Status: ${_syncText(document.syncState)}'), style: const TextStyle(color: Color(0xFFE6B85C), fontWeight: FontWeight.w800)),
+          Text(_l('Státusz: ${_syncText(document.syncState)}', 'Status: ${_syncText(document.syncState)}', 'Status: ${_syncText(document.syncState)}'), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800)),
         ],
       ),
     );
@@ -495,11 +495,11 @@ class _ScanReviewScreenState extends State<ScanReviewScreen> {
           Row(
             children: [
               Expanded(child: Text(_l('Képminőség', 'Image quality', 'Bildqualität'), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800))),
-              Text('${widget.quality.score}/100', style: const TextStyle(color: Color(0xFFE6B85C), fontWeight: FontWeight.w900)),
+              Text('${widget.quality.score}/100', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900)),
             ],
           ),
           const SizedBox(height: 7),
-          Text(warnings.isEmpty ? _l('A képminőség rendben.', 'Image quality is good.', 'Die Bildqualität ist in Ordnung.') : warnings.join('\n'), style: TextStyle(color: warnings.isEmpty ? const Color(0xFF48D597) : Colors.orangeAccent, height: 1.35)),
+          Text(warnings.isEmpty ? _l('A képminőség rendben.', 'Image quality is good.', 'Die Bildqualität ist in Ordnung.') : warnings.join('\n'), style: TextStyle(color: Colors.white, height: 1.35)),
         ],
       ),
     );
@@ -517,7 +517,7 @@ class _ScanReviewScreenState extends State<ScanReviewScreen> {
         style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
         decoration: InputDecoration(
           labelText: label,
-          labelStyle: const TextStyle(color: Colors.white54),
+          labelStyle: const TextStyle(color: Colors.white),
           filled: true,
           fillColor: const Color(0xFF14181D),
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),

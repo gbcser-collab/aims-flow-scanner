@@ -76,7 +76,7 @@ class _FlowForgotCodeScreenState extends State<FlowForgotCodeScreen> {
           children: [
             Text(
               t('forgot_desc'),
-              style: const TextStyle(color: Colors.white70, height: 1.45),
+              style: const TextStyle(color: Colors.white, height: 1.45),
             ),
             const SizedBox(height: 18),
             TextField(
@@ -102,7 +102,7 @@ class _FlowForgotCodeScreenState extends State<FlowForgotCodeScreen> {
               Text(
                 t('forgot_sent'),
                 style: const TextStyle(
-                  color: Color(0xFF4DE3A4),
+                  color: Colors.white,
                   fontWeight: FontWeight.w800,
                 ),
               ),
@@ -112,7 +112,7 @@ class _FlowForgotCodeScreenState extends State<FlowForgotCodeScreen> {
               Text(
                 _error!,
                 style: const TextStyle(
-                  color: Colors.redAccent,
+                  color: Colors.white,
                   fontWeight: FontWeight.w700,
                 ),
               ),

@@ -32,83 +32,110 @@ Future<void> main() async {
 class AimsFlowApp extends StatelessWidget {
   const AimsFlowApp({super.key});
 
-  ThemeData _theme(Brightness brightness) {
+  ThemeData _theme() {
     const aimsBlue = Color(0xFF1CB8FF);
-    final dark = brightness == Brightness.dark;
-    return ThemeData(
+    const surface = Color(0xFF07111F);
+    const background = Color(0xFF030A13);
+
+    final base = ThemeData(
       useMaterial3: true,
-      brightness: brightness,
+      brightness: Brightness.dark,
       colorScheme: ColorScheme.fromSeed(
         seedColor: aimsBlue,
-        brightness: brightness,
-        surface: dark ? const Color(0xFF07111F) : const Color(0xFFF4F9FC),
+        brightness: Brightness.dark,
+        surface: surface,
+      ).copyWith(
+        primary: aimsBlue,
+        onPrimary: Colors.white,
+        onSecondary: Colors.white,
+        onSurface: Colors.white,
+        onError: Colors.white,
       ),
-      scaffoldBackgroundColor:
-          dark ? const Color(0xFF030A13) : const Color(0xFFF4F9FC),
-      appBarTheme: AppBarTheme(
-        backgroundColor:
-            dark ? const Color(0xFF030A13) : const Color(0xFFF4F9FC),
-        foregroundColor: dark ? Colors.white : const Color(0xFF06131F),
-        surfaceTintColor: Colors.transparent,
-      ),
-      textTheme: TextTheme(
-        headlineSmall: TextStyle(
-          color: dark ? Colors.white : const Color(0xFF06131F),
+      scaffoldBackgroundColor: background,
+    );
+
+    final whiteText = base.textTheme.apply(
+      bodyColor: Colors.white,
+      displayColor: Colors.white,
+    );
+
+    return base.copyWith(
+      textTheme: whiteText.copyWith(
+        headlineSmall: whiteText.headlineSmall?.copyWith(
+          color: Colors.white,
           fontSize: 28,
           fontWeight: FontWeight.w900,
           height: 1.08,
           letterSpacing: -.35,
         ),
-        titleLarge: TextStyle(
-          color: dark ? Colors.white : const Color(0xFF06131F),
+        titleLarge: whiteText.titleLarge?.copyWith(
+          color: Colors.white,
           fontSize: 20,
           fontWeight: FontWeight.w900,
           height: 1.15,
         ),
-        titleMedium: TextStyle(
-          color: dark ? Colors.white : const Color(0xFF06131F),
+        titleMedium: whiteText.titleMedium?.copyWith(
+          color: Colors.white,
           fontSize: 15,
           fontWeight: FontWeight.w900,
           height: 1.2,
         ),
-        bodyLarge: TextStyle(
-          color: dark ? Colors.white : const Color(0xFF183247),
+        bodyLarge: whiteText.bodyLarge?.copyWith(
+          color: Colors.white,
           fontSize: 14,
           fontWeight: FontWeight.w600,
           height: 1.4,
         ),
-        bodyMedium: TextStyle(
-          color: dark ? Colors.white70 : const Color(0xFF486273),
+        bodyMedium: whiteText.bodyMedium?.copyWith(
+          color: Colors.white,
           fontSize: 13,
           fontWeight: FontWeight.w500,
           height: 1.4,
         ),
-        bodySmall: TextStyle(
-          color: dark ? Colors.white54 : const Color(0xFF657B89),
+        bodySmall: whiteText.bodySmall?.copyWith(
+          color: Colors.white,
           fontSize: 11,
           fontWeight: FontWeight.w600,
           height: 1.35,
         ),
-        labelLarge: const TextStyle(
+        labelLarge: whiteText.labelLarge?.copyWith(
+          color: Colors.white,
           fontSize: 14,
           fontWeight: FontWeight.w900,
           letterSpacing: .15,
         ),
+        labelMedium: whiteText.labelMedium?.copyWith(color: Colors.white),
+        labelSmall: whiteText.labelSmall?.copyWith(color: Colors.white),
+      ),
+      primaryTextTheme: whiteText,
+      appBarTheme: const AppBarTheme(
+        backgroundColor: background,
+        foregroundColor: Colors.white,
+        surfaceTintColor: Colors.transparent,
+        titleTextStyle: TextStyle(
+          color: Colors.white,
+          fontSize: 20,
+          fontWeight: FontWeight.w900,
+        ),
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: dark ? const Color(0xFF071725) : Colors.white,
-        hintStyle: TextStyle(
-          color: dark ? Colors.white38 : const Color(0xFF8194A0),
+        fillColor: const Color(0xFF071725),
+        labelStyle: const TextStyle(color: Colors.white),
+        floatingLabelStyle: const TextStyle(color: Colors.white),
+        hintStyle: const TextStyle(
+          color: Colors.white,
           fontSize: 13,
           fontWeight: FontWeight.w500,
         ),
+        helperStyle: const TextStyle(color: Colors.white),
+        errorStyle: const TextStyle(color: Colors.white),
+        prefixIconColor: Colors.white,
+        suffixIconColor: Colors.white,
         contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide: BorderSide(
-            color: dark ? const Color(0xFF24557D) : const Color(0xFFC9D8E1),
-          ),
+          borderSide: const BorderSide(color: Color(0xFF24557D)),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
@@ -116,25 +143,41 @@ class AimsFlowApp extends StatelessWidget {
         ),
       ),
       navigationBarTheme: NavigationBarThemeData(
-        backgroundColor: dark ? const Color(0xFF04101A) : Colors.white,
-        indicatorColor: aimsBlue.withValues(alpha: dark ? .18 : .12),
-        labelTextStyle: WidgetStateProperty.resolveWith(
-          (states) => TextStyle(
+        backgroundColor: const Color(0xFF04101A),
+        indicatorColor: aimsBlue.withValues(alpha: .18),
+        labelTextStyle: WidgetStateProperty.all(
+          const TextStyle(
             fontSize: 11,
             fontWeight: FontWeight.w800,
-            color: states.contains(WidgetState.selected)
-                ? aimsBlue
-                : (dark ? Colors.white60 : const Color(0xFF536B7A)),
+            color: Colors.white,
           ),
         ),
       ),
       cardTheme: const CardThemeData(elevation: 0, margin: EdgeInsets.zero),
+      dialogTheme: const DialogThemeData(
+        backgroundColor: Color(0xFF071725),
+        titleTextStyle: TextStyle(
+          color: Colors.white,
+          fontSize: 20,
+          fontWeight: FontWeight.w900,
+        ),
+        contentTextStyle: TextStyle(color: Colors.white),
+      ),
+      bottomSheetTheme: const BottomSheetThemeData(
+        backgroundColor: Color(0xFF06131F),
+        modalBackgroundColor: Color(0xFF06131F),
+      ),
+      snackBarTheme: const SnackBarThemeData(
+        backgroundColor: Color(0xFF102436),
+        contentTextStyle: TextStyle(color: Colors.white),
+      ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
           minimumSize: const Size(0, 54),
           backgroundColor: aimsBlue,
-          foregroundColor: const Color(0xFF00131F),
+          foregroundColor: Colors.white,
           textStyle: const TextStyle(
+            color: Colors.white,
             fontSize: 16,
             fontWeight: FontWeight.w900,
           ),
@@ -142,6 +185,31 @@ class AimsFlowApp extends StatelessWidget {
             borderRadius: BorderRadius.circular(16),
           ),
         ),
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          foregroundColor: Colors.white,
+          textStyle: const TextStyle(color: Colors.white),
+        ),
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(
+          foregroundColor: Colors.white,
+          textStyle: const TextStyle(color: Colors.white),
+        ),
+      ),
+      checkboxTheme: CheckboxThemeData(
+        checkColor: WidgetStateProperty.all(Colors.white),
+      ),
+      radioTheme: RadioThemeData(
+        fillColor: WidgetStateProperty.resolveWith(
+          (states) => states.contains(WidgetState.selected)
+              ? aimsBlue
+              : Colors.white,
+        ),
+      ),
+      switchTheme: SwitchThemeData(
+        thumbColor: WidgetStateProperty.all(Colors.white),
       ),
     );
   }
@@ -166,9 +234,12 @@ class AimsFlowApp extends StatelessWidget {
           GlobalWidgetsLocalizations.delegate,
           GlobalCupertinoLocalizations.delegate,
         ],
-        theme: _theme(Brightness.light),
-        darkTheme: _theme(Brightness.dark),
-        themeMode: display.isDark ? ThemeMode.dark : ThemeMode.light,
+        theme: _theme(),
+        darkTheme: _theme(),
+        // Flow uses a permanently dark operational surface so every text
+        // remains white and readable. Display mode still controls the
+        // night-time brightness cap independently.
+        themeMode: ThemeMode.dark,
         home: const FlowLoginScreen(),
       ),
     );
