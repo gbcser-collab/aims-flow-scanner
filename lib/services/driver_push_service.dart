@@ -9,11 +9,11 @@ import 'driver_api_service.dart';
 import 'runtime_firebase_options.dart';
 import 'vehicle_tracking_service.dart';
 
-const _jobChannelId = 'aims_jobs';
+const _jobChannelId = 'aims_jobs_tts_v2';
 const _jobChannelName = 'AIMS Flow fuvarok';
 const _adminChannelId = 'aims_admin_alerts';
 const _adminChannelName = 'AIMS Flow admin értesítések';
-const _messageChannelId = 'aims_driver_messages';
+const _messageChannelId = 'aims_driver_messages_tts_v2';
 const _messageChannelName = 'AIMS Flow üzenetek';
 
 class DriverPushEvent {
@@ -189,14 +189,15 @@ class DriverPushService {
 
     final android = _notifications.resolvePlatformSpecificImplementation<
         AndroidFlutterLocalNotificationsPlugin>();
+    await android?.deleteNotificationChannel('aims_jobs');
+    await android?.deleteNotificationChannel('aims_driver_messages');
     await android?.createNotificationChannel(
       const AndroidNotificationChannel(
         _jobChannelId,
         _jobChannelName,
         description: 'Új fuvar és részrakomány értesítések',
         importance: Importance.max,
-        playSound: true,
-        sound: RawResourceAndroidNotificationSound('aims_new_job'),
+        playSound: false,
         enableVibration: true,
       ),
     );
@@ -217,8 +218,7 @@ class DriverPushService {
         _messageChannelName,
         description: 'Sofőr és főnökség közötti üzenetek',
         importance: Importance.max,
-        playSound: true,
-        sound: RawResourceAndroidNotificationSound('aims_new_message'),
+        playSound: false,
         enableVibration: true,
       ),
     );
@@ -362,8 +362,7 @@ class DriverPushService {
         _messageChannelName,
         description: 'Sofőr és főnökség közötti üzenetek',
         importance: Importance.max,
-        playSound: true,
-        sound: RawResourceAndroidNotificationSound('aims_new_message'),
+        playSound: false,
         enableVibration: true,
       ),
     );
@@ -377,8 +376,7 @@ class DriverPushService {
       channelDescription: 'Sofőr és főnökség közötti üzenetek',
       importance: Importance.max,
       priority: Priority.max,
-      playSound: true,
-      sound: RawResourceAndroidNotificationSound('aims_new_message'),
+      playSound: false,
       enableVibration: true,
       category: AndroidNotificationCategory.message,
       visibility: NotificationVisibility.public,
@@ -410,8 +408,7 @@ class DriverPushService {
         _jobChannelName,
         description: 'Új fuvar és részrakomány értesítések',
         importance: Importance.max,
-        playSound: true,
-        sound: RawResourceAndroidNotificationSound('aims_new_job'),
+        playSound: false,
         enableVibration: true,
       ),
     );
@@ -433,8 +430,7 @@ class DriverPushService {
       channelDescription: 'Új fuvar és részrakomány értesítések',
       importance: Importance.max,
       priority: Priority.max,
-      playSound: true,
-      sound: const RawResourceAndroidNotificationSound('aims_new_job'),
+      playSound: false,
       enableVibration: true,
       category: AndroidNotificationCategory.message,
       visibility: NotificationVisibility.public,

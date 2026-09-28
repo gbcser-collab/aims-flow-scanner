@@ -425,31 +425,36 @@ function aims_send_driver_direct_push(
             continue;
         }
 
-        $message = [
-            'message' => [
-                'token' => $device['fcm_token'],
-                'notification' => [
-                    'title' => $title,
-                    'body' => $body,
+        $isDriverMessage = (($payload['type'] ?? '') === 'admin_message');
+        $message = $isDriverMessage
+            ? [
+                'message' => [
+                    'token' => $device['fcm_token'],
+                    'data' => $data,
+                    'android' => ['priority' => 'high'],
                 ],
-                'data' => $data,
-                'android' => [
-                    'priority' => 'high',
+            ]
+            : [
+                'message' => [
+                    'token' => $device['fcm_token'],
                     'notification' => [
-                        'sound' => (($payload['type'] ?? '') === 'admin_message')
-                            ? 'aims_new_message'
-                            : 'default',
-                        'channel_id' => (($payload['type'] ?? '') === 'admin_message')
-                            ? 'aims_driver_messages'
-                            : 'aims_admin_alerts',
+                        'title' => $title,
+                        'body' => $body,
+                    ],
+                    'data' => $data,
+                    'android' => [
+                        'priority' => 'high',
+                        'notification' => [
+                            'sound' => 'default',
+                            'channel_id' => 'aims_admin_alerts',
+                        ],
+                    ],
+                    'apns' => [
+                        'headers' => ['apns-priority' => '10'],
+                        'payload' => ['aps' => ['sound' => 'default']],
                     ],
                 ],
-                'apns' => [
-                    'headers' => ['apns-priority' => '10'],
-                    'payload' => ['aps' => ['sound' => 'default']],
-                ],
-            ],
-        ];
+            ];
 
         $response = aims_http_post(
             'https://fcm.googleapis.com/v1/projects/' . rawurlencode($config['project_id']) . '/messages:send',

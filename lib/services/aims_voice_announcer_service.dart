@@ -127,7 +127,14 @@ class AimsVoiceAnnouncerService {
         if ((voice['network_required'] ?? '').toString() == 'true') {
           score += 700;
         }
-        if (_looksMaleVoice(haystack)) score += 250;
+        // The driver selected the male AIMS voice as the single spoken
+        // personality. Voice quality matters only after gender preference.
+        if (_looksMaleVoice(haystack)) score += 5000;
+        if (haystack.contains('female') ||
+            haystack.contains('#female') ||
+            haystack.contains('feminine')) {
+          score -= 5000;
+        }
 
         final quality =
             int.tryParse((voice['quality'] ?? '').toString()) ?? 0;
