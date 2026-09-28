@@ -16,9 +16,6 @@ class _TrackingScreenState extends State<TrackingScreen> {
   bool get _dark => Theme.of(context).brightness == Brightness.dark;
   Color get _page => _dark ? const Color(0xFF020813) : const Color(0xFFF5F9FC);
   Color get _panel => _dark ? const Color(0xFF0A1727) : Colors.white;
-  Color get _text => _dark ? Colors.white : const Color(0xFF0A1C2E);
-  Color get _muted => _dark ? Colors.white70 : const Color(0xFF536B7A);
-  Color get _faint => _dark ? Colors.white38 : const Color(0xFF8093A0);
   Color get _line => _dark ? const Color(0xFF24557D) : const Color(0xFFD5E2EB);
   final _runtime = TrackingRuntime.instance;
   late final TextEditingController _plate;
