@@ -177,7 +177,7 @@ class _FlowRegisterScreenState extends State<FlowRegisterScreen> {
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
         filled: true,
         fillColor: const Color(0xFF0A2236),
-        labelStyle: const TextStyle(color: Colors.white54),
+        labelStyle: const TextStyle(color: Colors.white),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(15),
           borderSide: const BorderSide(color: Color(0xFF245A78)),
@@ -358,7 +358,7 @@ class _FlowRegisterScreenState extends State<FlowRegisterScreen> {
                   : 'registration_sent',
             ),
             style: const TextStyle(
-              color: _blue,
+              color: Colors.white,
               fontWeight: FontWeight.w900,
             ),
           ),
@@ -370,7 +370,7 @@ class _FlowRegisterScreenState extends State<FlowRegisterScreen> {
                 result.plate +
                 '\n\n' +
                 t('registration_pending'),
-            style: const TextStyle(color: Colors.white70, height: 1.45),
+            style: const TextStyle(color: Colors.white, height: 1.45),
           ),
           actions: [
             FilledButton(
@@ -451,7 +451,7 @@ class _FlowRegisterScreenState extends State<FlowRegisterScreen> {
                         Text(
                           t('registration_intro'),
                           style: const TextStyle(
-                            color: Colors.white54,
+                            color: Colors.white,
                             height: 1.45,
                           ),
                         ),
@@ -549,7 +549,7 @@ class _FlowRegisterScreenState extends State<FlowRegisterScreen> {
                                     leading: Text(
                                       country.code,
                                       style: const TextStyle(
-                                        color: _blue,
+                                        color: Colors.white,
                                         fontWeight: FontWeight.w900,
                                       ),
                                     ),
@@ -584,7 +584,7 @@ class _FlowRegisterScreenState extends State<FlowRegisterScreen> {
                             hintText: '+36 30 123 4567',
                             helperText: t('phone_helper'),
                             helperStyle:
-                                const TextStyle(color: Colors.white38),
+                                const TextStyle(color: Colors.white),
                           ),
                         ),
                         const SizedBox(height: 11),
@@ -644,7 +644,7 @@ class _FlowRegisterScreenState extends State<FlowRegisterScreen> {
                             _error!,
                             textAlign: TextAlign.center,
                             style: const TextStyle(
-                              color: Colors.redAccent,
+                              color: Colors.white,
                               fontWeight: FontWeight.w800,
                             ),
                           ),
@@ -668,7 +668,7 @@ class _FlowRegisterScreenState extends State<FlowRegisterScreen> {
                           style: FilledButton.styleFrom(
                             minimumSize: const Size.fromHeight(64),
                             backgroundColor: _blue,
-                            foregroundColor: const Color(0xFF00131F),
+                            foregroundColor: Colors.white,
                             textStyle: const TextStyle(
                               fontWeight: FontWeight.w900,
                             ),
@@ -679,7 +679,7 @@ class _FlowRegisterScreenState extends State<FlowRegisterScreen> {
                           t('registration_pending'),
                           textAlign: TextAlign.center,
                           style: const TextStyle(
-                            color: Colors.white38,
+                            color: Colors.white,
                             height: 1.4,
                             fontSize: 11,
                           ),
