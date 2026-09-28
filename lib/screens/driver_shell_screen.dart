@@ -11,8 +11,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../models/scan_models.dart';
 import '../services/aims_display_mode.dart';
 import '../services/aims_locale.dart';
-import '../services/aims_voice_command.dart';
-import '../services/aims_voice_service.dart';
+import '../services/aims_voice_announcer_service.dart';
 import '../services/driver_api_service.dart';
 import '../services/driver_push_service.dart';
 import '../services/roaming_resilience.dart';
@@ -235,7 +234,6 @@ class _DriverShellScreenState extends State<DriverShellScreen>
       _isDark ? Colors.white38 : const Color(0xFF8093A0);
   static const _prefsPlate = 'aims_driver_plate';
   static const _prefsDriverName = 'aims_driver_name';
-  static const _prefsHandsFree = 'aims_hands_free';
   static const _prefsPendingStopPrefix = 'aims_pending_stop_actions_v1_';
   static const _prefsJobsCachePrefix = 'aims_driver_jobs_cache_v1_';
   static const _prefsJobsCacheAtPrefix = 'aims_driver_jobs_cache_at_v1_';
@@ -253,10 +251,9 @@ class _DriverShellScreenState extends State<DriverShellScreen>
   final _sync = SyncCoordinator.instance;
   static const _scanRepository = ScanRepository();
   final ScrollController _homeScrollController = ScrollController();
-  late final AimsVoiceService _voice;
+  final AimsVoiceAnnouncerService _voice = AimsVoiceAnnouncerService();
 
   StreamSubscription<DriverPushEvent>? _pushSub;
-  StreamSubscription<AimsVoiceState>? _voiceSub;
   StreamSubscription<VehicleTrackingStatus>? _trackingSub;
 
   int _index = 0;
@@ -268,12 +265,6 @@ class _DriverShellScreenState extends State<DriverShellScreen>
   bool _actionBusy = false;
   String? _message;
   VehicleTrackingStatus? _trackingStatus;
-  AimsVoiceState _voiceState = const AimsVoiceState(
-    enabled: false,
-    mode: AimsVoiceMode.off,
-    message: 'AIMS Hands-Free kikapcsolva.',
-  );
-  bool _handsFreeBusy = false;
   int _refreshGeneration = 0;
   DateTime? _lastResumeRefreshAt;
   DateTime? _lastJobSyncAt;
@@ -306,7 +297,6 @@ class _DriverShellScreenState extends State<DriverShellScreen>
   Timer? _runtimeHealthTimer;
   bool _runtimeHealthBusy = false;
   DateTime? _lastPushRecoveryAt;
-  DateTime? _lastVoiceRecoveryAt;
   String? _lastAutopilotSpokenSignature;
   DateTime? _lastAutopilotSpokenAt;
   bool _autopilotRefreshing = false;
@@ -1296,13 +1286,6 @@ class _DriverShellScreenState extends State<DriverShellScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _voice = AimsVoiceService(
-      onCommand: _handleVoiceCommand,
-      driverNameProvider: () => _driverName,
-    );
-    _voiceSub = _voice.states.listen((state) {
-      if (mounted) setState(() => _voiceState = state);
-    });
     _pushSub = _push.events.listen(_handlePush);
     _sync.addListener(_documentSyncChanged);
     unawaited(_initializeSyncSafely());
@@ -1528,19 +1511,6 @@ class _DriverShellScreenState extends State<DriverShellScreen>
       _scheduleAutopilotRefresh(1);
     }
 
-    // Driver-first default: voice control is ON unless the driver explicitly
-    // switched it off earlier. No need to hunt for the microphone every trip.
-    final savedHandsFree = prefs.getBool(_prefsHandsFree);
-    final handsFree = savedHandsFree ?? true;
-    if (savedHandsFree == null) {
-      await prefs.setBool(_prefsHandsFree, true);
-    }
-    if (handsFree && mounted) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        unawaited(_setHandsFree(true));
-      });
-    }
-
     if (_stateRecoveryWarning && mounted) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
@@ -1666,23 +1636,6 @@ class _DriverShellScreenState extends State<DriverShellScreen>
         await safe(() => _push.registerForPlate(_plate));
       }
 
-      final prefs = await SharedPreferences.getInstance();
-      final handsFreeWanted = prefs.getBool(_prefsHandsFree) ?? true;
-      final voiceDue = handsFreeWanted &&
-          (_voiceState.mode == AimsVoiceMode.error ||
-              _lastVoiceRecoveryAt == null ||
-              now.difference(_lastVoiceRecoveryAt!) >
-                  const Duration(minutes: 2));
-      if (voiceDue) {
-        _lastVoiceRecoveryAt = now;
-        await safe(() async {
-          if (!_voice.enabled) {
-            await _voice.enableHandsFree();
-          } else {
-            await _voice.recover();
-          }
-        });
-      }
     } finally {
       _runtimeHealthBusy = false;
     }
@@ -3283,288 +3236,6 @@ class _DriverShellScreenState extends State<DriverShellScreen>
     return 'Aktív fuvar: ${job.reference}. Következő $kind.$companyPart Cím: ${stop.address}.';
   }
 
-  Future<String> _handleVoiceCommand(AimsVoiceCommand command) async {
-    final current = _stop;
-    final noStop = _l(
-      'Nincs aktív megálló.',
-      'There is no active stop.',
-      'Es gibt keinen aktiven Stopp.',
-    );
-
-    switch (command.intent) {
-      case AimsVoiceIntent.showJob:
-        if (mounted) setState(() => _index = 1);
-        return _jobVoiceSummary();
-      case AimsVoiceIntent.showNextJobs:
-        final count = _otherJobs.length;
-        if (mounted && _jobs.isNotEmpty) {
-          unawaited(_showJobsBrowser());
-        }
-        return count == 0
-            ? _l(
-                'Nincs további kiosztott munkád.',
-                'There are no additional assigned jobs.',
-                'Es gibt keine weiteren zugewiesenen Aufträge.',
-              )
-            : _l(
-                '$count további munkád van. Megnyitottam a listát.',
-                'You have $count more assigned job(s). I opened the list.',
-                'Du hast $count weitere Aufträge. Ich habe die Liste geöffnet.',
-              );
-      case AimsVoiceIntent.navigateNext:
-        if (current == null) return noStop;
-        await _openMapsForStop(current);
-        return _l(
-          'Indítom a navigációt a következő címre.',
-          'Starting navigation to the next address.',
-          'Ich starte die Navigation zur nächsten Adresse.',
-        );
-      case AimsVoiceIntent.assistantHelp:
-        return _l(
-          'Tudok fuvart és következő munkát mutatni, címet felolvasni, navigációt indítani, kapcsolattartót hívni, érkezést és rakodást rögzíteni, CMR-t vagy tankolási bizonylatot nyitni, valamint késést, várakozást, műszaki hibát és sürgős jelzést küldeni.',
-          'I can show the current and next jobs, read addresses, start navigation, call contacts, record arrivals and loading, open CMR or fuel receipt scanning, and send delay, waiting, technical or urgent alerts.',
-          'Ich kann aktuelle und nächste Aufträge zeigen, Adressen vorlesen, Navigation starten, Kontakte anrufen, Ankunft und Be-/Entladung erfassen, CMR oder Tankbelege öffnen und Meldungen senden.',
-        );
-      case AimsVoiceIntent.trackingStatus:
-        final running = _trackingStatus?.running == true;
-        final score = _trackingStatus?.gpsScore ?? 0;
-        return running
-            ? _l(
-                'A GPS követés aktív. A jel minősége $score százalék.',
-                'GPS tracking is active. Signal quality is $score percent.',
-                'GPS-Tracking ist aktiv. Die Signalqualität beträgt $score Prozent.',
-              )
-            : _l(
-                'A GPS követés jelenleg nem aktív.',
-                'GPS tracking is not active right now.',
-                'GPS-Tracking ist derzeit nicht aktiv.',
-              );
-      case AimsVoiceIntent.assistantHealth:
-        final gps = _trackingStatus;
-        final gpsOk = gps?.running == true && (gps?.gpsScore ?? 0) >= 55;
-        final pending =
-            _driverPendingCount + (gps?.queueDepth ?? 0);
-        final networkOk = _jobRefreshFailures == 0 && _lastJobSyncAt != null;
-        return _l(
-          'AIMS állapot. GPS: ${gpsOk ? 'rendben' : 'ellenőrzést kér'}. Kapcsolat: ${networkOk ? 'rendben' : 'offline vagy bizonytalan'}. Függő sor: $pending tétel. Hangvezérlés: ${_voiceState.enabled ? 'aktív' : 'kikapcsolva'}.',
-          'AIMS status. GPS: ${gpsOk ? 'healthy' : 'needs attention'}. Connection: ${networkOk ? 'healthy' : 'offline or uncertain'}. Pending queue: $pending item(s). Voice control: ${_voiceState.enabled ? 'active' : 'off'}.',
-          'AIMS-Status. GPS: ${gpsOk ? 'in Ordnung' : 'prüfen'}. Verbindung: ${networkOk ? 'in Ordnung' : 'offline oder unsicher'}. Warteschlange: $pending Einträge. Sprachsteuerung: ${_voiceState.enabled ? 'aktiv' : 'aus'}.',
-        );
-      case AimsVoiceIntent.readReference:
-        final job = _job;
-        if (job == null) {
-          return _l(
-            'Nincs aktív fuvar, ezért nincs felolvasható referencia.',
-            'There is no active job, so there is no reference to read.',
-            'Es gibt keinen aktiven Auftrag und damit keine Referenz.',
-          );
-        }
-        final candidates = <String>[
-          job.reference,
-          job.orderData['customer_reference']?.toString() ?? '',
-          job.orderData['pickup_reference']?.toString() ?? '',
-          job.orderData['delivery_reference']?.toString() ?? '',
-        ];
-        final references = <String>[];
-        for (final value in candidates) {
-          final cleaned = value.trim();
-          if (cleaned.isNotEmpty && !references.contains(cleaned)) {
-            references.add(cleaned);
-          }
-        }
-        return references.isEmpty
-            ? _l(
-                'Ehhez a fuvarhoz nincs megadott referencia.',
-                'No reference is available for this job.',
-                'Für diesen Auftrag ist keine Referenz hinterlegt.',
-              )
-            : _l(
-                'A fuvar referenciája: ${references.join('. ')}.',
-                'Job reference: ${references.join('. ')}.',
-                'Auftragsreferenz: ${references.join('. ')}.',
-              );
-      case AimsVoiceIntent.readLastMessage:
-        DriverChatMessage? latestOfficeMessage;
-        for (final message in _officeMessages.reversed) {
-          if (!message.fromDriver && message.body.trim().isNotEmpty) {
-            latestOfficeMessage = message;
-            break;
-          }
-        }
-        return latestOfficeMessage == null
-            ? _l(
-                'Nincs felolvasható diszpécserüzenet.',
-                'There is no dispatcher message to read.',
-                'Es gibt keine Dispositionsnachricht zum Vorlesen.',
-              )
-            : _l(
-                'A diszpécser utolsó üzenete: ${latestOfficeMessage.body}.',
-                'The latest dispatcher message says: ${latestOfficeMessage.body}.',
-                'Die letzte Nachricht der Disposition lautet: ${latestOfficeMessage.body}.',
-              );
-      case AimsVoiceIntent.documentStatus:
-        final job = _job;
-        if (job == null) {
-          return _l(
-            'Nincs aktív fuvar.',
-            'There is no active job.',
-            'Es gibt keinen aktiven Auftrag.',
-          );
-        }
-        final state = _jobCmrStates[job.id];
-        if (!_hasJobCmr(job)) {
-          return _l(
-            'Ehhez a fuvarhoz még nincs CMR elmentve.',
-            'No CMR has been saved for this job yet.',
-            'Für diesen Auftrag wurde noch kein CMR gespeichert.',
-          );
-        }
-        return switch (state) {
-          CmrSyncState.approved => _l(
-              'A CMR megvan, fel van töltve és jóváhagyott.',
-              'The CMR is uploaded and approved.',
-              'Das CMR ist hochgeladen und bestätigt.',
-            ),
-          CmrSyncState.emailed => _l(
-              'A CMR megvan, fel van töltve és e-mailben elküldve.',
-              'The CMR is uploaded and has been emailed.',
-              'Das CMR ist hochgeladen und per E-Mail gesendet.',
-            ),
-          CmrSyncState.uploaded => _l(
-              'A CMR megvan és fel van töltve a szerverre.',
-              'The CMR is saved and uploaded to the server.',
-              'Das CMR ist gespeichert und auf den Server hochgeladen.',
-            ),
-          CmrSyncState.failed || CmrSyncState.pending || null => _l(
-              'A CMR megvan a telefonon, de még szinkronizálásra vár.',
-              'The CMR is safe on the phone and is still waiting to sync.',
-              'Das CMR ist sicher auf dem Telefon und wartet noch auf die Synchronisierung.',
-            ),
-        };
-      case AimsVoiceIntent.navigatePickup:
-        final stop = _nextStopOfType('pickup');
-        if (stop == null) {
-          return _l('Nincs következő felrakó.', 'There is no next pickup.',
-              'Es gibt keine nächste Abholung.');
-        }
-        await _openMapsForStop(stop);
-        return _l('Navigáció indítása a felrakóra.',
-            'Starting navigation to the pickup.',
-            'Navigation zur Ladestelle wird gestartet.');
-      case AimsVoiceIntent.navigateDelivery:
-        final stop = _nextStopOfType('delivery');
-        if (stop == null) {
-          return _l('Nincs következő lerakó.', 'There is no next delivery.',
-              'Es gibt keine nächste Zustellung.');
-        }
-        await _openMapsForStop(stop);
-        return _l('Navigáció indítása a lerakóra.',
-            'Starting navigation to the delivery.',
-            'Navigation zur Entladestelle wird gestartet.');
-      case AimsVoiceIntent.arrivePickup:
-        if (current == null) return noStop;
-        return _markStop(current, 'arrived', expectedType: 'pickup');
-      case AimsVoiceIntent.arriveDelivery:
-        if (current == null) return noStop;
-        return _markStop(current, 'arrived', expectedType: 'delivery');
-      case AimsVoiceIntent.pickupComplete:
-        if (current == null) return noStop;
-        return _markStop(current, 'completed', expectedType: 'pickup');
-      case AimsVoiceIntent.deliveryComplete:
-        if (current == null) return noStop;
-        return _markStop(current, 'completed', expectedType: 'delivery');
-      case AimsVoiceIntent.nextAddress:
-        if (current == null) {
-          return _l('Nincs következő cím.', 'There is no next address.',
-              'Es gibt keine nächste Adresse.');
-        }
-        final company = current.company.trim();
-        if (AimsLocaleController.instance.languageCode == 'en') {
-          return company.isEmpty
-              ? 'The next address is ${current.address}.'
-              : 'The next stop is $company. Address: ${current.address}.';
-        }
-        if (AimsLocaleController.instance.languageCode == 'de') {
-          return company.isEmpty
-              ? 'Die nächste Adresse ist ${current.address}.'
-              : 'Der nächste Stopp ist $company. Adresse: ${current.address}.';
-        }
-        return company.isEmpty
-            ? 'A következő cím: ${current.address}.'
-            : 'A következő megálló $company. Cím: ${current.address}.';
-      case AimsVoiceIntent.callContact:
-        return _callCurrentContact();
-      case AimsVoiceIntent.delaySignal:
-        await _sendSignal('Késés', message: 'Voice command');
-        return _l('A késés jelzést elküldtem a főnökségnek.',
-            'The delay notice was sent to the office.',
-            'Die Verspätungsmeldung wurde an die Disposition gesendet.');
-      case AimsVoiceIntent.fuelReceipt:
-        unawaited(_openInvoiceScanner());
-        return _l('Megnyitottam az AIMS számla scannert.',
-            'I opened the AIMS invoice scanner.',
-            'Der AIMS-Rechnungsscanner ist geöffnet.');
-      case AimsVoiceIntent.cmrDocument:
-        unawaited(_openCmrScanner());
-        return _l('Megnyitottam a CMR scannert.',
-            'I opened the CMR scanner.', 'Der CMR-Scanner ist geöffnet.');
-      case AimsVoiceIntent.technicalIssue:
-        await _sendSignal('Műszaki hiba', message: 'Voice command');
-        return _l('A műszaki hibát jeleztem a főnökségnek.',
-            'The technical issue was reported to the office.',
-            'Das technische Problem wurde an die Disposition gemeldet.');
-      case AimsVoiceIntent.readJobDetails:
-        return _jobVoiceSummary();
-      case AimsVoiceIntent.waitingSignal:
-        await _sendSignal('Várakozás', message: 'Voice command');
-        return _l('A várakozást jeleztem.', 'The waiting status was reported.',
-            'Die Wartezeit wurde gemeldet.');
-      case AimsVoiceIntent.urgentSignal:
-        await _sendSignal('Baleset / sürgős',
-            urgent: true, message: 'Voice command');
-        return _l('Sürgős jelzést küldtem.', 'I sent an urgent alert.',
-            'Ich habe eine dringende Meldung gesendet.');
-      case AimsVoiceIntent.repeatLast:
-        // Handled inside AimsVoiceService so it can repeat the exact previous
-        // announcement without inventing or re-reading operational data.
-        return '';
-      case AimsVoiceIntent.unknown:
-        return AimsLocaleController.instance.t('not_understood');
-    }
-  }
-
-  Future<void> _setHandsFree(bool enabled) async {
-    if (_handsFreeBusy) return;
-    setState(() => _handsFreeBusy = true);
-    final prefs = await SharedPreferences.getInstance();
-
-    try {
-      if (enabled) {
-        final ok = await _voice.enableHandsFree();
-        await prefs.setBool(_prefsHandsFree, ok);
-        if (!ok && mounted) {
-          _snack(_l('A hangfelismerés nem indítható. Ellenőrizd a mikrofon engedélyt.', 'Speech recognition could not start. Check microphone permission.', 'Spracherkennung konnte nicht gestartet werden. Mikrofonberechtigung prüfen.'));
-        }
-      } else {
-        await _voice.disableHandsFree();
-        await prefs.setBool(_prefsHandsFree, false);
-      }
-    } catch (_) {
-      await prefs.setBool(_prefsHandsFree, false);
-      if (mounted) {
-        _snack(
-          _l(
-            'A hangvezérlés most nem indítható. Az app többi része tovább működik.',
-            'Voice control cannot start right now. The rest of the app remains available.',
-            'Die Sprachsteuerung kann derzeit nicht gestartet werden. Die übrige App bleibt verfügbar.',
-          ),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _handsFreeBusy = false);
-    }
-  }
-
   void _snack(String value) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(value)));
@@ -3728,8 +3399,6 @@ class _DriverShellScreenState extends State<DriverShellScreen>
               gps.gpsQuality != 'rejected' &&
               (gpsAge == null || gpsAge <= 2);
           final gpsExcellent = gpsGood && gps.gpsScore >= 85;
-          final voiceHealthy = _voiceState.enabled &&
-              _voiceState.mode != AimsVoiceMode.error;
           final online = _jobRefreshFailures == 0 && _lastJobSyncAt != null;
           final hasCache = _jobs.isNotEmpty;
           final pending = _driverPendingCount;
@@ -3798,17 +3467,6 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                       ),
                       const SizedBox(width: 7),
                       _healthPill(
-                        icon: voiceHealthy
-                            ? Icons.record_voice_over_rounded
-                            : Icons.mic_off_rounded,
-                        label: 'AIMS',
-                        value: voiceHealthy
-                            ? _l('KÉSZ', 'READY', 'BEREIT')
-                            : _l('CHECK', 'CHECK', 'PRÜFEN'),
-                        color: voiceHealthy ? _green : const Color(0xFFFFC857),
-                      ),
-                      const SizedBox(width: 7),
-                      _healthPill(
                         icon: Icons.sync_rounded,
                         label: _l('UTOLSÓ', 'LAST', 'LETZTE'),
                         value: _ageLabel(_lastJobSyncAt),
@@ -3841,7 +3499,6 @@ class _DriverShellScreenState extends State<DriverShellScreen>
     _runtimeHealthTimer = null;
     _pushSub?.cancel();
     _trackingSub?.cancel();
-    _voiceSub?.cancel();
     _sync.removeListener(_documentSyncChanged);
     _homeScrollController.dispose();
     _officeMessageController.dispose();
@@ -4998,204 +4655,8 @@ class _DriverShellScreenState extends State<DriverShellScreen>
           ],
         ),
       ),
-      const SizedBox(height: 12),
-      _voicePanel(),
     ], controller: _homeScrollController);
   }
-
-  Widget _voicePanel() => _panel(
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  width: 44,
-                  height: 44,
-                  decoration: BoxDecoration(
-                    color: (_voiceState.enabled ? _green : _blue)
-                        .withValues(alpha: .12),
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(
-                      color: (_voiceState.enabled ? _green : _blue)
-                          .withValues(alpha: .35),
-                    ),
-                  ),
-                  child: Icon(
-                    _voiceState.mode == AimsVoiceMode.speaking
-                        ? Icons.graphic_eq_rounded
-                        : Icons.mic_rounded,
-                    color: _voiceState.enabled ? _green : _blue,
-                  ),
-                ),
-                const SizedBox(width: 11),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        _l(
-                          'AIMS VIRTUÁLIS ASSZISZTENS',
-                          'AIMS VIRTUAL ASSISTANT',
-                          'AIMS VIRTUELLER ASSISTENT',
-                        ),
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w900,
-                          fontSize: 14,
-                        ),
-                      ),
-                      const SizedBox(height: 3),
-                      Text(
-                        switch (_voiceState.mode) {
-                          AimsVoiceMode.command => _voiceState.lastHeard.trim().isEmpty
-                              ? _l(
-                                  'HALLGATLAK — mondd természetesen.',
-                                  'LISTENING — speak naturally.',
-                                  'ICH HÖRE — sprich ganz natürlich.',
-                                )
-                              : _l(
-                                  'ÉRTETTEM: ${_voiceState.lastHeard}',
-                                  'GOT IT: ${_voiceState.lastHeard}',
-                                  'VERSTANDEN: ${_voiceState.lastHeard}',
-                                ),
-                          /* legacy wording kept below unreachable by design */
-                          AimsVoiceMode.off => _l(
-                              'Érintsd meg és mondd, mit szeretnél.',
-                              'Tap and tell me what you need.',
-                              'Tippe und sage, was du brauchst.',
-                            ),
-                          AimsVoiceMode.speaking => _l(
-                              'VÁLASZOLOK…',
-                              'RESPONDING…',
-                              'ICH ANTWORTE…',
-                            ),
-                          AimsVoiceMode.wakeWord => _l(
-                              'KÉSZEN ÁLLOK — mondd: „AIMS”',
-                              'READY — say “AIMS”',
-                              'BEREIT — sage „AIMS“',
-                            ),
-                          AimsVoiceMode.error => _l(
-                              'NEM HALLOTTALAK — érintsd meg a mikrofont',
-                              'I COULD NOT HEAR YOU — tap the microphone',
-                              'NICHT VERSTANDEN — tippe auf das Mikrofon',
-                            ),
-                        },
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w800,
-                          height: 1.3,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            FilledButton.icon(
-              key: const Key('aims-assistant-talk'),
-              onPressed: _handsFreeBusy
-                  ? null
-                  : () => unawaited(_voice.triggerAssistant()),
-              icon: const Icon(Icons.record_voice_over_rounded, size: 26),
-              label: Text(
-                _l(
-                  'BESZÉLJ AZ AIMS-HEZ',
-                  'TALK TO AIMS',
-                  'MIT AIMS SPRECHEN',
-                ),
-              ),
-              style: FilledButton.styleFrom(
-                minimumSize: const Size.fromHeight(60),
-              ),
-            ),
-            const SizedBox(height: 10),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
-              decoration: BoxDecoration(
-                color: const Color(0xFF06131F),
-                borderRadius: BorderRadius.circular(13),
-                border: Border.all(color: const Color(0xFF173B54)),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      _l(
-                        'Hands-Free: mondd, hogy „AIMS”, majd a parancsot.',
-                        'Hands-Free: say “AIMS”, then your command.',
-                        'Hands-Free: sage „AIMS“, dann deinen Befehl.',
-                      ),
-                      style: const TextStyle(
-                        color: Colors.white70,
-                        fontSize: 11,
-                        height: 1.3,
-                      ),
-                    ),
-                  ),
-                  Switch(
-                    key: const Key('aims-hands-free-toggle'),
-                    value: _voiceState.enabled,
-                    onChanged: _handsFreeBusy ? null : _setHandsFree,
-                  ),
-                ],
-              ),
-            ),
-            if (_voiceState.message.trim().isNotEmpty) ...[
-              const SizedBox(height: 10),
-              Text(
-                _voiceState.message,
-                style: TextStyle(color: _textMuted, height: 1.35),
-              ),
-            ],
-            if (_voiceState.lastHeard.trim().isNotEmpty) ...[
-              const SizedBox(height: 5),
-              Text(
-                _l(
-                  'Hallottam: ${_voiceState.lastHeard}',
-                  'Heard: ${_voiceState.lastHeard}',
-                  'Gehört: ${_voiceState.lastHeard}',
-                ),
-                style: const TextStyle(color: Colors.white38, fontSize: 10),
-              ),
-            ],
-            const SizedBox(height: 10),
-            Wrap(
-              spacing: 7,
-              runSpacing: 7,
-              children: [
-                _assistantExample(
-                  _l('Mutasd a fuvarom', 'Show my job', 'Zeige meinen Auftrag'),
-                ),
-                _assistantExample(
-                  _l('Következő cím', 'Next address', 'Nächste Adresse'),
-                ),
-                _assistantExample(
-                  _l(
-                    'Navigálj a felrakóra',
-                    'Navigate to pickup',
-                    'Zur Abholung navigieren',
-                  ),
-                ),
-                _assistantExample(
-                  _l(
-                    'Hívd a kapcsolattartót',
-                    'Call the contact',
-                    'Kontakt anrufen',
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      );
-
-  Widget _assistantExample(String command) => ActionChip(
-        label: Text(command),
-        onPressed: () => unawaited(_voice.executeText(command)),
-        visualDensity: VisualDensity.compact,
-      );
 
   Widget _jobsShortcut() {
     final current = _job;
