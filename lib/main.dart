@@ -49,6 +49,7 @@ class AimsFlowApp extends StatelessWidget {
         onPrimary: Colors.white,
         onSecondary: Colors.white,
         onSurface: Colors.white,
+        onSurfaceVariant: Colors.white,
         onError: Colors.white,
       ),
       scaffoldBackgroundColor: background,
@@ -152,6 +153,19 @@ class AimsFlowApp extends StatelessWidget {
             color: Colors.white,
           ),
         ),
+      ),
+      listTileTheme: const ListTileThemeData(
+        textColor: Colors.white,
+        titleTextStyle: TextStyle(color: Colors.white),
+        subtitleTextStyle: TextStyle(color: Colors.white),
+      ),
+      expansionTileTheme: const ExpansionTileThemeData(
+        textColor: Colors.white,
+        collapsedTextColor: Colors.white,
+      ),
+      chipTheme: base.chipTheme.copyWith(
+        labelStyle: const TextStyle(color: Colors.white),
+        secondaryLabelStyle: const TextStyle(color: Colors.white),
       ),
       cardTheme: const CardThemeData(elevation: 0, margin: EdgeInsets.zero),
       dialogTheme: const DialogThemeData(
