@@ -5,6 +5,31 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+
+  testWidgets('Flow keeps the operational UI dark with white text everywhere',
+      (tester) async {
+    await tester.pumpWidget(const AimsFlowApp());
+    await tester.pump();
+
+    final app = tester.widget<MaterialApp>(find.byType(MaterialApp));
+    final theme = app.theme!;
+
+    expect(app.themeMode, ThemeMode.dark);
+    expect(theme.colorScheme.onSurface, Colors.white);
+    expect(theme.colorScheme.onSurfaceVariant, Colors.white);
+    expect(theme.textTheme.bodyLarge?.color, Colors.white);
+    expect(theme.textTheme.bodyMedium?.color, Colors.white);
+    expect(theme.textTheme.bodySmall?.color, Colors.white);
+    expect(theme.textTheme.titleLarge?.color, Colors.white);
+    expect(theme.textTheme.titleMedium?.color, Colors.white);
+    expect(theme.textTheme.labelLarge?.color, Colors.white);
+    expect(theme.listTileTheme.textColor, Colors.white);
+    expect(theme.expansionTileTheme.textColor, Colors.white);
+    expect(theme.expansionTileTheme.collapsedTextColor, Colors.white);
+    expect(theme.dialogTheme.contentTextStyle?.color, Colors.white);
+    expect(theme.snackBarTheme.contentTextStyle?.color, Colors.white);
+  });
+
   testWidgets('AIMS Flow starts on plate and short-code login', (tester) async {
     await tester.pumpWidget(const AimsFlowApp());
     await tester.pump();
