@@ -226,6 +226,9 @@ jobs:
       - name: White text regression guard
         run: python3 ci/r105_white_text_guard.py
 
+      - name: R106 male voice / navigation guard
+        run: python3 ci/r106_voice_navigation_guard.py
+
       - name: Unit tests
         run: flutter test
 
