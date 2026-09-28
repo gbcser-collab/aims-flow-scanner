@@ -29,7 +29,14 @@ for forbidden in [
 if "aims-flow-release.p12" in workflow.split("path: |")[-1]:
     raise SystemExit("R103 signing guard: private keystore must never be uploaded as an artifact")
 
-if "AIMS-Flow-R103-PRODUCTION-SIGNED" not in workflow and "AIMS-Flow-R104-PRODUCTION-SIGNED" not in workflow:
+if not any(
+    name in workflow
+    for name in (
+        "AIMS-Flow-R103-PRODUCTION-SIGNED",
+        "AIMS-Flow-R104-PRODUCTION-SIGNED",
+        "AIMS-Flow-R105-PRODUCTION-SIGNED",
+    )
+):
     raise SystemExit("Production signing guard missing a versioned production artifact")
 
 print("Persistent production signing guard: PASS")

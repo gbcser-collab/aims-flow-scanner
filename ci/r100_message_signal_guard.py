@@ -42,8 +42,10 @@ if "aims_require_token('AIMS_TRACKING_TOKEN')" not in server:
     raise SystemExit("driver message endpoint is not token protected")
 if "clientMessageId" not in server:
     raise SystemExit("message idempotency key missing")
-if "textTheme: TextTheme(" not in main:
-    raise SystemExit("global typography theme missing")
+if "textTheme: whiteText.copyWith(" not in main:
+    raise SystemExit("R105 global white typography theme missing")
+if "bodyColor: Colors.white" not in main or "displayColor: Colors.white" not in main:
+    raise SystemExit("R105 global white text policy missing")
 if "inputDecorationTheme: InputDecorationTheme(" not in main:
     raise SystemExit("global input theme missing")
 
