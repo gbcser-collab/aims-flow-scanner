@@ -3610,11 +3610,63 @@ class _DriverShellScreenState extends State<DriverShellScreen>
           ),
         ],
       ),
-      bottomNavigationBar: NavigationBar(
-        height: 72,
-        selectedIndex: _index,
-        onDestinationSelected: (value) {
-          if (_documentGateActive && value != 3) {
+      bottomNavigationBar: Container(
+        decoration: const BoxDecoration(
+          color: Color(0xFF030D16),
+          border: Border(
+            top: BorderSide(color: Color(0xFF10293B), width: 1),
+          ),
+        ),
+        child: SafeArea(
+          top: false,
+          child: SizedBox(
+            height: 78,
+            child: Row(
+              children: [
+                _flowNavItem(
+                  0,
+                  Icons.home_outlined,
+                  Icons.home_rounded,
+                  _l('Kezdő', 'Home', 'Start'),
+                ),
+                _flowNavItem(
+                  1,
+                  Icons.local_shipping_outlined,
+                  Icons.local_shipping,
+                  _l('Fuvar', 'Job', 'Auftrag'),
+                ),
+                _flowNavItem(
+                  2,
+                  Icons.campaign_outlined,
+                  Icons.campaign,
+                  _l('Jelzés', 'Signal', 'Meldung'),
+                ),
+                _flowNavItem(
+                  3,
+                  Icons.description_outlined,
+                  Icons.description,
+                  _l('Doksi', 'Docs', 'Doku'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _flowNavItem(
+    int index,
+    IconData icon,
+    IconData selectedIcon,
+    String label,
+  ) {
+    final selected = _index == index;
+    final color = selected ? _blue : const Color(0xFF70889A);
+    return Expanded(
+      child: InkWell(
+        onTap: () {
+          if (_documentGateActive && index != 3) {
             setState(() => _index = 3);
             _snack(
               _l(
@@ -3625,32 +3677,38 @@ class _DriverShellScreenState extends State<DriverShellScreen>
             );
             return;
           }
-          setState(() => _index = value);
+          setState(() => _index = index);
         },
-        backgroundColor: const Color(0xFF030D16),
-        indicatorColor: _blue.withValues(alpha: .18),
-        destinations: [
-          NavigationDestination(
-            icon: const Icon(Icons.home_outlined),
-            selectedIcon: const Icon(Icons.home_rounded),
-            label: _l('Kezdő', 'Home', 'Start'),
+        splashColor: _blue.withValues(alpha: .08),
+        highlightColor: Colors.transparent,
+        child: SizedBox.expand(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                selected ? selectedIcon : icon,
+                size: 22,
+                color: color,
+              ),
+              const SizedBox(height: 4),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 3),
+                child: Text(
+                  label.toUpperCase(),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: color,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                    height: 1,
+                  ),
+                ),
+              ),
+            ],
           ),
-          NavigationDestination(
-            icon: const Icon(Icons.local_shipping_outlined),
-            selectedIcon: const Icon(Icons.local_shipping),
-            label: _l('Fuvar', 'Job', 'Auftrag'),
-          ),
-          NavigationDestination(
-            icon: const Icon(Icons.campaign_outlined),
-            selectedIcon: const Icon(Icons.campaign),
-            label: _l('Jelzés', 'Signal', 'Meldung'),
-          ),
-          NavigationDestination(
-            icon: const Icon(Icons.description_outlined),
-            selectedIcon: const Icon(Icons.description),
-            label: _l('Doksi', 'Docs', 'Doku'),
-          ),
-        ],
+        ),
       ),
     );
   }
