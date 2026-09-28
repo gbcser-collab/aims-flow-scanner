@@ -123,7 +123,7 @@ class _SmartDocumentReviewScreenState extends State<SmartDocumentReviewScreen> {
                 'Erkannter Dokumenttyp',
               ),
               style: const TextStyle(
-                color: Colors.white54,
+                color: Colors.white,
                 fontSize: 12,
                 fontWeight: FontWeight.w800,
               ),
@@ -166,7 +166,7 @@ class _SmartDocumentReviewScreenState extends State<SmartDocumentReviewScreen> {
                 'Recognition confidence: $confidence%',
                 'Erkennungssicherheit: $confidence%',
               ),
-              style: const TextStyle(color: Colors.white60),
+              style: const TextStyle(color: Colors.white),
             ),
             const SizedBox(height: 18),
             Container(
@@ -182,7 +182,7 @@ class _SmartDocumentReviewScreenState extends State<SmartDocumentReviewScreen> {
                   'This document type is currently stored locally. Flow does not discard it even without internet.',
                   'Dieser Dokumenttyp wird derzeit lokal gespeichert. Flow verwirft ihn auch ohne Internet nicht.',
                 ),
-                style: const TextStyle(color: Colors.white70, height: 1.35),
+                style: const TextStyle(color: Colors.white, height: 1.35),
               ),
             ),
             const SizedBox(height: 18),
