@@ -1809,9 +1809,9 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                   'Eine neue Nachricht von der Disposition ist eingegangen.',
                 )
               : _l(
-                  'Új üzenet érkezett a főnökségtől.',
-                  'A new message arrived from the office.',
-                  'Eine neue Nachricht von der Disposition ist eingegangen.',
+                  'Üzenet a főnökségtől: $messageText',
+                  'Message from the office: $messageText',
+                  'Nachricht von der Disposition: $messageText',
                 ),
         ),
       );
@@ -1829,19 +1829,47 @@ class _DriverShellScreenState extends State<DriverShellScreen>
     }
     if (type != 'driver_job') return;
 
-    unawaited(
-      _voice.announce(
-        _l(
-          'Új fuvarod érkezett. Kérlek, nyisd meg az AIMS Flow alkalmazást.',
-          'A new job has arrived. Please open the AIMS Flow application.',
-          'Ein neuer Auftrag ist eingegangen. Bitte öffne die AIMS Flow App.',
-        ),
-      ),
-    );
     await _refreshJobs(showLoading: false);
     if (!mounted) return;
 
     final jobId = event.jobId;
+    final pushedJob = jobId > 0 ? _jobById(jobId) : _job;
+    DriverStop? pushedStop;
+    if (pushedJob != null) {
+      for (final candidate in pushedJob.stops) {
+        if (!_isStopCompleted(candidate)) {
+          pushedStop = candidate;
+          break;
+        }
+      }
+    }
+    final pushedCompany = pushedStop?.company.trim() ?? '';
+    final pushedAddress = pushedStop?.address.trim() ?? '';
+    final pushedType = pushedStop?.type == 'delivery'
+        ? _l('lerakó', 'delivery', 'Entladestelle')
+        : _l('felrakó', 'pickup', 'Ladestelle');
+    final detail = pushedStop == null
+        ? ''
+        : [
+            pushedType,
+            if (pushedCompany.isNotEmpty) pushedCompany,
+            if (pushedAddress.isNotEmpty) pushedAddress,
+          ].join(', ');
+    unawaited(
+      _voice.announce(
+        detail.isEmpty
+            ? _l(
+                'Új fuvarod érkezett.',
+                'A new job has arrived.',
+                'Ein neuer Auftrag ist eingegangen.',
+              )
+            : _l(
+                'Új fuvarod érkezett. Következő feladat: $detail.',
+                'A new job has arrived. Next task: $detail.',
+                'Ein neuer Auftrag ist eingegangen. Nächste Aufgabe: $detail.',
+              ),
+      ),
+    );
     if (event.actionId == 'seen_job' && jobId > 0) {
       await _ack(jobId, 'seen', closeDialog: false);
       return;
@@ -2188,6 +2216,19 @@ class _DriverShellScreenState extends State<DriverShellScreen>
     final destination = hasCoordinates
         ? '${stop.latitude},${stop.longitude}'
         : address;
+    final place = stop.company.trim().isNotEmpty
+        ? stop.company.trim()
+        : (stop.type == 'delivery'
+            ? _l('a lerakó', 'the delivery', 'die Entladestelle')
+            : _l('a felrakó', 'the pickup', 'die Ladestelle'));
+    final spokenAddress = address.isEmpty ? '' : ' $address';
+    await _voice.announce(
+      _l(
+        'Navigáció indul. Következő cél: $place.$spokenAddress',
+        'Navigation starting. Next destination: $place.$spokenAddress',
+        'Navigation startet. Nächstes Ziel: $place.$spokenAddress',
+      ),
+    );
     final opened = await _launchNavigationTarget(
       destination: destination,
       label: stop.company,
@@ -2903,6 +2944,13 @@ class _DriverShellScreenState extends State<DriverShellScreen>
       return;
     }
 
+    await _voice.announce(
+      _l(
+        'Navigáció indul a regisztrációs ponthoz.',
+        'Navigation starting to the registration point.',
+        'Navigation zur Anmeldung startet.',
+      ),
+    );
     final opened = await _launchNavigationTarget(
       destination: '$lat,$lng',
       label: _l(
@@ -3049,6 +3097,28 @@ class _DriverShellScreenState extends State<DriverShellScreen>
     }
   }
 
+  String _completionVoiceMessage(String baseMessage) {
+    if (_documentGateActive) return baseMessage;
+    final next = _stop;
+    if (next == null) return baseMessage;
+
+    final type = next.type == 'delivery'
+        ? _l('lerakó', 'delivery', 'Entladestelle')
+        : _l('felrakó', 'pickup', 'Ladestelle');
+    final company = next.company.trim();
+    final address = next.address.trim();
+    final details = [
+      type,
+      if (company.isNotEmpty) company,
+      if (address.isNotEmpty) address,
+    ].join(', ');
+    return _l(
+      '$baseMessage Következő feladat: $details.',
+      '$baseMessage Next task: $details.',
+      '$baseMessage Nächste Aufgabe: $details.',
+    );
+  }
+
   Future<void> _runPrimaryStopAction() async {
     final stop = _stop;
     final job = _job;
@@ -3113,17 +3183,28 @@ class _DriverShellScreenState extends State<DriverShellScreen>
       if (!mounted) return;
       _snack(message);
       if (action == 'arrived') {
+        final arrivalPlace = stop.company.trim().isNotEmpty
+            ? stop.company.trim()
+            : (stop.type == 'delivery'
+                ? _l('a lerakóhoz', 'the delivery', 'der Entladestelle')
+                : _l('a felrakóhoz', 'the pickup', 'der Ladestelle'));
         unawaited(
           _voice.announce(
-            _l(
-              'Megérkeztél. Kérlek, menj a regisztrációhoz. A bejelentkezéshez szükséges referenciaszámokat a regisztrációs gomb alatt találod.',
-              'You have arrived. Please go to registration. The required reference numbers are shown below the registration button.',
-              'Du bist angekommen. Bitte gehe zur Anmeldung. Die benötigten Referenznummern stehen unter der Registrierungstaste.',
-            ),
+            stop.hasKnownRegistrationPoint
+                ? _l(
+                    'Megérkeztél $arrivalPlace. Ismert regisztrációs pont van. Indítsd a regisztrációs navigációt, a referenciaszámokat a gomb alatt találod.',
+                    'You have arrived at $arrivalPlace. A known registration point is available. Start registration navigation; the reference numbers are below the button.',
+                    'Du bist bei $arrivalPlace angekommen. Ein bekannter Anmeldepunkt ist verfügbar. Starte die Navigation zur Anmeldung; die Referenzen stehen unter der Taste.',
+                  )
+                : _l(
+                    'Megérkeztél $arrivalPlace. Jelentkezz be a portán vagy a regisztráción, majd erősítsd meg az AIMS Flow-ban.',
+                    'You have arrived at $arrivalPlace. Check in at the gate or registration, then confirm it in AIMS Flow.',
+                    'Du bist bei $arrivalPlace angekommen. Melde dich am Tor oder an der Anmeldung an und bestätige es danach in AIMS Flow.',
+                  ),
           ),
         );
       } else {
-        unawaited(_voice.announce(message));
+        unawaited(_voice.announce(_completionVoiceMessage(message)));
       }
       setState(() => _index = _documentGateActive ? 3 : 0);
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -4595,9 +4676,9 @@ class _DriverShellScreenState extends State<DriverShellScreen>
             Expanded(
               child: Text(
                 _l(
-                  'Új fuvarnál hangos push érkezik. Lezárt képernyőn is jelzi, amíg vissza nem igazolod.',
-                  'A new job triggers an audible push. It also appears on the lock screen until you acknowledge it.',
-                  'Bei einem neuen Auftrag kommt eine hörbare Push-Meldung. Sie bleibt auch auf dem Sperrbildschirm sichtbar, bis du sie bestätigst.',
+                  'Új fuvarnál kiemelt push és rezgés érkezik. Az AIMS Flow-ban minden fuvarutasítást a férfi hang olvas fel.',
+                  'A new job triggers a prominent push and vibration. In AIMS Flow, all job instructions are read by the male voice.',
+                  'Bei einem neuen Auftrag kommen eine hervorgehobene Push-Meldung und Vibration. In AIMS Flow liest die männliche Stimme alle Auftragsanweisungen vor.',
                 ),
                 style: TextStyle(color: Colors.white, height: 1.35),
               ),
