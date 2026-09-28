@@ -236,6 +236,24 @@ jobs:
             --dart-define=AIMS_TRACKING_BASE_URL=https://logistic-aims.hu/api/aims-tracking \
             --dart-define=AIMS_TRACKING_TOKEN=ci-pr-validation
 
+      - name: Package downloadable PR APK
+        if: github.event_name == 'pull_request'
+        run: |
+          test -s build/app/outputs/flutter-apk/app-debug.apk
+          cp build/app/outputs/flutter-apk/app-debug.apk AIMS-Flow-R105-TEST-v1.7.0-build29.apk
+          sha256sum AIMS-Flow-R105-TEST-v1.7.0-build29.apk | tee AIMS-Flow-R105-TEST-v1.7.0-build29.apk.sha256
+
+      - name: Upload downloadable PR APK
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: AIMS-Flow-R105-TEST-v1.7.0-build29
+          path: |
+            AIMS-Flow-R105-TEST-v1.7.0-build29.apk
+            AIMS-Flow-R105-TEST-v1.7.0-build29.apk.sha256
+          if-no-files-found: error
+          retention-days: 30
+
       - name: Build production release APK
         if: github.event_name != 'pull_request'
         env:
