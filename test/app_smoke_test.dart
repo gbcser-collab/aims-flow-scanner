@@ -101,7 +101,7 @@ void main() {
     expect(find.byType(AimsFlowLogo), findsOneWidget);
     expect(find.text('AIMS FLOW'), findsOneWidget);
     expect(find.byKey(const Key('flow-next-jobs')), findsOneWidget);
-    expect(find.byKey(const Key('aims-assistant-talk')), findsOneWidget);
+    expect(find.byKey(const Key('aims-assistant-talk')), findsNothing);
     expect(find.text('Kezdő'), findsOneWidget);
     expect(find.text('Fuvar'), findsOneWidget);
     expect(find.text('Jelzés'), findsOneWidget);
@@ -121,7 +121,7 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(find.byType(AimsFlowLogo), findsOneWidget);
     expect(find.byKey(const Key('flow-next-jobs')), findsOneWidget);
-    expect(find.byKey(const Key('aims-assistant-talk')), findsOneWidget);
+    expect(find.byKey(const Key('aims-assistant-talk')), findsNothing);
   });
 
 }
