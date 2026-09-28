@@ -103,12 +103,12 @@ class _FlowChangeCodeScreenState extends State<FlowChangeCodeScreen> {
           children: [
             Text(
               t('change_code_desc'),
-              style: const TextStyle(color: Colors.white70, height: 1.45),
+              style: const TextStyle(color: Colors.white, height: 1.45),
             ),
             const SizedBox(height: 10),
             Text(
               t('code_rule'),
-              style: const TextStyle(color: Color(0xFF1CB8FF), height: 1.4),
+              style: const TextStyle(color: Colors.white, height: 1.4),
             ),
             const SizedBox(height: 18),
             TextField(
@@ -154,7 +154,7 @@ class _FlowChangeCodeScreenState extends State<FlowChangeCodeScreen> {
               Text(
                 _error!,
                 style: const TextStyle(
-                  color: Colors.redAccent,
+                  color: Colors.white,
                   fontWeight: FontWeight.w700,
                 ),
               ),
