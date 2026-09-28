@@ -1930,7 +1930,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
         backgroundColor: const Color(0xFF071522),
         title: Text(
           _l('ÚJ FUVAR ÉRKEZETT', 'NEW JOB RECEIVED', 'NEUER AUFTRAG'),
-          style: const TextStyle(color: _blue, fontWeight: FontWeight.w900),
+          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900),
         ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -1943,12 +1943,12 @@ class _DriverShellScreenState extends State<DriverShellScreen>
             const SizedBox(height: 8),
             Text(
               '${first?.address ?? '—'}\n→\n${last?.address ?? '—'}',
-              style: const TextStyle(color: Colors.white70, height: 1.45),
+              style: const TextStyle(color: Colors.white, height: 1.45),
             ),
             const SizedBox(height: 8),
             Text(
               _l('${job!.stops.length} megálló · ${job.reference}', '${job.stops.length} stops · ${job.reference}', '${job.stops.length} Stopps · ${job.reference}'),
-              style: const TextStyle(color: Colors.white38),
+              style: const TextStyle(color: Colors.white),
             ),
           ],
         ),
@@ -2037,13 +2037,13 @@ class _DriverShellScreenState extends State<DriverShellScreen>
             children: [
               Text(
                 _l('FUVARMEGBÍZÁS', 'TRANSPORT ORDER', 'TRANSPORTAUFTRAG'),
-                style: const TextStyle(color: _blue, fontSize: 13, fontWeight: FontWeight.w900, letterSpacing: 1.2),
+                style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w900, letterSpacing: 1.2),
               ),
               const SizedBox(height: 6),
               SelectableText(job.reference, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900)),
               const SizedBox(height: 16),
               for (final row in rows) ...[
-                Text(row.key, style: const TextStyle(color: Colors.white38, fontSize: 10, fontWeight: FontWeight.w800)),
+                Text(row.key, style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w800)),
                 const SizedBox(height: 3),
                 SelectableText(row.value, style: const TextStyle(color: Colors.white, fontSize: 14.5, height: 1.35, fontWeight: FontWeight.w600)),
                 const SizedBox(height: 13),
@@ -2060,7 +2060,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                 style: FilledButton.styleFrom(
                   minimumSize: const Size.fromHeight(62),
                   backgroundColor: _blue,
-                  foregroundColor: const Color(0xFF00131F),
+                  foregroundColor: Colors.white,
                 ),
               ),
             ],
@@ -3086,7 +3086,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
               'Mark it complete only when loading/unloading is really finished.',
               'Nur als fertig markieren, wenn die Be-/Entladung wirklich abgeschlossen ist.',
             ),
-            style: const TextStyle(color: Colors.white70, height: 1.4),
+            style: const TextStyle(color: Colors.white, height: 1.4),
           ),
           actions: [
             TextButton(
@@ -3313,7 +3313,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
             Text(
               '$label ',
               style: TextStyle(
-                color: _textMuted,
+                color: Colors.white,
                 fontSize: 9,
                 fontWeight: FontWeight.w800,
                 letterSpacing: .35,
@@ -3322,7 +3322,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
             Text(
               value,
               style: TextStyle(
-                color: color,
+                color: Colors.white,
                 fontSize: 10,
                 fontWeight: FontWeight.w900,
               ),
@@ -3587,7 +3587,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    color: _blue,
+                    color: Colors.white,
                     fontSize: 14,
                     fontWeight: FontWeight.w900,
                     letterSpacing: 1.4,
@@ -3603,7 +3603,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    color: _textMuted,
+                    color: Colors.white,
                     fontSize: 11,
                     fontWeight: FontWeight.w800,
                     letterSpacing: .45,
@@ -3833,7 +3833,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
           Text(
             label,
             style: TextStyle(
-              color: _textFaint,
+              color: Colors.white,
               fontSize: 8,
               fontWeight: FontWeight.w900,
               letterSpacing: .7,
@@ -3843,7 +3843,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
           Text(
             value,
             style: TextStyle(
-              color: color,
+              color: Colors.white,
               fontSize: 12,
               fontWeight: FontWeight.w900,
             ),
@@ -3930,7 +3930,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                               ? _l('UTOLSÓ ISMERT ÁLLAPOT', 'LAST KNOWN STATE', 'LETZTER BEKANNTER STAND')
                               : _l('KORLÁTOZOTT ADATMINŐSÉG', 'LIMITED DATA QUALITY', 'EINGESCHRÄNKTE DATENQUALITÄT'),
                       style: TextStyle(
-                        color: isLive ? _green : const Color(0xFFFFC857),
+                        color: Colors.white,
                         fontSize: 9,
                         fontWeight: FontWeight.w900,
                         letterSpacing: .7,
@@ -3947,7 +3947,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                 ),
                 child: Text(
                   '${ap.riskScore}/100',
-                  style: TextStyle(color: color, fontWeight: FontWeight.w900),
+                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900),
                 ),
               ),
             ],
@@ -3956,7 +3956,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
           Text(
             _l('KÖVETKEZŐ LÉPÉS', 'NEXT ACTION', 'NÄCHSTE AKTION'),
             style: const TextStyle(
-              color: Colors.white38,
+              color: Colors.white,
               fontSize: 9,
               fontWeight: FontWeight.w900,
               letterSpacing: 1.1,
@@ -3983,7 +3983,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                 address,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
-                style: TextStyle(color: _textMuted, height: 1.35),
+                style: TextStyle(color: Colors.white, height: 1.35),
               ),
           ],
           if (ap.totalStops > 0) ...[
@@ -3993,7 +3993,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                 Text(
                   _l('FUVAR HALADÁS', 'JOB PROGRESS', 'AUFTRAGSFORTSCHRITT'),
                   style: const TextStyle(
-                    color: Colors.white38,
+                    color: Colors.white,
                     fontSize: 8,
                     fontWeight: FontWeight.w900,
                     letterSpacing: .7,
@@ -4003,7 +4003,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                 Text(
                   '${ap.completedStops}/${ap.totalStops} · ${ap.progressPct}%',
                   style: const TextStyle(
-                    color: Colors.white70,
+                    color: Colors.white,
                     fontSize: 10,
                     fontWeight: FontWeight.w900,
                   ),
@@ -4100,7 +4100,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                   Text(
                     _l('MIÉRT JELEZ?', 'WHY THIS STATUS?', 'WARUM DIESER STATUS?'),
                     style: const TextStyle(
-                      color: Colors.white38,
+                      color: Colors.white,
                       fontSize: 8,
                       fontWeight: FontWeight.w900,
                       letterSpacing: .7,
@@ -4113,7 +4113,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                       child: Text(
                         '• $reason',
                         style: const TextStyle(
-                          color: Colors.white70,
+                          color: Colors.white,
                           fontSize: 11,
                           fontWeight: FontWeight.w700,
                         ),
@@ -4133,7 +4133,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
               style: FilledButton.styleFrom(
                 minimumSize: const Size.fromHeight(58),
                 backgroundColor: color,
-                foregroundColor: const Color(0xFF001016),
+                foregroundColor: Colors.white,
                 textStyle: const TextStyle(
                   fontWeight: FontWeight.w900,
                   fontSize: 14,
@@ -4177,7 +4177,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                     'Auto refresh: ${ap.refreshAfterSeconds} sec',
                     'Auto-Aktualisierung: ${ap.refreshAfterSeconds} Sek.',
                   ),
-                  style: const TextStyle(color: Colors.white38, fontSize: 9),
+                  style: const TextStyle(color: Colors.white, fontSize: 9),
                 ),
               ),
               TextButton(
@@ -4235,7 +4235,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                         'AKTIVER AUFTRAG · ${job.reference} · ${job.stops.length} Stopps',
                       ),
                 style: const TextStyle(
-                  color: _blue,
+                  color: Colors.white,
                   fontSize: 10,
                   fontWeight: FontWeight.w900,
                   letterSpacing: .8,
@@ -4257,7 +4257,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                     'Tracking and notifications continue in the background.',
                     'Tracking und Benachrichtigungen laufen im Hintergrund.',
                   ),
-                  style: TextStyle(color: _textMuted, height: 1.35),
+                  style: TextStyle(color: Colors.white, height: 1.35),
                 ),
               ] else if (stop == null) ...[
                 Text(
@@ -4284,7 +4284,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                     Text(
                       '#${stop.order}',
                       style: const TextStyle(
-                        color: Colors.white38,
+                        color: Colors.white,
                         fontWeight: FontWeight.w900,
                       ),
                     ),
@@ -4294,7 +4294,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                 Text(
                   _l('KÖVETKEZŐ LÉPÉS', 'NEXT STEP', 'NÄCHSTER SCHRITT'),
                   style: const TextStyle(
-                    color: Colors.white38,
+                    color: Colors.white,
                     fontSize: 9,
                     fontWeight: FontWeight.w900,
                     letterSpacing: 1.1,
@@ -4341,7 +4341,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                 SelectableText(
                   stop.address,
                   style: const TextStyle(
-                    color: Colors.white70,
+                    color: Colors.white,
                     fontSize: 16,
                     height: 1.4,
                     fontWeight: FontWeight.w600,
@@ -4372,7 +4372,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                   style: FilledButton.styleFrom(
                     minimumSize: const Size.fromHeight(64),
                     backgroundColor: _blue,
-                    foregroundColor: const Color(0xFF00131F),
+                    foregroundColor: Colors.white,
                     textStyle: const TextStyle(
                       fontWeight: FontWeight.w900,
                       fontSize: 15,
@@ -4419,7 +4419,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                             'REGISTRIERUNGSREFERENZEN',
                           ),
                           style: const TextStyle(
-                            color: _blue,
+                            color: Colors.white,
                             fontSize: 10,
                             fontWeight: FontWeight.w900,
                             letterSpacing: .9,
@@ -4448,7 +4448,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                                 '✓ Bekannter Registrierungspunkt · ${stop.registrationConfirmations} Bestätigungen',
                               ),
                               style: const TextStyle(
-                                color: _green,
+                                color: Colors.white,
                                 fontSize: 11,
                                 fontWeight: FontWeight.w800,
                               ),
@@ -4525,7 +4525,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                         : _isStopArrived(stop)
                             ? _green
                             : const Color(0xFF0F3852),
-                    foregroundColor: _needsRegistration(stop)
+                    foregroundColor: Colors.white
                         ? const Color(0xFF201600)
                         : _isStopArrived(stop)
                             ? const Color(0xFF001B12)
@@ -4593,7 +4593,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                   'A new job triggers an audible push. It also appears on the lock screen until you acknowledge it.',
                   'Bei einem neuen Auftrag kommt eine hörbare Push-Meldung. Sie bleibt auch auf dem Sperrbildschirm sichtbar, bis du sie bestätigst.',
                 ),
-                style: TextStyle(color: _textMuted, height: 1.35),
+                style: TextStyle(color: Colors.white, height: 1.35),
               ),
             ),
           ],
@@ -4634,7 +4634,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
               'NÄCHSTE AUFGABE / AUFTRÄGE',
             ),
             style: const TextStyle(
-              color: _blue,
+              color: Colors.white,
               fontSize: 11,
               fontWeight: FontWeight.w900,
               letterSpacing: .8,
@@ -4643,7 +4643,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
           const SizedBox(height: 6),
           Text(
             subtitle,
-            style: const TextStyle(color: Colors.white60, height: 1.35),
+            style: const TextStyle(color: Colors.white, height: 1.35),
           ),
           const SizedBox(height: 10),
           OutlinedButton.icon(
@@ -4701,7 +4701,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                   'Tap a job to see all exact details.',
                   'Tippe auf einen Auftrag für alle Details.',
                 ),
-                style: const TextStyle(color: Colors.white54),
+                style: const TextStyle(color: Colors.white),
               ),
               const SizedBox(height: 14),
               for (final job in _jobs)
@@ -4740,7 +4740,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                                     ? _l('AKTÍV', 'ACTIVE', 'AKTIV')
                                     : _l('KÖVETKEZŐ', 'NEXT', 'NÄCHSTER'),
                                 style: TextStyle(
-                                  color: job.id == _job?.id ? _green : _blue,
+                                  color: Colors.white,
                                   fontSize: 9,
                                   fontWeight: FontWeight.w900,
                                 ),
@@ -4751,7 +4751,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                           Text(
                             _jobRoute(job),
                             style: const TextStyle(
-                              color: Colors.white70,
+                              color: Colors.white,
                               height: 1.35,
                             ),
                           ),
@@ -4763,7 +4763,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                               '${job.stops.length} Stopps',
                             ),
                             style: const TextStyle(
-                              color: Colors.white38,
+                              color: Colors.white,
                               fontSize: 10,
                             ),
                           ),
@@ -4818,7 +4818,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
               const SizedBox(height: 4),
               Text(
                 _jobRoute(job),
-                style: const TextStyle(color: _blue, fontWeight: FontWeight.w800),
+                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800),
               ),
               const SizedBox(height: 14),
               for (final stop in job.stops)
@@ -4836,7 +4836,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                       Text(
                         "${stop.order}. ${stop.type == 'delivery' ? _l('LERAKÓ', 'DELIVERY', 'ENTLADUNG') : _l('FELRAKÓ', 'PICKUP', 'BELADUNG')}",
                         style: const TextStyle(
-                          color: _blue,
+                          color: Colors.white,
                           fontSize: 10,
                           fontWeight: FontWeight.w900,
                         ),
@@ -4854,13 +4854,13 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                         const SizedBox(height: 4),
                       SelectableText(
                         stop.address,
-                        style: TextStyle(color: _textMuted, height: 1.35),
+                        style: TextStyle(color: Colors.white, height: 1.35),
                       ),
                       if (stop.phone.trim().isNotEmpty) ...[
                         const SizedBox(height: 5),
                         SelectableText(
                           stop.phone,
-                          style: const TextStyle(color: Colors.white54),
+                          style: const TextStyle(color: Colors.white),
                         ),
                       ],
                       const SizedBox(height: 10),
@@ -4977,7 +4977,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                         'Route saved · latest point sent to the server.',
                         'Route gespeichert · letzter Punkt an den Server gesendet.',
                       ),
-                style: const TextStyle(color: Colors.white60),
+                style: const TextStyle(color: Colors.white),
               ),
               const SizedBox(height: 10),
               Text(
@@ -4986,7 +4986,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                   'The office gets a push after 15 and 30 minutes of confirmed inactivity. GPS noise does not reset the timer.',
                   'Die Disposition erhält nach 15 und 30 Minuten bestätigtem Stillstand eine Push-Meldung. GPS-Rauschen setzt den Timer nicht zurück.',
                 ),
-                style: const TextStyle(color: Colors.white38, height: 1.4),
+                style: const TextStyle(color: Colors.white, height: 1.4),
               ),
             ],
           ),
@@ -5091,7 +5091,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                         'NACHRICHT AN DIE DISPOSITION',
                       ),
                       style: const TextStyle(
-                        color: _blue,
+                        color: Colors.white,
                         fontSize: 12,
                         fontWeight: FontWeight.w900,
                         letterSpacing: .7,
@@ -5139,7 +5139,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                                 '${_pendingOfficeMessages.length} NACHRICHT(EN) WARTEN AUF AUTO-VERSAND',
                               ),
                         style: const TextStyle(
-                          color: _blue,
+                          color: Colors.white,
                           fontSize: 9,
                           fontWeight: FontWeight.w900,
                           letterSpacing: .45,
@@ -5157,7 +5157,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                     'No messages yet.',
                     'Noch keine Nachrichten.',
                   ),
-                  style: const TextStyle(color: Colors.white38),
+                  style: const TextStyle(color: Colors.white),
                 )
               else
                 ..._officeMessages.reversed.take(8).toList().reversed.map(
@@ -5195,7 +5195,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                                     'DISPOSITION',
                                   ),
                             style: TextStyle(
-                              color: message.fromDriver ? _blue : _green,
+                              color: Colors.white,
                               fontSize: 9,
                               fontWeight: FontWeight.w900,
                             ),
@@ -5260,7 +5260,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                 'Für den Abschluss fehlt noch ein Dokument. Flow hält den Auftrag bis zum Scan gesperrt.',
               ),
               style: const TextStyle(
-                color: Color(0xFFFFE0A3),
+                color: Colors.white,
                 fontWeight: FontWeight.w900,
                 height: 1.35,
               ),
@@ -5294,7 +5294,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                 style: FilledButton.styleFrom(
                   minimumSize: const Size.fromHeight(66),
                   backgroundColor: _blue,
-                  foregroundColor: const Color(0xFF00131F),
+                  foregroundColor: Colors.white,
                   textStyle: const TextStyle(
                     fontWeight: FontWeight.w900,
                     fontSize: 17,
@@ -5311,7 +5311,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                 ),
                 textAlign: TextAlign.center,
                 style: const TextStyle(
-                  color: Colors.white54,
+                  color: Colors.white,
                   fontSize: 11,
                   height: 1.35,
                 ),
@@ -5415,7 +5415,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                         'Bei einer regulären Pause aktivieren. Flow zählt die Ruhezeit nicht zur Wartezeit.',
                       ),
                 textAlign: TextAlign.center,
-                style: TextStyle(color: _textMuted, height: 1.35),
+                style: TextStyle(color: Colors.white, height: 1.35),
               ),
               const SizedBox(height: 14),
               if (_restMode.active)
@@ -5430,7 +5430,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                   style: FilledButton.styleFrom(
                     minimumSize: const Size.fromHeight(58),
                     backgroundColor: _green,
-                    foregroundColor: const Color(0xFF001B12),
+                    foregroundColor: Colors.white,
                   ),
                 )
               else
@@ -5493,7 +5493,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                 _l('BAJ VAN', 'I NEED HELP', 'PROBLEM MELDEN'),
                 textAlign: TextAlign.center,
                 style: const TextStyle(
-                  color: Colors.redAccent,
+                  color: Colors.white,
                   fontSize: 24,
                   fontWeight: FontWeight.w900,
                 ),
@@ -5506,7 +5506,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                   'Ein Tippen. Flow hängt Auftrag, Fahrzeug, Zeit und GPS automatisch an.',
                 ),
                 textAlign: TextAlign.center,
-                style: TextStyle(color: _textMuted, height: 1.35),
+                style: TextStyle(color: Colors.white, height: 1.35),
               ),
               const SizedBox(height: 14),
               for (final option in <({String code, IconData icon, String hu, String en, String de, bool urgent})>[
@@ -5642,7 +5642,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
               child: Text(
                 '${stop.order}',
                 style: TextStyle(
-                  color: _isStopArrived(stop) ? _green : _blue,
+                  color: Colors.white,
                   fontWeight: FontWeight.w900,
                 ),
               ),
@@ -5659,7 +5659,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                   const SizedBox(height: 3),
                   Text(
                     stop.address,
-                    style: TextStyle(color: _textMuted, height: 1.3),
+                    style: TextStyle(color: Colors.white, height: 1.3),
                   ),
                   const SizedBox(height: 4),
                   Text(
@@ -5683,7 +5683,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                                     ? _l('LERAKÓ', 'DELIVERY', 'ENTLADUNG')
                                     : _l('FELRAKÓ', 'PICKUP', 'BELADUNG')),
                     style: TextStyle(
-                      color: _isStopCompleted(stop) || _isStopArrived(stop) ? _green : _blue,
+                      color: Colors.white,
                       fontSize: 9,
                       fontWeight: FontWeight.w900,
                     ),
@@ -5820,7 +5820,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
-                              color: _textPrimary,
+                              color: Colors.white,
                               fontSize: 15,
                               height: 1.08,
                               fontWeight: FontWeight.w900,
@@ -5838,7 +5838,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                             maxLines: 3,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
-                              color: _textMuted,
+                              color: Colors.white,
                               fontSize: 10.5,
                               height: 1.22,
                               fontWeight: FontWeight.w600,
@@ -5866,7 +5866,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                                 'ZUM SENDEN TIPPEN',
                               ),
                               style: TextStyle(
-                                color: accent.withValues(alpha: .90),
+                                color: Colors.white,
                                 fontSize: 8.5,
                                 fontWeight: FontWeight.w900,
                                 letterSpacing: .35,
@@ -5915,7 +5915,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
         child: Text(
           '● $text',
           style: TextStyle(
-            color: color,
+            color: Colors.white,
             fontSize: 10,
             fontWeight: FontWeight.w900,
           ),
@@ -5934,13 +5934,13 @@ class _DriverShellScreenState extends State<DriverShellScreen>
           children: [
             Text(
               label,
-              style: TextStyle(color: _textFaint, fontSize: 9),
+              style: TextStyle(color: Colors.white, fontSize: 9),
             ),
             const SizedBox(height: 3),
             Text(
               value,
               style: TextStyle(
-                color: _textPrimary,
+                color: Colors.white,
                 fontWeight: FontWeight.w900,
                 fontSize: 11,
               ),
@@ -5956,6 +5956,6 @@ class _DriverShellScreenState extends State<DriverShellScreen>
           borderRadius: BorderRadius.circular(14),
           border: Border.all(color: Colors.orange.withValues(alpha: .28)),
         ),
-        child: Text(value, style: TextStyle(color: _textMuted)),
+        child: Text(value, style: TextStyle(color: Colors.white)),
       );
 }
