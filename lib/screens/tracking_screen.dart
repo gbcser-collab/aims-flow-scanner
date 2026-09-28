@@ -118,7 +118,7 @@ class _TrackingScreenState extends State<TrackingScreen> {
           backgroundColor: _page,
           appBar: AppBar(
             backgroundColor: _page,
-            foregroundColor: _text,
+            foregroundColor: Colors.white,
             title: const Text('AIMS Flow • Nyomkövetés'),
             actions: [
               IconButton(
@@ -154,14 +154,14 @@ class _TrackingScreenState extends State<TrackingScreen> {
                             children: [
                               Text(
                                 _runtime.active ? 'ÉLŐ GPS AKTÍV' : 'GPS NYOMKÖVETÉS KIKAPCSOLVA',
-                                style: TextStyle(color: _runtime.active ? const Color(0xFF48D597) : _blue, fontWeight: FontWeight.w900, letterSpacing: .7),
+                                style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, letterSpacing: .7),
                               ),
                               const SizedBox(height: 6),
                               Text(
                                 _runtime.active
                                     ? 'Csak az aktív fuvar alatt követ. Androidon állandó értesítés jelzi a nyomkövetést.'
                                     : 'A követés nem fut a háttérben addig, amíg itt el nem indítod a fuvart.',
-                                style: TextStyle(color: _muted, height: 1.35),
+                                style: TextStyle(color: Colors.white, height: 1.35),
                               ),
                             ],
                           ),
@@ -175,7 +175,7 @@ class _TrackingScreenState extends State<TrackingScreen> {
                     _input('Fuvar / referencia (opcionális)', _reference),
                     if (_error != null) ...[
                       const SizedBox(height: 6),
-                      Text(_error!, style: const TextStyle(color: Colors.redAccent, fontWeight: FontWeight.w700)),
+                      Text(_error!, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
                     ],
                     const SizedBox(height: 12),
                     FilledButton.icon(
@@ -217,7 +217,7 @@ class _TrackingScreenState extends State<TrackingScreen> {
                         label: const Text('Élő helyzet megnyitása térképen'),
                         style: OutlinedButton.styleFrom(
                           minimumSize: const Size.fromHeight(50),
-                          foregroundColor: _blue,
+                          foregroundColor: Colors.white,
                           side: const BorderSide(color: _blue),
                           textStyle: const TextStyle(fontWeight: FontWeight.w900),
                         ),
@@ -236,7 +236,7 @@ class _TrackingScreenState extends State<TrackingScreen> {
                       Container(
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(color: Colors.red.withValues(alpha: .12), borderRadius: BorderRadius.circular(12)),
-                        child: const Text('Figyelem: az Android ezt a pozíciót teszt/mock helyadatként jelölte.', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.w800)),
+                        child: const Text('Figyelem: az Android ezt a pozíciót teszt/mock helyadatként jelölte.', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800)),
                       ),
                     ],
                     const SizedBox(height: 14),
@@ -265,10 +265,10 @@ class _TrackingScreenState extends State<TrackingScreen> {
                       children: [
                         const Text('Kapcsolat az adminnal', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900)),
                         const SizedBox(height: 6),
-                        Text('Eszköz státusz: ${_runtime.deviceState.toUpperCase()}', style: const TextStyle(color: _blue, fontWeight: FontWeight.w800)),
+                        Text('Eszköz státusz: ${_runtime.deviceState.toUpperCase()}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800)),
                         if (_runtime.statusMessage != null) ...[
                           const SizedBox(height: 6),
-                          Text(_runtime.statusMessage!, style: TextStyle(color: _muted, height: 1.35)),
+                          Text(_runtime.statusMessage!, style: TextStyle(color: Colors.white, height: 1.35)),
                         ],
                       ],
                     ),
@@ -288,10 +288,10 @@ class _TrackingScreenState extends State<TrackingScreen> {
       child: TextField(
         controller: controller,
         textCapitalization: capitalization,
-        style: TextStyle(color: _text, fontWeight: FontWeight.w700),
+        style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
         decoration: InputDecoration(
           labelText: label,
-          labelStyle: TextStyle(color: _muted),
+          labelStyle: TextStyle(color: Colors.white),
           filled: true,
           fillColor: _panel,
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
@@ -313,9 +313,9 @@ class _TrackingScreenState extends State<TrackingScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label, style: TextStyle(color: _faint, fontSize: 12, fontWeight: FontWeight.w700)),
+          Text(label, style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w700)),
           const SizedBox(height: 4),
-          Text(value, style: TextStyle(color: _text, fontWeight: FontWeight.w900)),
+          Text(value, style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900)),
         ],
       ),
     );
