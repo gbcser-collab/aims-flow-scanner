@@ -60,6 +60,7 @@ jobs:
           cp -R /tmp/aims_template/android ./android
 
       - name: Fetch protected AIMS production signing identity
+        if: github.event_name != 'pull_request'
         shell: bash
         run: |
           set -euo pipefail
@@ -100,6 +101,7 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
+          import os
           import shutil
 
           p=Path('android/app/src/main/AndroidManifest.xml')
@@ -151,38 +153,8 @@ jobs:
               'minSdk = flutter.minSdkVersion',
               'minSdk = 23',
           )
-          signing='\n'.join([
-              '    signingConfigs {',
-              '        create("release") {',
-              '            keyAlias = System.getenv("AIMS_SIGN_KEY_ALIAS")',
-              '            keyPassword = System.getenv("AIMS_SIGN_KEY_PASSWORD")',
-              '            storeFile = file(System.getenv("AIMS_SIGN_STORE_FILE"))',
-              '            storePassword = System.getenv("AIMS_SIGN_STORE_PASSWORD")',
-              '            storeType = System.getenv("AIMS_SIGN_STORE_TYPE") ?: "PKCS12"',
-              '        }',
-              '    }',
-              '',
-              '',
-          ])
-          if 'create("release")' not in text:
-              text=text.replace('    buildTypes {',signing+'    buildTypes {',1)
-          text=text.replace(
-              'signingConfig = signingConfigs.getByName("debug")',
-              'signingConfig = signingConfigs.getByName("release")',
-              1,
-          )
-          # ML Kit's text plugin references optional CJK/Devanagari classes
-          # that are not bundled because Flow uses Latin OCR. Keep release
-          # AOT optimization, but disable R8 shrinking so those optional
-          # references cannot break the installer build.
-          if 'isMinifyEnabled = false' not in text:
-              text=text.replace(
-                  'signingConfig = signingConfigs.getByName("release")',
-                  'signingConfig = signingConfigs.getByName("release")\n            isMinifyEnabled = false\n            isShrinkResources = false',
-                  1,
-              )
-          if 'signingConfigs.getByName("debug")' in text:
-              raise SystemExit('Debug signing still present in release build')
+
+          # Core library desugaring is needed in both PR validation and release.
           if 'isCoreLibraryDesugaringEnabled = true' not in text:
               text=text.replace(
                   'compileOptions {',
@@ -198,6 +170,40 @@ jobs:
                   )
               else:
                   text += '\n\ndependencies {\n    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")\n}\n'
+
+          # Production signing is intentionally unavailable to pull requests.
+          # PRs keep Flutter's generated debug signing and still compile a real
+          # Android APK after analyze + unit tests.
+          if os.environ.get('GITHUB_EVENT_NAME') != 'pull_request':
+              signing='\n'.join([
+                  '    signingConfigs {',
+                  '        create("release") {',
+                  '            keyAlias = System.getenv("AIMS_SIGN_KEY_ALIAS")',
+                  '            keyPassword = System.getenv("AIMS_SIGN_KEY_PASSWORD")',
+                  '            storeFile = file(System.getenv("AIMS_SIGN_STORE_FILE"))',
+                  '            storePassword = System.getenv("AIMS_SIGN_STORE_PASSWORD")',
+                  '            storeType = System.getenv("AIMS_SIGN_STORE_TYPE") ?: "PKCS12"',
+                  '        }',
+                  '    }',
+                  '',
+                  '',
+              ])
+              if 'create("release")' not in text:
+                  text=text.replace('    buildTypes {',signing+'    buildTypes {',1)
+              text=text.replace(
+                  'signingConfig = signingConfigs.getByName("debug")',
+                  'signingConfig = signingConfigs.getByName("release")',
+                  1,
+              )
+              if 'isMinifyEnabled = false' not in text:
+                  text=text.replace(
+                      'signingConfig = signingConfigs.getByName("release")',
+                      'signingConfig = signingConfigs.getByName("release")\n            isMinifyEnabled = false\n            isShrinkResources = false',
+                      1,
+                  )
+              if 'signingConfigs.getByName("debug")' in text:
+                  raise SystemExit('Debug signing still present in release build')
+
           g.write_text(text)
           PY
 
@@ -220,7 +226,15 @@ jobs:
       - name: Unit tests
         run: flutter test
 
+      - name: Build PR validation APK
+        if: github.event_name == 'pull_request'
+        run: |
+          flutter build apk --debug \
+            --dart-define=AIMS_TRACKING_BASE_URL=https://logistic-aims.hu/api/aims-tracking \
+            --dart-define=AIMS_TRACKING_TOKEN=ci-pr-validation
+
       - name: Build production release APK
+        if: github.event_name != 'pull_request'
         env:
           AIMS_TRACKING_TOKEN: ${{ secrets.AIMS_TRACKING_TOKEN }}
           AIMS_FIREBASE_API_KEY: ${{ secrets.AIMS_FIREBASE_API_KEY }}
@@ -245,6 +259,7 @@ jobs:
             --dart-define=AIMS_FIREBASE_STORAGE_BUCKET="$AIMS_FIREBASE_STORAGE_BUCKET"
 
       - name: Build Google Play App Bundle
+        if: github.event_name != 'pull_request'
         env:
           AIMS_TRACKING_TOKEN: ${{ secrets.AIMS_TRACKING_TOKEN }}
           AIMS_FIREBASE_API_KEY: ${{ secrets.AIMS_FIREBASE_API_KEY }}
@@ -282,6 +297,7 @@ jobs:
           sha256sum AIMS-Flow-R105.aab | tee AIMS-Flow-R105.aab.sha256
 
       - name: Verify production certificate
+        if: github.event_name != 'pull_request'
         shell: bash
         run: |
           set -euo pipefail
@@ -302,6 +318,7 @@ jobs:
           ls -lh AIMS-Flow-R105.apk
 
       - name: Upload production-signed APK
+        if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@v4
         with:
           name: AIMS-Flow-R105-PRODUCTION-SIGNED
