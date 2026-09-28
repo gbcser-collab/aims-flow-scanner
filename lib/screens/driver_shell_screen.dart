@@ -3344,18 +3344,30 @@ class _DriverShellScreenState extends State<DriverShellScreen>
           final online = _jobRefreshFailures == 0 && _lastJobSyncAt != null;
           final hasCache = _jobs.isNotEmpty;
           final pending = _driverPendingCount;
+          final trackingError =
+              (_trackingStatus?.lastError ?? '').toLowerCase();
+          final messageError = (_message ?? '').toLowerCase();
+          final authFailed = trackingError.contains('http 401') ||
+              trackingError.contains('http 403') ||
+              messageError.contains('unauthorized') ||
+              messageError.contains('http 401') ||
+              messageError.contains('http 403');
           final netValue = _healthRefreshBusy
               ? _l('FRISSÍT', 'SYNCING', 'SYNC')
-              : online
-                  ? _l('ONLINE', 'ONLINE', 'ONLINE')
-                  : hasCache
-                      ? _l('CACHE', 'CACHE', 'CACHE')
-                      : _l('OFFLINE', 'OFFLINE', 'OFFLINE');
+              : authFailed
+                  ? _l('AUTH HIBA', 'AUTH ERROR', 'AUTH-FEHLER')
+                  : online
+                      ? _l('ONLINE', 'ONLINE', 'ONLINE')
+                      : hasCache
+                          ? _l('CACHE', 'CACHE', 'CACHE')
+                          : _l('OFFLINE', 'OFFLINE', 'OFFLINE');
           final netColor = online
               ? _green
-              : hasCache
-                  ? const Color(0xFFFFC857)
-                  : const Color(0xFFFF6571);
+              : authFailed
+                  ? const Color(0xFFFF6571)
+                  : hasCache
+                      ? const Color(0xFFFFC857)
+                      : const Color(0xFFFF6571);
           return Material(
             color: _isDark ? const Color(0xFF04101A) : const Color(0xFFF8FBFD),
             child: InkWell(
