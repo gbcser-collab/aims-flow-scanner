@@ -352,7 +352,7 @@ class _SmartDocumentScannerScreenState
                       'Flow erkannt: ${classification.type.hu} · $confidence%',
                     ),
                     textAlign: TextAlign.center,
-                    style: const TextStyle(color: Colors.white54),
+                    style: const TextStyle(color: Colors.white),
                   ),
                   const SizedBox(height: 16),
                   DropdownButtonFormField<SmartDocumentType>(
@@ -688,7 +688,7 @@ class _SmartDocumentScannerScreenState
                           Text(
                             _error!,
                             textAlign: TextAlign.center,
-                            style: const TextStyle(color: Colors.orangeAccent),
+                            style: const TextStyle(color: Colors.white),
                           ),
                           const SizedBox(height: 14),
                           FilledButton.icon(
