@@ -223,6 +223,9 @@ jobs:
       - name: Analyze
         run: flutter analyze
 
+      - name: White text regression guard
+        run: python3 ci/r105_white_text_guard.py
+
       - name: Unit tests
         run: flutter test
 
