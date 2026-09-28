@@ -11,6 +11,31 @@ import 'services/driver_push_service.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // Never expose Flutter's full-screen red ErrorWidget to drivers.
+  // The original exception is still emitted to the debug/error log.
+  ErrorWidget.builder = (details) {
+    FlutterError.presentError(details);
+    return const ColoredBox(
+      color: Color(0xFF030A13),
+      child: Center(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: Text(
+            'AIMS Flow hiba\n\nAz alkalmazás egyik nézete nem töltődött be. '
+            'Lépj vissza vagy indítsd újra az alkalmazást.',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 18,
+              fontWeight: FontWeight.w800,
+              height: 1.4,
+            ),
+          ),
+        ),
+      ),
+    );
+  };
+
   // Local UI preferences should never prevent the driver app from opening.
   try {
     await AimsLocaleController.instance.initialize();
@@ -203,12 +228,14 @@ class AimsFlowApp extends StatelessWidget {
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
           foregroundColor: Colors.white,
+          disabledForegroundColor: Colors.white,
           textStyle: const TextStyle(color: Colors.white),
         ),
       ),
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
           foregroundColor: Colors.white,
+          disabledForegroundColor: Colors.white,
           textStyle: const TextStyle(color: Colors.white),
         ),
       ),
