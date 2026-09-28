@@ -10,7 +10,7 @@ on:
       - 'native/**'
       - '.github/workflows/aims-flow-driver.yml'
   pull_request:
-    branches: [aims-flow-r94-full-system-hardening]
+    branches: [aims-flow-r94-full-system-hardening, aims-flow-r104-next-level]
     paths:
       - 'lib/**'
       - 'test/**'
