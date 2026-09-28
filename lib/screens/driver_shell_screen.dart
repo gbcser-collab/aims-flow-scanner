@@ -2288,22 +2288,6 @@ class _DriverShellScreenState extends State<DriverShellScreen>
     }
   }
 
-  Future<void> _openInvoiceScanner() async {
-    try {
-      final camera = await _backCamera();
-      if (!mounted) return;
-      if (camera == null) {
-        _snack('Nem található kamera.');
-        return;
-      }
-      await Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => InvoiceScannerScreen(camera: camera)),
-      );
-    } catch (e) {
-      _snack('A számla scanner nem indult el: $e');
-    }
-  }
-
   Future<bool> _ensureDriverIdentity() async {
     if (_plate.trim().isNotEmpty) return true;
     if (!mounted) return false;
@@ -2717,15 +2701,6 @@ class _DriverShellScreenState extends State<DriverShellScreen>
       );
     }
     return _SignalDelivery.queued;
-  }
-
-  DriverStop? _nextStopOfType(String type) {
-    final job = _job;
-    if (job == null) return null;
-    for (final stop in job.stops) {
-      if (!_isStopCompleted(stop) && stop.type == type) return stop;
-    }
-    return null;
   }
 
   Future<String> _queueStopForLater(
@@ -3203,37 +3178,6 @@ class _DriverShellScreenState extends State<DriverShellScreen>
       'Calling the contact person.',
       'Ich rufe den Ansprechpartner an.',
     );
-  }
-
-  String _jobVoiceSummary() {
-    final job = _job;
-    if (job == null) {
-      return _l(
-        'Nincs aktív fuvar.',
-        'There is no active job.',
-        'Es gibt keinen aktiven Auftrag.',
-      );
-    }
-    final stop = job.currentStop;
-    if (stop == null) {
-      return _l(
-        'A fuvar minden megállója kész.',
-        'All stops on the job are complete.',
-        'Alle Stopps des Auftrags sind abgeschlossen.',
-      );
-    }
-    final company = stop.company.trim();
-    final companyPart = company.isEmpty ? '' : ' $company.';
-    if (AimsLocaleController.instance.languageCode == 'en') {
-      final kind = stop.type == 'pickup' ? 'pickup' : 'delivery';
-      return 'Active job: ${job.reference}. Next $kind.$companyPart Address: ${stop.address}.';
-    }
-    if (AimsLocaleController.instance.languageCode == 'de') {
-      final kind = stop.type == 'pickup' ? 'Abholung' : 'Zustellung';
-      return 'Aktiver Auftrag: ${job.reference}. Nächster Stopp: $kind.$companyPart Adresse: ${stop.address}.';
-    }
-    final kind = stop.type == 'pickup' ? 'felrakó' : 'lerakó';
-    return 'Aktív fuvar: ${job.reference}. Következő $kind.$companyPart Cím: ${stop.address}.';
   }
 
   void _snack(String value) {
