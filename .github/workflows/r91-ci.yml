@@ -12,6 +12,7 @@ on:
       - aims-flow-r102-driver-first-stability
       - aims-flow-r103-production-signing
       - aims-flow-r104-next-level
+      - aims-flow-r105-ci-hardening
   workflow_dispatch:
 
 concurrency:
@@ -27,7 +28,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Java 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
@@ -65,8 +66,6 @@ jobs:
               'android.permission.ACCESS_BACKGROUND_LOCATION',
               'android.permission.FOREGROUND_SERVICE',
               'android.permission.FOREGROUND_SERVICE_LOCATION',
-              'android.permission.FOREGROUND_SERVICE_MICROPHONE',
-              'android.permission.RECORD_AUDIO',
               'android.permission.WAKE_LOCK',
               'android.permission.USE_BIOMETRIC',
               'android.permission.POST_NOTIFICATIONS',
@@ -75,38 +74,16 @@ jobs:
           block = '\n'.join(f'    <uses-permission android:name="{name}" />' for name in permissions)
           queries = '\n'.join([
               '    <queries>',
-              '        <intent><action android:name="android.speech.RecognitionService" /></intent>',
               '        <intent><action android:name="android.intent.action.TTS_SERVICE" /></intent>',
               '    </queries>',
           ])
           s = s.replace('<application', block + '\n' + queries + '\n    <application', 1)
           s = s.replace('android:label="aims_flow_scanner"', 'android:label="AIMS Flow"')
-          assist = '\n'.join([
-              '            <intent-filter>',
-              '                <action android:name="android.intent.action.ASSIST" />',
-              '                <category android:name="android.intent.category.DEFAULT" />',
-              '            </intent-filter>',
-              '',
-          ])
-          end = s.find('</activity>')
-          if end < 0:
-              raise SystemExit('MainActivity closing tag missing')
-          s = s[:end] + assist + s[end:]
-          service = '\n'.join([
-              '        <service',
-              '            android:name=".AimsHandsFreeService"',
-              '            android:enabled="true"',
-              '            android:exported="false"',
-              '            android:foregroundServiceType="microphone" />',
-              '',
-          ])
-          s = s.replace('</application>', service + '    </application>', 1)
           p.write_text(s)
 
           target = Path('android/app/src/main/kotlin/hu/logisticaims/aims_flow_scanner')
           target.mkdir(parents=True, exist_ok=True)
           shutil.copy2('native/android/MainActivity.kt', target / 'MainActivity.kt')
-          shutil.copy2('native/android/AimsHandsFreeService.kt', target / 'AimsHandsFreeService.kt')
 
           g = Path('android/app/build.gradle.kts')
           text = g.read_text()
@@ -132,6 +109,9 @@ jobs:
 
       - name: Analyze
         run: flutter analyze
+
+      - name: R105 white text regression guard
+        run: python3 ci/r105_white_text_guard.py
 
       # Run the crash-specific gate before the broad suite so an R93
       # regression is visible independently from unrelated legacy tests.
