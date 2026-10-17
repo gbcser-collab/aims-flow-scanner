@@ -1648,7 +1648,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                             active
                                 ? 'Eltelt idő: ${_workdayElapsedLabel(_workdayState)}'
                                 : 'A következő elfogadott munkával automatikusan indul.',
-                            style: TextStyle(color: _textMuted),
+                            style: const TextStyle(color: Colors.white),
                           ),
                         ],
                       ),
@@ -1746,7 +1746,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                   style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
                 ),
                 const SizedBox(height: 3),
-                Text(detail, style: TextStyle(color: _textMuted)),
+                Text(detail, style: const TextStyle(color: Colors.white)),
               ],
             ),
           ),
