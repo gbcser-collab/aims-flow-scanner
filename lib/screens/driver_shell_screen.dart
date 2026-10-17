@@ -5,6 +5,7 @@ import 'dart:math' as math;
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -14,12 +15,17 @@ import '../services/aims_locale.dart';
 import '../services/aims_voice_announcer_service.dart';
 import '../services/driver_api_service.dart';
 import '../services/driver_push_service.dart';
+import '../services/flow_account_service.dart';
+import '../services/flow_operations_service.dart';
+import '../services/flow_safety_check_service.dart';
+import '../services/flow_workday_service.dart';
 import '../services/roaming_resilience.dart';
 import '../services/scan_repository.dart';
 import '../services/sync_coordinator.dart';
 import '../services/vehicle_tracking_service.dart';
 import '../widgets/aims_flow_logo.dart';
 import 'flow_login_screen.dart';
+import 'flow_safety_check_screen.dart';
 import 'invoice_scanner_screen.dart';
 import 'scanner_screen.dart';
 import 'smart_document_scanner_screen.dart';
@@ -250,6 +256,16 @@ class _DriverShellScreenState extends State<DriverShellScreen>
   static const _scanRepository = ScanRepository();
   final ScrollController _homeScrollController = ScrollController();
   final AimsVoiceAnnouncerService _voice = AimsVoiceAnnouncerService();
+  final FlowWorkdayService _workday = FlowWorkdayService.instance;
+  final FlowSafetyCheckService _safetyCheck = FlowSafetyCheckService.instance;
+  final FlowOperationsService _flowOps = const FlowOperationsService();
+  FlowAccountSession? _flowSession;
+  FlowWorkdayState _workdayState = const FlowWorkdayState(active: false);
+  List<FlowServiceAlert> _serviceAlerts = const [];
+  DateTime? _lastServiceGuardRefresh;
+  bool _safetyPromptOpen = false;
+  bool _homeEndPromptOpen = false;
+  DateTime? _homeEndSnoozeUntil;
 
   StreamSubscription<DriverPushEvent>? _pushSub;
   StreamSubscription<VehicleTrackingStatus>? _trackingSub;
@@ -981,8 +997,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
     final prefs = await SharedPreferences.getInstance();
     final key = _pendingStopPrefsKey();
     if (_pendingStopActions.isEmpty) {
-      await prefs.remove(key);
-      return;
+      await prefs.remove(key);      return;
     }
     final encoded = <String, dynamic>{
       for (final entry in _pendingStopActions.entries)
@@ -1425,9 +1440,448 @@ class _DriverShellScreenState extends State<DriverShellScreen>
     await _voice.announce(message);
   }
 
+  Future<int> _lastKnownOdometer() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getInt('aims_driver_last_odometer_km') ??
+        _flowSession?.currentKm ??
+        0;
+  }
+
+  Future<int?> _askOdometer({
+    required String title,
+    required String description,
+  }) async {
+    if (!mounted) return null;
+    final last = await _lastKnownOdometer();
+    final controller = TextEditingController(
+      text: last > 0 ? last.toString() : '',
+    );
+    String? error;
+    final result = await showDialog<int>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => PopScope(
+        canPop: false,
+        child: StatefulBuilder(
+          builder: (context, setDialogState) => AlertDialog(
+          title: Text(title),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(description),
+              const SizedBox(height: 14),
+              TextField(
+                controller: controller,
+                autofocus: true,
+                keyboardType: TextInputType.number,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                decoration: InputDecoration(
+                  labelText: 'Aktuális kilométeróra',
+                  suffixText: 'km',
+                  errorText: error,
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            FilledButton(
+              onPressed: () {
+                final value = int.tryParse(controller.text.trim());
+                if (value == null || value < 0 || value > 5000000) {
+                  setDialogState(() => error = 'Ellenőrizd a kilométerértéket.');
+                  return;
+                }
+                if (last > 0 && value < last) {
+                  setDialogState(() => error =
+                      'Az érték kisebb az utolsó rögzített km-nél ($last km).');
+                  return;
+                }
+                Navigator.of(dialogContext).pop(value);
+              },
+              child: const Text('MENTÉS'),
+            ),
+          ],
+          ),
+        ),
+      ),
+    );
+    controller.dispose();
+    return result;
+  }
+
+  Future<void> _rememberOdometer(int km, {required String source}) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('aims_driver_last_odometer_km', km);
+    final session = _flowSession;
+    if (session != null) {
+      final updated = session.copyWith(currentKm: km);
+      _flowSession = updated;
+      await FlowSessionStore.instance.save(updated);
+      try {
+        await _flowOps.recordOdometer(
+          session: updated,
+          plate: _plate,
+          km: km,
+          source: source,
+        );
+      } catch (_) {}
+    }
+  }
+
+  Future<void> _ensureWorkdayStarted(
+    int jobId, {
+    DateTime? acceptedAt,
+  }) async {
+    final session = _flowSession;
+    if (session == null || _plate.isEmpty) return;
+    final existing = await _workday.load();
+    if (existing.active) {
+      if (mounted) setState(() => _workdayState = existing);
+      return;
+    }
+    final km = await _askOdometer(
+      title: 'MUNKANAP INDUL',
+      description:
+          'A fuvar elfogadásával elindul a munkaidő. Add meg az aktuális kilométeróra-állást.',
+    );
+    if (km == null) return;
+    final state = await _workday.startIfNeeded(
+      session: session,
+      plate: _plate,
+      startKm: km,
+      jobId: jobId,
+      startedAt: acceptedAt,
+    );
+    await _rememberOdometer(km, source: 'workday_start');
+    if (mounted) setState(() => _workdayState = state);
+    unawaited(
+      _voice.announce(
+        _l(
+          'Munkanap elindult.',
+          'Workday started.',
+          'Arbeitstag gestartet.',
+        ),
+      ),
+    );
+  }
+
+  bool get _hasAcceptedOpenJob => _jobs.any(
+        (job) => job.acceptedAt != null && _hasOpenStop(job),
+      );
+
+  Future<void> _finishWorkday() async {
+    if (_hasAcceptedOpenJob) {
+      _snack(
+        _l(
+          'Aktív fuvar mellett a munkanap nem zárható le.',
+          'The workday cannot be closed while a job is active.',
+          'Der Arbeitstag kann mit aktivem Auftrag nicht beendet werden.',
+        ),
+      );
+      return;
+    }
+    final session = _flowSession;
+    if (session == null || !_workdayState.active) return;
+    final km = await _askOdometer(
+      title: 'HAZAÉRTEM · MUNKA VÉGE',
+      description:
+          'Rögzítsd a záró kilométeróra-állást.',
+    );
+    if (km == null) return;
+    try {
+      final state = await _workday.finish(
+        session: session,
+        plate: _plate,
+        endKm: km,
+      );
+      await _rememberOdometer(km, source: 'workday_finish');
+      if (mounted) setState(() => _workdayState = state);
+      unawaited(
+        _voice.announce(
+          _l(
+            'Munkanap lezárva. Jó pihenést.',
+            'Workday finished. Have a good rest.',
+            'Arbeitstag beendet. Gute Erholung.',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (mounted) _snack(e.toString().replaceFirst('Bad state: ', ''));
+    }
+  }
+
+  String _workdayElapsedLabel(FlowWorkdayState state) {
+    final duration = state.elapsed;
+    final hours = duration.inHours;
+    final minutes = duration.inMinutes.remainder(60);
+    return '${hours.toString().padLeft(2, '0')}:${minutes.toString().padLeft(2, '0')}';
+  }
+
+  Widget _workdayCard() => StreamBuilder<int>(
+        stream: Stream<int>.periodic(const Duration(seconds: 30), (i) => i),
+        builder: (context, _) {
+          final active = _workdayState.active;
+          return _panel(
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Icon(
+                      active ? Icons.work_history_rounded : Icons.bedtime_rounded,
+                      color: active ? _green : _blue,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            active ? 'MUNKÁBAN' : 'PIHENŐ',
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          Text(
+                            active
+                                ? 'Eltelt idő: ${_workdayElapsedLabel(_workdayState)}'
+                                : 'A következő elfogadott munkával automatikusan indul.',
+                            style: const TextStyle(color: Colors.white),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                if (active) ...[
+                  const SizedBox(height: 12),
+                  OutlinedButton.icon(
+                    onPressed: _actionBusy ? null : _finishWorkday,
+                    icon: const Icon(Icons.home_rounded),
+                    label: const Text('HAZAÉRTEM · MUNKA VÉGE'),
+                  ),
+                ],
+              ],
+            ),
+          );
+        },
+      );
+
+  Future<void> _refreshFlowExtensions() async {
+    _flowSession ??= await FlowSessionStore.instance.load();
+    _workdayState = await _workday.load();
+    final session = _flowSession;
+    if (session != null && _plate.isNotEmpty) {
+      _workdayState = await _workday.flushPending(
+        session: session,
+        plate: _plate,
+      );
+    }
+    await _refreshServiceGuard();
+    if (session != null) {
+      try {
+        await _safetyCheck.flushPending(session: session);
+      } catch (_) {}
+    }
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _refreshServiceGuard() async {
+    final session = _flowSession;
+    if (session == null || _plate.isEmpty) return;
+    try {
+      final km = await _lastKnownOdometer();
+      final alerts = await _flowOps.fetchServiceAlerts(
+        session: session,
+        plate: _plate,
+        currentKm: km > 0 ? km : null,
+      );
+      if (mounted) setState(() => _serviceAlerts = alerts);
+      final urgent = alerts.where((item) => item.urgent).toList();
+      if (urgent.isNotEmpty) {
+        final prefs = await SharedPreferences.getInstance();
+        final day = DateTime.now().toIso8601String().substring(0, 10);
+        final key = 'aims_service_guard_spoken_${urgent.first.id}_$day';
+        if (!(prefs.getBool(key) ?? false)) {
+          await prefs.setBool(key, true);
+          unawaited(
+            _voice.announce(
+              'Jármű szerviz figyelmeztetés. ${urgent.first.title}. Kérlek, egyeztess az irodával.',
+            ),
+          );
+        }
+      }
+    } catch (_) {}
+  }
+
+  Widget _serviceGuardCard() {
+    final alert = _serviceAlerts.first;
+    final color = alert.urgent ? Colors.orangeAccent : _blue;
+    final detail = alert.remainingKm != null
+        ? alert.remainingKm! < 0
+            ? '${alert.remainingKm!.abs()} km-rel túllépve'
+            : '${alert.remainingKm} km múlva'
+        : alert.dueDate != null
+            ? 'Határidő: ${alert.dueDate!.year}.${alert.dueDate!.month.toString().padLeft(2, '0')}.${alert.dueDate!.day.toString().padLeft(2, '0')}'
+            : 'Egyeztetés szükséges';
+    return _panel(
+      Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.build_circle_outlined, color: color, size: 30),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'SERVICE GUARD',
+                  style: TextStyle(fontWeight: FontWeight.w900, fontSize: 11),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  alert.title,
+                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+                ),
+                const SizedBox(height: 3),
+                Text(detail, style: const TextStyle(color: Colors.white)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _checkHomeEndSuggestion() async {
+    if (_homeEndPromptOpen || !mounted || !_workdayState.active) return;
+    if (_hasAcceptedOpenJob) return;
+    final session = _flowSession;
+    final position = _trackingStatus?.lastPosition;
+    if (session?.baseLatitude == null ||
+        session?.baseLongitude == null ||
+        position == null ||
+        position.speed > 1.2) {
+      return;
+    }
+    if (_homeEndSnoozeUntil != null &&
+        DateTime.now().isBefore(_homeEndSnoozeUntil!)) {
+      return;
+    }
+    final distance = Geolocator.distanceBetween(
+      position.latitude,
+      position.longitude,
+      session!.baseLatitude!,
+      session.baseLongitude!,
+    );
+    if (distance > session.baseRadiusMeters) return;
+    if (_workdayState.startedAt != null &&
+        DateTime.now().difference(_workdayState.startedAt!) <
+            const Duration(minutes: 30)) {
+      return;
+    }
+    _homeEndPromptOpen = true;
+    unawaited(
+      _voice.announce('Úgy tűnik, hazaértél. Befejezed a munkanapot?'),
+    );
+    final finish = await showDialog<bool>(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => AlertDialog(
+            title: const Text('HAZAÉRTÉL?'),
+            content: const Text(
+              'A FLOW szerint a jármű a telephely / otthoni pont közelében áll. A munkanapot csak te zárhatod le.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('MÉG DOLGOZOM'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                child: const Text('MUNKA VÉGE'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+    _homeEndPromptOpen = false;
+    if (finish) {
+      await _finishWorkday();
+    } else {
+      _homeEndSnoozeUntil = DateTime.now().add(const Duration(minutes: 45));
+    }
+  }
+
+  Future<void> _checkSafetyPrompt() async {
+    if (_safetyPromptOpen || !mounted) return;
+    final session = _flowSession;
+    if (session == null || !_workdayState.active) return;
+    final position = _trackingStatus?.lastPosition;
+    final due = await _safetyCheck.shouldPrompt(
+      session: session,
+      workday: _workdayState,
+      hasActiveJob: _hasAcceptedOpenJob,
+      position: position,
+    );
+    if (!due || !mounted) return;
+    _safetyPromptOpen = true;
+    unawaited(
+      _voice.announce(
+        'FLOW biztonsági ellenőrzés. Kérlek, álló helyzetben ellenőrizd a járművet.',
+      ),
+    );
+    final start = await showDialog<bool>(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => AlertDialog(
+            title: const Text('FLOW SAFETY CHECK'),
+            content: const Text(
+              'Két fuvar között járműellenőrzés esedékes. Olaj, hűtőfolyadék, kerék, kormány és kilométeróra ellenőrzése szükséges.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('15 PERC MÚLVA'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                child: const Text('ELLENŐRZÉS INDÍTÁSA'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+    if (!start) {
+      await _safetyCheck.snooze();
+      _safetyPromptOpen = false;
+      return;
+    }
+    final km = await _lastKnownOdometer();
+    final resultKm = await Navigator.of(context).push<int>(
+      MaterialPageRoute(
+        builder: (_) => FlowSafetyCheckScreen(
+          session: session,
+          plate: _plate,
+          initialKm: km,
+        ),
+      ),
+    );
+    _safetyPromptOpen = false;
+    if (resultKm != null) {
+      await _rememberOdometer(resultKm, source: 'safety_check');
+      await _refreshServiceGuard();
+      if (mounted) _snack('Safety Check elmentve és továbbításra került.');
+    }
+  }
+
   Future<void> _initialize() async {
     final prefs = await SharedPreferences.getInstance();
     final role = (prefs.getString('aims_user_role') ?? 'driver').trim();
+    _flowSession = await FlowSessionStore.instance.load();
+    _workdayState = await _workday.load();
     var plate = widget.initialPlate.trim().isNotEmpty
         ? widget.initialPlate.trim().toUpperCase()
         : (prefs.getString(_prefsPlate) ?? '').trim().toUpperCase();
@@ -1497,6 +1951,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
     } else {
       await _tracking.setVehicleLabel(_plate);
       await _activateDriverServices();
+      await _refreshFlowExtensions();
       _startRuntimeSupervisor();
       await _refreshRestMode(silent: true);
       await _refreshOfficeMessages(silent: true);
@@ -1541,8 +1996,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
       pushError = e.toString().replaceFirst('Bad state: ', '');
     }
 
-    try {
-      await _tracking.setVehicleLabel(_plate);
+    try {      await _tracking.setVehicleLabel(_plate);
       final status = await _tracking.currentStatus();
       if (!status.enabled) {
         await _tracking.enableWithPermission();
@@ -1566,6 +2020,28 @@ class _DriverShellScreenState extends State<DriverShellScreen>
       await _flushPendingRegistrationPoints();
     }
     await _refreshJobs();
+    if (!_workdayState.active) {
+      DriverJob? accepted;
+      for (final item in _jobs) {
+        if (item.acceptedAt != null && _hasOpenStop(item)) {
+          accepted = item;
+          break;
+        }
+      }
+      if (accepted != null && mounted) {
+        final acceptedId = accepted.id;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && !_workdayState.active) {
+            unawaited(
+              _ensureWorkdayStarted(
+                acceptedId,
+                acceptedAt: DateTime.tryParse(accepted?.acceptedAt ?? ''),
+              ),
+            );
+          }
+        });
+      }
+    }
 
     if (!mounted) return;
     final issues = <String>[
@@ -1625,8 +2101,27 @@ class _DriverShellScreenState extends State<DriverShellScreen>
       if (_sync.pendingCount > 0) {
         await safe(_sync.syncNow);
       }
+      final flowSession = _flowSession;
+      if (flowSession != null) {
+        await safe(() => _safetyCheck.flushPending(session: flowSession));
+        await safe(() async {
+          final workday = await _workday.flushPending(
+            session: flowSession,
+            plate: _plate,
+          );
+          if (mounted) setState(() => _workdayState = workday);
+        });
+      }
+      await safe(_checkSafetyPrompt);
+      await safe(_checkHomeEndSuggestion);
 
       final now = DateTime.now();
+      final serviceDue = _lastServiceGuardRefresh == null ||
+          now.difference(_lastServiceGuardRefresh!) > const Duration(minutes: 15);
+      if (serviceDue) {
+        _lastServiceGuardRefresh = now;
+        await safe(_refreshServiceGuard);
+      }
       final pushDue = _lastPushRecoveryAt == null ||
           now.difference(_lastPushRecoveryAt!) > const Duration(minutes: 10);
       if (pushDue) {
@@ -1905,7 +2400,9 @@ class _DriverShellScreenState extends State<DriverShellScreen>
         ));
       }
       if (job.acceptedAt == null) {
+        final acceptedAt = DateTime.now();
         await _api.acknowledge(plate: _plate, jobId: jobId, action: 'accepted');
+        await _ensureWorkdayStarted(jobId, acceptedAt: acceptedAt);
         await _push.cancelJobNotification(jobId);
         await _refreshJobs(showLoading: false);
         job = _jobById(jobId) ?? job;
@@ -2104,8 +2601,10 @@ class _DriverShellScreenState extends State<DriverShellScreen>
     if (_actionBusy || _plate.isEmpty) return;
     setState(() => _actionBusy = true);
     try {
+      final acceptedAt = action == 'accepted' ? DateTime.now() : null;
       await _api.acknowledge(plate: _plate, jobId: jobId, action: action);
       if (action == 'accepted') {
+        await _ensureWorkdayStarted(jobId, acceptedAt: acceptedAt);
         await _push.cancelJobNotification(jobId);
       }
       if (closeDialog && mounted && Navigator.of(context).canPop()) {
@@ -2537,8 +3036,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
             'Nachrichten können derzeit nicht aktualisiert werden.',
           ),
         );
-      }
-    } finally {
+      }    } finally {
       if (mounted && !silent) {
         setState(() => _officeMessagesBusy = false);
       } else {
@@ -3589,8 +4087,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
           }
           setState(() => _index = value);
         },
-        backgroundColor: _panelColor,
-        indicatorColor: _blue.withValues(alpha: .18),
+        backgroundColor: _panelColor,        indicatorColor: _blue.withValues(alpha: .18),
         destinations: [
           NavigationDestination(
             icon: const Icon(Icons.home_outlined),
@@ -4299,6 +4796,12 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                 : _l('Felrakó', 'Pickup', 'Ladestelle');
 
     return _page([
+      _workdayCard(),
+      const SizedBox(height: 12),
+      if (_serviceAlerts.isNotEmpty) ...[
+        _serviceGuardCard(),
+        const SizedBox(height: 12),
+      ],
       KeyedSubtree(key: const Key('autopilot-home-slot'), child: _autopilotCard()),
       if (_autopilot != null) const SizedBox(height: 12),
       if (_loading)
@@ -4583,8 +5086,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                         : _isStopArrived(stop)
                             ? Icons.task_alt_rounded
                             : Icons.location_on_rounded,
-                  ),
-                  label: Text(
+                  ),                  label: Text(
                     _needsRegistration(stop)
                         ? _l(
                             'BEJELENTKEZTEM A REGISZTRÁCIÓN',
@@ -5583,8 +6085,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                   color: Colors.white,
                   fontSize: 24,
                   fontWeight: FontWeight.w900,
-                ),
-              ),
+                ),              ),
               const SizedBox(height: 6),
               Text(
                 _l(
