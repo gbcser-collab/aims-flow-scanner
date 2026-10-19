@@ -120,6 +120,9 @@ class FlowOperationsService {
     required String plate,
     required DateTime finishedAt,
     required int endKm,
+    DateTime? startedAt,
+    int? startKm,
+    int? startJobId,
   }) async {
     await _postJson({
       'action': 'workday_finish',
@@ -127,6 +130,10 @@ class FlowOperationsService {
       'workdayId': workdayId,
       'finishedAt': finishedAt.toUtc().toIso8601String(),
       'endKm': endKm,
+      if (startedAt != null)
+        'startedAt': startedAt.toUtc().toIso8601String(),
+      if (startKm != null) 'startKm': startKm,
+      if (startJobId != null) 'jobId': startJobId,
     });
   }
 
