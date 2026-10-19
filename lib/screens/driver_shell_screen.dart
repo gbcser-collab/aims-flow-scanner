@@ -1567,7 +1567,9 @@ class _DriverShellScreenState extends State<DriverShellScreen>
   }
 
   bool get _hasAcceptedOpenJob => _jobs.any(
-        (job) => job.acceptedAt != null && _hasOpenStop(job),
+        (job) =>
+            job.acceptedAt != null &&
+            (_hasOpenStop(job) || !_hasJobCmr(job)),
       );
 
   Future<void> _finishWorkday() async {
@@ -1618,10 +1620,57 @@ class _DriverShellScreenState extends State<DriverShellScreen>
     return '${hours.toString().padLeft(2, '0')}:${minutes.toString().padLeft(2, '0')}';
   }
 
+  String? _activeTripElapsedLabel() {
+    final job = _job;
+    if (job == null ||
+        job.acceptedAt == null ||
+        (!_hasOpenStop(job) && _hasJobCmr(job))) {
+      return null;
+    }
+    final startedAt = DateTime.tryParse(job.acceptedAt!);
+    if (startedAt == null) return null;
+    final duration = DateTime.now().difference(startedAt);
+    final hours = duration.inHours;
+    final minutes = duration.inMinutes.remainder(60);
+    return '${hours.toString().padLeft(2, '0')}:${minutes.toString().padLeft(2, '0')}';
+  }
+
+  Widget _workdayMetric(String label, String value) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          color: _surfaceAlt,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: _border),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              label,
+              style: const TextStyle(
+                fontSize: 9,
+                fontWeight: FontWeight.w900,
+                color: Colors.white70,
+              ),
+            ),
+            const SizedBox(height: 3),
+            Text(
+              value,
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ],
+        ),
+      );
+
   Widget _workdayCard() => StreamBuilder<int>(
-        stream: Stream<int>.periodic(const Duration(seconds: 30), (i) => i),
+        stream: Stream<int>.periodic(const Duration(seconds: 15), (i) => i),
         builder: (context, _) {
           final active = _workdayState.active;
+          final tripElapsed = active ? _activeTripElapsedLabel() : null;
+          final startKm = _workdayState.startKm;
           return _panel(
             Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1646,10 +1695,22 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                           ),
                           Text(
                             active
-                                ? 'Eltelt idő: ${_workdayElapsedLabel(_workdayState)}'
+                                ? 'Munkanap: ${_workdayElapsedLabel(_workdayState)}'
                                 : 'A következő elfogadott munkával automatikusan indul.',
                             style: const TextStyle(color: Colors.white),
                           ),
+                          if (active && _workdayState.syncPending)
+                            const Padding(
+                              padding: EdgeInsets.only(top: 3),
+                              child: Text(
+                                'Offline mentve · szinkronra vár',
+                                style: TextStyle(
+                                  color: Colors.orangeAccent,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ),
                         ],
                       ),
                     ),
@@ -1657,11 +1718,41 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                 ),
                 if (active) ...[
                   const SizedBox(height: 12),
-                  OutlinedButton.icon(
-                    onPressed: _actionBusy ? null : _finishWorkday,
-                    icon: const Icon(Icons.home_rounded),
-                    label: const Text('HAZAÉRTEM · MUNKA VÉGE'),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _workdayMetric(
+                          'KEZDŐ KM',
+                          startKm == null ? '—' : '$startKm km',
+                        ),
+                      ),
+                      if (tripElapsed != null) ...[
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: _workdayMetric(
+                            'AKTUÁLIS FUVAR',
+                            tripElapsed,
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
+                  const SizedBox(height: 12),
+                  if (_hasAcceptedOpenJob)
+                    const Text(
+                      'A munkanap a fuvar és a kötelező dokumentum lezárása után fejezhető be.',
+                      style: TextStyle(
+                        color: Colors.white70,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    )
+                  else
+                    OutlinedButton.icon(
+                      onPressed: _actionBusy ? null : _finishWorkday,
+                      icon: const Icon(Icons.home_rounded),
+                      label: const Text('HAZAÉRTEM · MUNKA VÉGE'),
+                    ),
                 ],
               ],
             ),
@@ -1716,41 +1807,175 @@ class _DriverShellScreenState extends State<DriverShellScreen>
     } catch (_) {}
   }
 
+  String _serviceAlertDetail(FlowServiceAlert alert) =>
+      alert.remainingKm != null
+          ? alert.remainingKm! < 0
+              ? '${alert.remainingKm!.abs()} km-rel túllépve'
+              : '${alert.remainingKm} km múlva'
+          : alert.dueDate != null
+              ? 'Határidő: ${alert.dueDate!.year}.${alert.dueDate!.month.toString().padLeft(2, '0')}.${alert.dueDate!.day.toString().padLeft(2, '0')}'
+              : 'Egyeztetés szükséges';
+
+  Future<void> _reportVehicleIssueFromServiceGuard() async {
+    final category = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+          children: [
+            const Text(
+              'JÁRMŰHIBA JELZÉSE',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(height: 8),
+            for (final item in const [
+              'Motor',
+              'Fék',
+              'Gumi / kerék',
+              'Világítás',
+              'Folyadék',
+              'Sérülés',
+              'Egyéb',
+            ])
+              ListTile(
+                leading: const Icon(Icons.report_problem_outlined),
+                title: Text(item),
+                onTap: () => Navigator.of(context).pop(item),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (!mounted || category == null) return;
+
+    final controller = TextEditingController();
+    final send = await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: Text('Járműhiba · $category'),
+            content: TextField(
+              controller: controller,
+              minLines: 2,
+              maxLines: 4,
+              decoration: const InputDecoration(
+                labelText: 'Rövid megjegyzés',
+                hintText: 'Mi történt?',
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(false),
+                child: const Text('MÉGSE'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(dialogContext).pop(true),
+                child: const Text('KÜLDÉS'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+    final message = controller.text.trim();
+    controller.dispose();
+    if (!send || !mounted) return;
+
+    final urgent = category == 'Fék' || category == 'Motor';
+    await _sendSignal(
+      'vehicle_issue',
+      urgent: urgent,
+      message: message.isEmpty ? category : '$category · $message',
+    );
+  }
+
+  Future<void> _showServiceGuardDetails() async {
+    if (_serviceAlerts.isEmpty || !mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+          children: [
+            const Text(
+              'SERVICE GUARD',
+              style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              _plate,
+              style: const TextStyle(color: Colors.white70),
+            ),
+            const SizedBox(height: 12),
+            for (final alert in _serviceAlerts)
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Icon(
+                  alert.urgent
+                      ? Icons.warning_amber_rounded
+                      : Icons.build_circle_outlined,
+                  color: alert.urgent ? Colors.orangeAccent : _blue,
+                ),
+                title: Text(
+                  alert.title,
+                  style: const TextStyle(fontWeight: FontWeight.w900),
+                ),
+                subtitle: Text(_serviceAlertDetail(alert)),
+              ),
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: () {
+                Navigator.of(context).pop();
+                unawaited(_reportVehicleIssueFromServiceGuard());
+              },
+              icon: const Icon(Icons.report_problem_outlined),
+              label: const Text('HIBÁT JELZEK'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _serviceGuardCard() {
     final alert = _serviceAlerts.first;
     final color = alert.urgent ? Colors.orangeAccent : _blue;
-    final detail = alert.remainingKm != null
-        ? alert.remainingKm! < 0
-            ? '${alert.remainingKm!.abs()} km-rel túllépve'
-            : '${alert.remainingKm} km múlva'
-        : alert.dueDate != null
-            ? 'Határidő: ${alert.dueDate!.year}.${alert.dueDate!.month.toString().padLeft(2, '0')}.${alert.dueDate!.day.toString().padLeft(2, '0')}'
-            : 'Egyeztetés szükséges';
-    return _panel(
-      Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(Icons.build_circle_outlined, color: color, size: 30),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'SERVICE GUARD',
-                  style: TextStyle(fontWeight: FontWeight.w900, fontSize: 11),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  alert.title,
-                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
-                ),
-                const SizedBox(height: 3),
-                Text(detail, style: const TextStyle(color: Colors.white)),
-              ],
+    final detail = _serviceAlertDetail(alert);
+    return InkWell(
+      borderRadius: BorderRadius.circular(22),
+      onTap: _showServiceGuardDetails,
+      child: _panel(
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(Icons.build_circle_outlined, color: color, size: 30),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'SERVICE GUARD',
+                    style: TextStyle(fontWeight: FontWeight.w900, fontSize: 11),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    alert.title,
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(detail, style: const TextStyle(color: Colors.white)),
+                ],
+              ),
             ),
-          ),
-        ],
+            const Icon(Icons.chevron_right_rounded, color: Colors.white70),
+          ],
+        ),
       ),
     );
   }
