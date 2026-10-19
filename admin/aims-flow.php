@@ -62,6 +62,28 @@ $flowServiceRows=$flowPdo->query('SELECT s.*,v.plate,v.label,
   LEFT JOIN vehicle_operational_state os ON os.vehicle_id=s.vehicle_id
   WHERE s.enabled=1
   ORDER BY v.plate,s.due_km,s.due_date,s.id')->fetchAll(PDO::FETCH_ASSOC);
+
+$flowFleetRows=$flowPdo->query('SELECT
+    v.id,v.plate,v.label,v.enabled,
+    COALESCE(os.hold,0) AS vehicle_hold,
+    COALESCE(os.hold_reason,"") AS hold_reason,
+    (SELECT w.started_at FROM driver_workdays w WHERE w.vehicle_id=v.id AND w.finished_at IS NULL ORDER BY w.started_at DESC LIMIT 1) AS workday_started_at,
+    (SELECT j.reference FROM jobs j WHERE j.vehicle_id=v.id AND j.status="active" ORDER BY j.id DESC LIMIT 1) AS active_reference,
+    (SELECT o.km FROM vehicle_odometer_log o WHERE o.vehicle_id=v.id ORDER BY o.captured_at DESC,o.id DESC LIMIT 1) AS current_km,
+    (SELECT c.created_at FROM vehicle_safety_checks c WHERE c.vehicle_id=v.id ORDER BY c.created_at DESC,c.id DESC LIMIT 1) AS safety_at,
+    (SELECT c.has_problem FROM vehicle_safety_checks c WHERE c.vehicle_id=v.id ORDER BY c.created_at DESC,c.id DESC LIMIT 1) AS safety_problem,
+    (SELECT COUNT(*) FROM vehicle_issues i WHERE i.vehicle_id=v.id AND i.status="open") AS open_issues,
+    (SELECT p.captured_at FROM points p WHERE p.vehicle_id=v.id ORDER BY p.captured_at DESC,p.id DESC LIMIT 1) AS gps_at,
+    (SELECT p.latitude FROM points p WHERE p.vehicle_id=v.id ORDER BY p.captured_at DESC,p.id DESC LIMIT 1) AS gps_lat,
+    (SELECT p.longitude FROM points p WHERE p.vehicle_id=v.id ORDER BY p.captured_at DESC,p.id DESC LIMIT 1) AS gps_lng,
+    (SELECT p.speed_mps FROM points p WHERE p.vehicle_id=v.id ORDER BY p.captured_at DESC,p.id DESC LIMIT 1) AS gps_speed_mps,
+    (SELECT s.title FROM vehicle_service_items s WHERE s.vehicle_id=v.id AND s.enabled=1 ORDER BY CASE WHEN s.due_km IS NULL THEN 1 ELSE 0 END,s.due_km,CASE WHEN s.due_date IS NULL THEN 1 ELSE 0 END,s.due_date,s.id LIMIT 1) AS next_service_title,
+    (SELECT s.due_km FROM vehicle_service_items s WHERE s.vehicle_id=v.id AND s.enabled=1 ORDER BY CASE WHEN s.due_km IS NULL THEN 1 ELSE 0 END,s.due_km,CASE WHEN s.due_date IS NULL THEN 1 ELSE 0 END,s.due_date,s.id LIMIT 1) AS next_service_km,
+    (SELECT s.due_date FROM vehicle_service_items s WHERE s.vehicle_id=v.id AND s.enabled=1 ORDER BY CASE WHEN s.due_km IS NULL THEN 1 ELSE 0 END,s.due_km,CASE WHEN s.due_date IS NULL THEN 1 ELSE 0 END,s.due_date,s.id LIMIT 1) AS next_service_date
+  FROM vehicles v
+  LEFT JOIN vehicle_operational_state os ON os.vehicle_id=v.id
+  WHERE v.enabled=1
+  ORDER BY COALESCE(os.hold,0) DESC,open_issues DESC,v.plate ASC')->fetchAll(PDO::FETCH_ASSOC);
 ?><!doctype html><html lang="hu"><head><meta charset="utf-8"><meta name="robots" content="noindex,nofollow,noarchive"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" href="../favicon.ico" sizes="any"><link rel="icon" type="image/png" sizes="48x48" href="../favicon-48x48.png"><link rel="apple-touch-icon" sizes="180x180" href="../apple-touch-icon.png"><title>AIMS FLOW Admin</title><style>
 :root{--g:#d9ad4e;--g2:#f2d77f;--bg:#08090b;--card:#0d0f11;--line:#29261f;--muted:#858078;--ok:#62dda0;--bad:#ff7d85;--amber:#efca69}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:#eee;font:14px Arial,sans-serif}a{color:inherit;text-decoration:none}.wrap{width:min(1360px,calc(100% - 28px));margin:auto;padding:26px 0 70px}.head{display:flex;justify-content:space-between;gap:18px;align-items:center;margin-bottom:18px}.ey{font-size:9px;letter-spacing:.14em;color:#8c7a4d;text-transform:uppercase}.head h1{margin:5px 0 0;font-size:28px}.head h1 span{color:var(--g2)}.nav{display:flex;gap:7px;flex-wrap:wrap}.nav a,.btn{border:1px solid var(--line);border-radius:999px;padding:9px 12px;font-size:10px;font-weight:800;background:#0c0e10;color:#eee;cursor:pointer}.nav a.active,.btn.gold{border:0;background:linear-gradient(135deg,#f1d77e,#b9852d);color:#090909}.statusbar{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:14px 0}.metric,.panel{border:1px solid var(--line);background:linear-gradient(180deg,#0f1113,#0a0b0d);border-radius:18px;padding:16px}.metric small,.panel small{font-size:8px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}.metric b{display:block;font-size:28px;color:var(--g2);margin-top:7px}.panel{margin-top:12px}.panelhead{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:12px}.panel h2{margin:3px 0 0;font-size:18px}.live{display:grid;grid-template-columns:1.25fr .75fr;gap:12px}.table{overflow:auto;border:1px solid #1e2022;border-radius:13px}table{width:100%;border-collapse:collapse;min-width:900px}th,td{text-align:left;padding:11px;border-bottom:1px solid #1d1f21;vertical-align:top}th{color:#827d72;font-size:8px;text-transform:uppercase;letter-spacing:.11em}.chip{display:inline-flex;align-items:center;gap:6px;padding:5px 8px;border:1px solid #333;border-radius:999px;font-size:8px;font-weight:900;text-transform:uppercase}.chip.ok{color:var(--ok);border-color:#28563e}.chip.bad{color:var(--bad);border-color:#603038}.chip.wait{color:var(--amber);border-color:#5b4e29}.mono{font:11px ui-monospace,SFMono-Regular,Consolas,monospace;color:#bcc3cb}.muted{color:#777;line-height:1.45;font-size:11px}.routebox{min-height:320px;display:flex;flex-direction:column;gap:10px}.routebox svg{width:100%;height:230px;border:1px solid #202327;border-radius:14px;background:radial-gradient(circle at 50% 50%,#111820,#090b0e 70%)}.route-meta{display:grid;grid-template-columns:1fr 1fr;gap:8px}.route-meta div{border:1px solid #202327;border-radius:11px;padding:9px}.route-meta small{display:block}.route-meta b{display:block;margin-top:4px}.actions{display:flex;gap:6px;flex-wrap:wrap}.actions button,.actions a{border:1px solid #34322a;background:#111315;color:#eee;border-radius:8px;padding:7px 9px;font-size:9px;font-weight:900;cursor:pointer}.actions .approve{background:linear-gradient(135deg,#f1d77e,#b9852d);color:#090909;border:0}.actions .danger{color:#ffadb1;border-color:#633}.actions .map{color:#a8d4ff;border-color:#31526a}.notice{border:1px solid #4f4529;background:#15130d;color:#d8c58e;border-radius:12px;padding:11px 13px;margin:10px 0}.error{border-color:#633;background:#1b1011;color:#ffb2b6}.success{border-color:#28563e;background:#0c1711;color:#9de4b9}.empty{padding:20px;color:#666;text-align:center}.dispatchgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}.dispatchgrid label{display:grid;gap:6px;color:#aaa;font-size:10px;font-weight:800}.dispatchgrid label.full{grid-column:1/-1}.dispatchgrid input{width:100%;min-height:45px;border:1px solid #333;background:#090b0d;color:#fff;border-radius:10px;padding:0 12px}.dispatchcheck{display:flex!important;grid-column:1/-1;align-items:center;gap:8px}.dispatchcheck input{width:auto;min-height:auto}.dispatchsend{grid-column:1/-1;border:0;border-radius:12px;min-height:50px;background:linear-gradient(135deg,#f1d77e,#b9852d);color:#090909;font-weight:1000;cursor:pointer}.spin{display:inline-block;width:10px;height:10px;border:2px solid #555;border-top-color:var(--g2);border-radius:50%;animation:spin .8s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}@media(max-width:950px){.live{grid-template-columns:1fr}.statusbar{grid-template-columns:1fr 1fr}.head{align-items:flex-start;flex-direction:column}}@media(max-width:520px){.statusbar{grid-template-columns:1fr}.wrap{width:min(100% - 18px,1360px)}.head h1{font-size:23px}}
 
@@ -80,6 +102,10 @@ $flowServiceRows=$flowPdo->query('SELECT s.*,v.plate,v.label,
 .flow-collapse{border:1px solid #333;background:#0c0e10;color:#bbb;border-radius:8px;padding:7px 9px;font-size:9px;font-weight:900;cursor:pointer}
 .flow-more-nav{position:relative}.flow-more-nav summary{list-style:none;border:1px solid var(--line);border-radius:999px;padding:9px 12px;font-size:10px;font-weight:800;background:#0c0e10;color:#eee;cursor:pointer}.flow-more-nav summary::-webkit-details-marker{display:none}
 .flow-more-menu{position:absolute;right:0;top:38px;z-index:50;min-width:150px;padding:7px;background:#0d0f11;border:1px solid var(--line);border-radius:12px;box-shadow:0 16px 40px #0009}.flow-more-menu a{display:block;border:0!important;border-radius:8px!important}
+.flow-fleet-table table{min-width:1050px}.flow-fleet-table td{padding-top:12px;padding-bottom:12px}
+.flow-vehicle-name{font-weight:900;font-size:14px}.flow-vehicle-sub{margin-top:3px;color:#777;font-size:10px}
+.flow-status-main{display:flex;gap:5px;flex-wrap:wrap}.flow-km{font-weight:900}.flow-gps-fresh{color:var(--ok)}.flow-gps-stale{color:var(--amber)}
+.flow-detail-btn{border:1px solid #363636;background:#111315;color:#eee;border-radius:8px;padding:7px 9px;font-size:9px;font-weight:900;cursor:pointer}
 @media(max-width:800px){.flow-quick{grid-template-columns:repeat(2,1fr)}.flow-switch{border-radius:12px}.flow-urgent{align-items:flex-start;flex-direction:column}}
 </style></head><body><div class="wrap"><div class="head"><div><div class="ey">LOGISTIC-A.I.M.S.</div><h1>AIMS <span>FLOW</span> Admin</h1><div class="muted" style="margin-top:5px">Fuvar · sofőr · jármű · dokumentum · élő helyzet</div></div><div class="nav"><a href="index.php">Főoldal</a><a href="freights.php">Fuvarok</a><details class="flow-more-nav"><summary>További</summary><div class="flow-more-menu"><a href="partners.php">Partnerek</a><a href="foreign-stay-report.php">Riportok</a><a href="automation.php">E-mail bot</a></div></details><a href="logout.php">Kilépés</a></div></div>
 <div id="apiNotice" class="notice">A modul a telefonról beérkező <b>valós GPS-pontokat</b>, Flow-fuvarokat és Scanner-adatokat kezeli. Nincs demo/szimulált járműmozgás.</div>
@@ -100,6 +126,32 @@ $flowServiceRows=$flowPdo->query('SELECT s.*,v.plate,v.label,
   <div class="q"><small>Safety 24h</small><b><?=$flowSafety24?></b></div>
 </div>
 <?php if($flowHoldCount>0||$flowOpenIssues>0):?><div class="flow-urgent"><div><b>Figyelem:</b> <?=$flowHoldCount?> jármű HOLD · <?=$flowOpenIssues?> nyitott hiba</div><button type="button" data-open-flow-view="vehicles">JÁRMŰVEK MEGNYITÁSA</button></div><?php endif;?>
+<section class="panel" id="flowFleetNow"><div class="panelhead"><div><small>MOST</small><h2>Járművek most</h2></div><span class="chip ok"><?=count($flowFleetRows)?> aktív jármű</span></div>
+<div class="table flow-fleet-table"><table><thead><tr><th>Jármű</th><th>Állapot</th><th>Fuvar</th><th>Km</th><th>GPS</th><th>Safety</th><th>Szerviz</th><th>Hiba</th><th></th></tr></thead><tbody>
+<?php if(!$flowFleetRows):?><tr><td colspan="9" class="empty">Nincs aktív FLOW jármű.</td></tr>
+<?php else:foreach($flowFleetRows as $fv):
+$fvGpsTs=!empty($fv['gps_at'])?strtotime((string)$fv['gps_at']):false;
+$fvGpsAge=$fvGpsTs!==false?max(0,time()-$fvGpsTs):null;
+$fvGpsFresh=$fvGpsAge!==null&&$fvGpsAge<=900;
+$fvSpeed=$fv['gps_speed_mps']!==null?round((float)$fv['gps_speed_mps']*3.6):null;
+$fvWork=!empty($fv['workday_started_at']);
+$fvHold=!empty($fv['vehicle_hold']);
+$fvIssues=(int)$fv['open_issues'];
+$fvSafetyProblem=!empty($fv['safety_problem']);
+$fvServiceRemain=($fv['next_service_km']!==null&&$fv['current_km']!==null)?((int)$fv['next_service_km']-(int)$fv['current_km']):null;
+?>
+<tr>
+<td><div class="flow-vehicle-name"><?=portal_h(trim((string)$fv['label'])!==''?$fv['label']:$fv['plate'])?></div><div class="flow-vehicle-sub"><?=portal_h($fv['plate'])?></div></td>
+<td><div class="flow-status-main"><?=$fvHold?'<span class="chip bad">HOLD</span>':($fvWork?'<span class="chip wait">MUNKÁBAN</span>':'<span class="chip ok">PIHENŐ</span>')?><?=$fvIssues?'<span class="chip bad">'.$fvIssues.' HIBA</span>':''?></div></td>
+<td><?=$fv['active_reference']?'<b>'.portal_h($fv['active_reference']).'</b>':'<span class="muted">Nincs aktív fuvar</span>'?></td>
+<td class="flow-km"><?=$fv['current_km']!==null?number_format((int)$fv['current_km'],0,',',' ').' km':'—'?></td>
+<td><?php if($fvGpsAge===null):?><span class="muted">Nincs adat</span><?php else:?><span class="<?=$fvGpsFresh?'flow-gps-fresh':'flow-gps-stale'?>"><?=$fvGpsFresh?'● ÉLŐ':'● RÉGI'?></span><div class="muted"><?=$fvSpeed!==null?$fvSpeed.' km/h · ':''?><?=intval($fvGpsAge/60)?> perce</div><?php endif;?></td>
+<td><?=$fv['safety_at']?($fvSafetyProblem?'<span class="chip bad">PROBLÉMA</span>':'<span class="chip ok">RENDBEN</span>'):'<span class="chip wait">NINCS</span>'?><?php if($fv['safety_at']):?><div class="muted"><?=portal_h($fv['safety_at'])?></div><?php endif;?></td>
+<td><?php if($fv['next_service_title']):?><b><?=portal_h($fv['next_service_title'])?></b><div class="muted"><?=$fvServiceRemain!==null?($fvServiceRemain<0?number_format(abs($fvServiceRemain),0,',',' ').' km túllépve':number_format($fvServiceRemain,0,',',' ').' km maradt'):portal_h($fv['next_service_date']??'')?></div><?php else:?><span class="muted">Nincs tétel</span><?php endif;?></td>
+<td><?=$fvIssues?'<span class="chip bad">'.$fvIssues.' NYITOTT</span>':'<span class="chip ok">RENDBEN</span>'?><?php if($fvHold&&trim((string)$fv['hold_reason'])!==''):?><div class="muted"><?=portal_h($fv['hold_reason'])?></div><?php endif;?></td>
+<td><button type="button" class="flow-detail-btn" data-open-flow-view="vehicles">RÉSZLETEK</button><?php if($fv['gps_lat']!==null&&$fv['gps_lng']!==null):?><a class="flow-detail-btn" style="display:inline-block;margin-top:5px" target="_blank" rel="noopener" href="https://www.google.com/maps?q=<?=rawurlencode($fv['gps_lat'].','.$fv['gps_lng'])?>">TÉRKÉP ↗</a><?php endif;?></td>
+</tr>
+<?php endforeach;endif;?></tbody></table></div></section>
 <section class="panel"><div class="panelhead"><div><small>ÚJ FUVAR</small><h2>Fuvar küldése</h2></div><span class="chip ok"><?=$flowPhoneCount?> aktív mobil</span></div>
 <form class="dispatchgrid" method="post" action="aims-flow-dispatch.php">
 <input type="hidden" name="csrf" value="<?=portal_h($csrf)?>">
@@ -284,6 +336,7 @@ $('refreshBtn').addEventListener('click',refreshAll);refreshAll();setInterval(re
 <script>
 (function(){
   const titleGroup={
+    'Járművek most':'overview',
     'Fuvar küldése':'jobs',
     'Aktív fuvarok':'overview jobs',
     'Üzenetek':'messages',
@@ -299,7 +352,7 @@ $('refreshBtn').addEventListener('click',refreshAll);refreshAll();setInterval(re
     'CMR / POD dokumentumok':'jobs'
   };
   const collapsedByDefault=new Set([
-    'Munkanapok és km','Safety Check','Tanult pontok',
+    'Fuvar küldése','Munkanapok és km','Safety Check','Tanult pontok',
     'FLOW telefonok','CMR / POD dokumentumok'
   ]);
   const panels=[...document.querySelectorAll('section.panel')];
@@ -309,7 +362,7 @@ $('refreshBtn').addEventListener('click',refreshAll);refreshAll();setInterval(re
     const title=h2.textContent.trim();
     const groups=titleGroup[title];
     if(groups)panel.dataset.flowGroups=groups;
-    if(['Munkanapok és km','Safety Check','Service Guard','Tanult pontok','Sofőr belépések','FLOW telefonok','CMR / POD dokumentumok'].includes(title)){
+    if(['Fuvar küldése','Munkanapok és km','Safety Check','Service Guard','Tanult pontok','Sofőr belépések','FLOW telefonok','CMR / POD dokumentumok'].includes(title)){
       panel.classList.add('flow-collapsible');
       const head=panel.querySelector('.panelhead');
       if(head){
