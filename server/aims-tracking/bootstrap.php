@@ -508,6 +508,113 @@ function aims_db(): PDO {
     )');
     $pdo->exec('CREATE INDEX IF NOT EXISTS idx_driver_push_vehicle_enabled ON driver_push_devices(vehicle_id, enabled)');
 
+    // FLOW NEXT operational layer: workdays, odometer, Safety Check,
+    // Service Guard and vehicle HOLD state. These are office-operational data,
+    // not CONTROL/tenant administration data.
+    $pdo->exec('CREATE TABLE IF NOT EXISTS driver_workdays (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        workday_key TEXT NOT NULL UNIQUE,
+        vehicle_id INTEGER NOT NULL,
+        start_job_id INTEGER,
+        started_at TEXT NOT NULL,
+        finished_at TEXT,
+        start_km INTEGER NOT NULL,
+        end_km INTEGER,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY(vehicle_id) REFERENCES vehicles(id) ON DELETE CASCADE,
+        FOREIGN KEY(start_job_id) REFERENCES jobs(id) ON DELETE SET NULL
+    )');
+    $pdo->exec('CREATE INDEX IF NOT EXISTS idx_driver_workdays_vehicle_time
+        ON driver_workdays(vehicle_id, started_at DESC)');
+    $pdo->exec('CREATE INDEX IF NOT EXISTS idx_driver_workdays_open
+        ON driver_workdays(vehicle_id, finished_at)');
+
+    $pdo->exec('CREATE TABLE IF NOT EXISTS vehicle_odometer_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        vehicle_id INTEGER NOT NULL,
+        km INTEGER NOT NULL,
+        source TEXT NOT NULL,
+        captured_at TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY(vehicle_id) REFERENCES vehicles(id) ON DELETE CASCADE
+    )');
+    $pdo->exec('CREATE INDEX IF NOT EXISTS idx_vehicle_odometer_vehicle_time
+        ON vehicle_odometer_log(vehicle_id, captured_at DESC)');
+
+    $pdo->exec('CREATE TABLE IF NOT EXISTS vehicle_safety_checks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        client_check_id TEXT NOT NULL UNIQUE,
+        vehicle_id INTEGER NOT NULL,
+        km INTEGER NOT NULL,
+        statuses_json TEXT NOT NULL,
+        has_problem INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        received_at TEXT NOT NULL,
+        FOREIGN KEY(vehicle_id) REFERENCES vehicles(id) ON DELETE CASCADE
+    )');
+    $pdo->exec('CREATE INDEX IF NOT EXISTS idx_vehicle_safety_vehicle_time
+        ON vehicle_safety_checks(vehicle_id, created_at DESC)');
+
+    $pdo->exec('CREATE TABLE IF NOT EXISTS vehicle_safety_photos (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        safety_check_id INTEGER NOT NULL,
+        photo_type TEXT NOT NULL,
+        relative_path TEXT NOT NULL,
+        mime_type TEXT NOT NULL,
+        size_bytes INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        UNIQUE(safety_check_id, photo_type),
+        FOREIGN KEY(safety_check_id) REFERENCES vehicle_safety_checks(id) ON DELETE CASCADE
+    )');
+
+    $pdo->exec('CREATE TABLE IF NOT EXISTS vehicle_service_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        vehicle_id INTEGER NOT NULL,
+        service_type TEXT NOT NULL DEFAULT "custom",
+        title TEXT NOT NULL,
+        due_km INTEGER,
+        due_date TEXT,
+        warning_km INTEGER NOT NULL DEFAULT 2000,
+        warning_days INTEGER NOT NULL DEFAULT 30,
+        interval_km INTEGER,
+        interval_days INTEGER,
+        last_done_km INTEGER,
+        last_done_at TEXT,
+        notes TEXT NOT NULL DEFAULT "",
+        enabled INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY(vehicle_id) REFERENCES vehicles(id) ON DELETE CASCADE
+    )');
+    $pdo->exec('CREATE INDEX IF NOT EXISTS idx_vehicle_service_vehicle_enabled
+        ON vehicle_service_items(vehicle_id, enabled, due_km, due_date)');
+
+    $pdo->exec('CREATE TABLE IF NOT EXISTS vehicle_operational_state (
+        vehicle_id INTEGER PRIMARY KEY,
+        hold INTEGER NOT NULL DEFAULT 0,
+        hold_reason TEXT NOT NULL DEFAULT "",
+        hold_source TEXT NOT NULL DEFAULT "",
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY(vehicle_id) REFERENCES vehicles(id) ON DELETE CASCADE
+    )');
+
+    $pdo->exec('CREATE TABLE IF NOT EXISTS vehicle_issues (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_id TEXT UNIQUE,
+        vehicle_id INTEGER NOT NULL,
+        category TEXT NOT NULL,
+        message TEXT NOT NULL DEFAULT "",
+        urgent INTEGER NOT NULL DEFAULT 0,
+        status TEXT NOT NULL DEFAULT "open",
+        created_at TEXT NOT NULL,
+        resolved_at TEXT,
+        resolved_note TEXT,
+        FOREIGN KEY(vehicle_id) REFERENCES vehicles(id) ON DELETE CASCADE
+    )');
+    $pdo->exec('CREATE INDEX IF NOT EXISTS idx_vehicle_issues_vehicle_status
+        ON vehicle_issues(vehicle_id, status, created_at DESC)');
+
     aims_ensure_default_admin($pdo);
     return $pdo;
 }

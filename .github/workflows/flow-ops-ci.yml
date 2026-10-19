@@ -1,0 +1,96 @@
+name: FLOW Operations CI
+
+on:
+  push:
+    branches: [aims-flow-r105-next-v180-dev6-operations, aims-flow-r105-next-v180-dev7-clean-admin, aims-flow-r105-next-v180-dev8-unified-admin, aims-flow-r105-next-v180-dev9-admin-everything-useful]
+    paths:
+      - 'admin/**'
+      - 'server/aims-tracking/**'
+      - 'lib/services/flow_**'
+      - 'lib/screens/driver_shell_screen.dart'
+      - 'test/flow_**'
+      - '.github/workflows/flow-ops-ci.yml'
+  pull_request:
+    branches: [aims-flow-r104-next-level]
+    paths:
+      - 'admin/**'
+      - 'server/aims-tracking/**'
+      - 'lib/services/flow_**'
+      - 'lib/screens/driver_shell_screen.dart'
+      - 'test/flow_**'
+  workflow_dispatch:
+
+jobs:
+  validate-flow-operations:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: PHP syntax
+        run: |
+          php -l server/aims-tracking/bootstrap.php
+          php -l server/aims-tracking/driver_ops_v2.php
+          php -l server/aims-tracking/driver_event.php
+          php -l admin/aims-flow.php
+          php -l admin/aims-flow-operations.php
+          php -l admin/aims-flow-safety-photo.php
+          php -l admin/aims-flow-export.php
+          php -l admin/aims-flow-document-file.php
+
+      - name: SQLite schema smoke test
+        run: |
+          export AIMS_TRACKING_DATA_DIR="$RUNNER_TEMP/aims-flow-test-data"
+          mkdir -p "$AIMS_TRACKING_DATA_DIR"
+          php -r 'require "server/aims-tracking/bootstrap.php"; $pdo=aims_db(); foreach(["driver_workdays","vehicle_odometer_log","vehicle_safety_checks","vehicle_safety_photos","vehicle_service_items","vehicle_operational_state","vehicle_issues"] as $t){$q=$pdo->query("SELECT name FROM sqlite_master WHERE type=\"table\" AND name=".$pdo->quote($t)); if(!$q->fetchColumn()){fwrite(STDERR,"missing table: $t\n"); exit(1);}} echo "FLOW OPS SCHEMA OK\n";'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Flutter dependencies
+        run: flutter pub get
+
+      - name: Flutter analyze
+        run: flutter analyze
+
+      - name: FLOW unit tests
+        run: |
+          flutter test test/flow_workday_service_test.dart
+          flutter test test/flow_safety_check_service_test.dart
+
+      - name: Operational contract guard
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          checks={
+            "server/aims-tracking/driver_ops_v2.php":[
+              "workday_start","workday_finish","safety_check","service_alerts",
+              "vehicle_safety_checks","vehicle_service_items",
+            ],
+            "admin/aims-flow.php":[
+              "AIMS FLOW Admin","ÁTTEKINTÉS","FUVAROK","JÁRMŰVEK","IRODA","ÜZENETEK","RENDSZER",
+              "Figyelmet igényel","Munkanapok és km","Safety Check","Service Guard","Járműhibák",
+              "Megbízói követőlinkek","Partnerek","Dokumentumközpont","Riportok és export",
+              "Automatizálás","Aktivitás / audit","Bizonylatok és egyéb dokumentumok","flowGlobalSearch",
+            ],
+            "admin/aims-flow-export.php":[
+              "workdays","odometer","safety","issues","service","jobs","activity",
+            ],
+            "admin/aims-flow-document-file.php":[
+              "fuel","smart","fuel_receipts","smart_documents",
+            ],
+            "lib/screens/driver_shell_screen.dart":[
+              "_vehicleOnHold","A jármű HOLD állapotban van",
+              "_safetyStatusCard","_runDailyVehicleQuickCheck",
+            ],
+          }
+          for path, needles in checks.items():
+              text=Path(path).read_text(encoding="utf-8")
+              missing=[n for n in needles if n not in text]
+              if missing:
+                  raise SystemExit(f"{path}: missing {missing}")
+          print("FLOW OPS CONTRACT OK")
+          PY

@@ -1,0 +1,117 @@
+name: Package AIMS FLOW DEV9 Server Deploy
+
+on:
+  push:
+    branches: [aims-flow-r105-next-v180-dev9-admin-everything-useful]
+    paths:
+      - 'admin/**'
+      - 'server/aims-tracking/**'
+      - 'api/aims-flow-login.php'
+      - '.github/workflows/dev9-server-package.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: aims-flow-dev9-server-package-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate PHP
+        run: |
+          find admin server/aims-tracking -name '*.php' -print0 | xargs -0 -n1 php -l
+          php -l api/aims-flow-login.php
+
+      - name: Build deployment tree
+        run: |
+          set -euo pipefail
+          ROOT="AIMS-FLOW-DEV9-SERVER-DEPLOY"
+          rm -rf "$ROOT"
+          mkdir -p "$ROOT/admin" "$ROOT/api/aims-tracking"
+
+          cp admin/aims-flow*.php "$ROOT/admin/"
+          cp admin/foreign-stay-report.php "$ROOT/admin/"
+
+          rsync -a \
+            --exclude 'data/' \
+            --exclude '*.sqlite' \
+            --exclude '*.sqlite-*' \
+            server/aims-tracking/ "$ROOT/api/aims-tracking/"
+
+          cp api/aims-flow-login.php "$ROOT/api/aims-flow-login.php"
+
+          cat > "$ROOT/DEPLOY-README-HU.md" <<'EOF'
+          # AIMS FLOW DEV9 – szervertelepítés
+
+          Cél: a meglévő Logistic-A.I.M.S. webes admin és AIMS FLOW tracking backend frissítése.
+
+          ## Célútvonalak
+
+          A ZIP gyökerét a webroothoz viszonyítva kell másolni:
+
+          - admin/* → public_html/admin/
+          - api/aims-tracking/* → public_html/api/aims-tracking/
+          - api/aims-flow-login.php → public_html/api/aims-flow-login.php
+
+          ## Fontos
+
+          - A data/ könyvtár nincs a csomagban, így a meglévő tracking.sqlite,
+            Safety fotók, fuel képek és Smart Scanner dokumentumok nem kerülnek felülírásra.
+          - Az aims-flow-config.php szerveroldali titkokat nem tartalmazza a csomag.
+          - Telepítés előtt készíts teljes másolatot a jelenlegi admin/,
+            api/aims-tracking/ és tracking adatkönyvtárról.
+          - A bootstrap.php első kéréskor létrehozza a hiányzó DEV9 operatív táblákat.
+
+          ## DEV9 funkciók
+
+          - egységes AIMS FLOW Admin;
+          - teendőközpont;
+          - jármű / GPS / ország / munkaidő / km;
+          - Safety Check és védett fotók;
+          - Service Guard;
+          - járműhiba + HOLD;
+          - megbízói követőlinkek;
+          - partner- és dokumentumösszesítő;
+          - tankolási és Smart Scanner dokumentumok;
+          - CSV export;
+          - audit / aktivitás;
+          - sofőr ↔ iroda üzenetek.
+
+          ## Ellenőrzés telepítés után
+
+          1. Nyisd meg az admin belépést.
+          2. Nyisd meg admin/aims-flow.php.
+          3. Ellenőrizd: Áttekintés, Fuvarok, Járművek, Iroda, Üzenetek, Rendszer.
+          4. Ellenőrizd az élő GPS frissítést.
+          5. Tesztjárművel küldj Safety Checket és járműhibát.
+          6. Ellenőrizd, hogy a FLOW Adminban megjelenik-e.
+          7. Kritikus hibánál ellenőrizd a HOLD állapotot.
+          8. HOLD feloldás után ellenőrizd a sofőr kliens Service Guard frissítését.
+
+          ## Visszaállítás
+
+          Hiba esetén a telepítés előtti admin/ és api/aims-tracking/
+          mentést együtt állítsd vissza. A tracking adatbázist ne töröld.
+          EOF
+
+          (
+            cd "$ROOT"
+            find . -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS.txt
+          )
+
+          zip -qr AIMS-FLOW-DEV9-SERVER-DEPLOY.zip "$ROOT"
+          sha256sum AIMS-FLOW-DEV9-SERVER-DEPLOY.zip | tee AIMS-FLOW-DEV9-SERVER-DEPLOY.zip.sha256
+
+      - name: Upload deployment package
+        uses: actions/upload-artifact@v4
+        with:
+          name: AIMS-FLOW-DEV9-SERVER-DEPLOY
+          path: |
+            AIMS-FLOW-DEV9-SERVER-DEPLOY.zip
+            AIMS-FLOW-DEV9-SERVER-DEPLOY.zip.sha256
+          if-no-files-found: error
+          retention-days: 30
