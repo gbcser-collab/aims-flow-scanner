@@ -262,8 +262,11 @@ class _DriverShellScreenState extends State<DriverShellScreen>
   FlowAccountSession? _flowSession;
   FlowWorkdayState _workdayState = const FlowWorkdayState(active: false);
   List<FlowServiceAlert> _serviceAlerts = const [];
+  FlowSafetyCheckRecord? _lastSafetyCheck;
+  int _pendingSafetyCheckCount = 0;
   DateTime? _lastServiceGuardRefresh;
   bool _safetyPromptOpen = false;
+  bool _vehicleQuickCheckOpen = false;
   bool _homeEndPromptOpen = false;
   DateTime? _homeEndSnoozeUntil;
 
@@ -1538,6 +1541,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
     final existing = await _workday.load();
     if (existing.active) {
       if (mounted) setState(() => _workdayState = existing);
+      await _runDailyVehicleQuickCheck();
       return;
     }
     final km = await _askOdometer(
@@ -1555,6 +1559,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
     );
     await _rememberOdometer(km, source: 'workday_start');
     if (mounted) setState(() => _workdayState = state);
+    await _runDailyVehicleQuickCheck();
     unawaited(
       _voice.announce(
         _l(
@@ -1776,7 +1781,267 @@ class _DriverShellScreenState extends State<DriverShellScreen>
         await _safetyCheck.flushPending(session: session);
       } catch (_) {}
     }
+    await _refreshSafetyStatus();
     if (mounted) setState(() {});
+  }
+
+  Future<void> _refreshSafetyStatus() async {
+    try {
+      final latest = await _safetyCheck.latestRecord();
+      final pending = await _safetyCheck.pendingCount();
+      if (!mounted) return;
+      setState(() {
+        _lastSafetyCheck = latest;
+        _pendingSafetyCheckCount = pending;
+      });
+    } catch (_) {}
+  }
+
+  String _safetyCheckTimeLabel(DateTime value) {
+    final local = value.toLocal();
+    final day = local.day.toString().padLeft(2, '0');
+    final month = local.month.toString().padLeft(2, '0');
+    final hour = local.hour.toString().padLeft(2, '0');
+    final minute = local.minute.toString().padLeft(2, '0');
+    return '$month.$day. $hour:$minute';
+  }
+
+  Future<void> _startSafetyCheckNow() async {
+    if (_safetyPromptOpen || !mounted) return;
+    final session = _flowSession;
+    if (session == null || _plate.isEmpty) {
+      _snack('A Safety Checkhez aktív sofőrprofil szükséges.');
+      return;
+    }
+    final position = _trackingStatus?.lastPosition;
+    if (position != null && position.speed > 1.2) {
+      _snack('Safety Check csak álló járműnél indítható.');
+      return;
+    }
+
+    _safetyPromptOpen = true;
+    try {
+      final km = await _lastKnownOdometer();
+      final resultKm = await Navigator.of(context).push<int>(
+        MaterialPageRoute(
+          builder: (_) => FlowSafetyCheckScreen(
+            session: session,
+            plate: _plate,
+            initialKm: km,
+          ),
+        ),
+      );
+      if (resultKm != null) {
+        await _rememberOdometer(resultKm, source: 'safety_check');
+        await _refreshSafetyStatus();
+        await _refreshServiceGuard();
+        if (!mounted) return;
+        final pending = _pendingSafetyCheckCount;
+        _snack(
+          pending > 0
+              ? 'Safety Check offline elmentve · szinkronra vár.'
+              : 'Safety Check elmentve és szinkronizálva.',
+        );
+      }
+    } finally {
+      _safetyPromptOpen = false;
+    }
+  }
+
+  Future<void> _showSafetyHistory() async {
+    if (!mounted) return;
+    final records = await _safetyCheck.recentRecords(limit: 10);
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+          children: [
+            const Text(
+              'FLOW SAFETY CHECK',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 22,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              _plate,
+              style: const TextStyle(color: Colors.white),
+            ),
+            const SizedBox(height: 12),
+            if (records.isEmpty)
+              const ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Icon(Icons.shield_outlined),
+                title: Text(
+                  'Még nincs rögzített ellenőrzés.',
+                  style: TextStyle(color: Colors.white),
+                ),
+              )
+            else
+              for (final record in records)
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(
+                    record.hasProblem
+                        ? Icons.warning_amber_rounded
+                        : Icons.verified_user_outlined,
+                    color: record.hasProblem
+                        ? Colors.orangeAccent
+                        : _green,
+                  ),
+                  title: Text(
+                    record.hasProblem ? 'Probléma jelölve' : 'Rendben',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  subtitle: Text(
+                    '${_safetyCheckTimeLabel(record.createdAt)} · ${record.km} km'
+                    '${record.synced ? '' : ' · SZINKRONRA VÁR'}',
+                    style: const TextStyle(color: Colors.white),
+                  ),
+                ),
+            const SizedBox(height: 8),
+            FilledButton.icon(
+              onPressed: () {
+                Navigator.of(sheetContext).pop();
+                Future.microtask(_startSafetyCheckNow);
+              },
+              icon: const Icon(Icons.fact_check_outlined),
+              label: const Text('ELLENŐRZÉS INDÍTÁSA'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _safetyStatusCard() {
+    final record = _lastSafetyCheck;
+    final pending = _pendingSafetyCheckCount;
+    final hasProblem = record?.hasProblem == true;
+    final color = hasProblem
+        ? Colors.orangeAccent
+        : pending > 0
+            ? Colors.orangeAccent
+            : record == null
+                ? _blue
+                : _green;
+    final title = record == null
+        ? 'Még nincs Safety Check'
+        : hasProblem
+            ? 'Safety Check · PROBLÉMA'
+            : 'Safety Check · RENDBEN';
+    final detail = record == null
+        ? 'Álló helyzetben bármikor elindítható.'
+        : '${_safetyCheckTimeLabel(record.createdAt)} · ${record.km} km'
+          '${pending > 0 ? ' · $pending szinkronra vár' : ''}';
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(22),
+      onTap: _showSafetyHistory,
+      child: _panel(
+        Row(
+          children: [
+            Icon(
+              hasProblem
+                  ? Icons.warning_amber_rounded
+                  : Icons.verified_user_outlined,
+              color: color,
+              size: 29,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'FLOW SAFETY',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    detail,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 11,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right_rounded, color: Colors.white),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _runDailyVehicleQuickCheck() async {
+    if (_vehicleQuickCheckOpen || !mounted || !_workdayState.active) return;
+    final workdayId = _workdayState.workdayId;
+    if (workdayId.isEmpty) return;
+
+    final prefs = await SharedPreferences.getInstance();
+    final key = 'aims_flow_vehicle_quick_check_$workdayId';
+    if (prefs.getBool(key) ?? false) return;
+
+    _vehicleQuickCheckOpen = true;
+    try {
+      final hasProblem = await showDialog<bool>(
+            context: context,
+            barrierDismissible: false,
+            builder: (dialogContext) => AlertDialog(
+              title: const Text('JÁRMŰ GYORSCHECK'),
+              content: Text(
+                '$_plate · Van új probléma a járművel?\n\n'
+                'Ha rendben van, egy érintéssel továbbmehetsz.',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(false),
+                  child: const Text('NINCS ÚJ PROBLÉMA'),
+                ),
+                FilledButton.icon(
+                  onPressed: () => Navigator.of(dialogContext).pop(true),
+                  icon: const Icon(Icons.report_problem_outlined),
+                  label: const Text('HIBÁT JELZEK'),
+                ),
+              ],
+            ),
+          ) ??
+          false;
+
+      await prefs.setBool(key, true);
+      if (!mounted) return;
+      if (hasProblem) {
+        await _reportVehicleIssueFromServiceGuard();
+      } else {
+        _snack('Jármű gyorscheck: nincs új probléma.');
+      }
+    } finally {
+      _vehicleQuickCheckOpen = false;
+    }
   }
 
   Future<void> _refreshServiceGuard() async {
@@ -2084,22 +2349,8 @@ class _DriverShellScreenState extends State<DriverShellScreen>
       _safetyPromptOpen = false;
       return;
     }
-    final km = await _lastKnownOdometer();
-    final resultKm = await Navigator.of(context).push<int>(
-      MaterialPageRoute(
-        builder: (_) => FlowSafetyCheckScreen(
-          session: session,
-          plate: _plate,
-          initialKm: km,
-        ),
-      ),
-    );
     _safetyPromptOpen = false;
-    if (resultKm != null) {
-      await _rememberOdometer(resultKm, source: 'safety_check');
-      await _refreshServiceGuard();
-      if (mounted) _snack('Safety Check elmentve és továbbításra került.');
-    }
+    await _startSafetyCheckNow();
   }
 
   Future<void> _initialize() async {
@@ -4934,6 +5185,8 @@ class _DriverShellScreenState extends State<DriverShellScreen>
         _serviceGuardCard(),
         const SizedBox(height: 12),
       ],
+      _safetyStatusCard(),
+      const SizedBox(height: 12),
       KeyedSubtree(key: const Key('autopilot-home-slot'), child: _autopilotCard()),
       if (_autopilot != null) const SizedBox(height: 12),
       if (_loading)
