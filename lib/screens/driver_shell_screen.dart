@@ -1648,7 +1648,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
         decoration: BoxDecoration(
           color: _surfaceAlt,
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: _border),
+          border: Border.all(color: _lineColor),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
