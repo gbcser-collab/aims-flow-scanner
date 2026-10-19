@@ -2,7 +2,7 @@ name: FLOW Operations CI
 
 on:
   push:
-    branches: [aims-flow-r105-next-v180-dev6-operations, aims-flow-r105-next-v180-dev7-clean-admin]
+    branches: [aims-flow-r105-next-v180-dev6-operations, aims-flow-r105-next-v180-dev7-clean-admin, aims-flow-r105-next-v180-dev8-unified-admin]
     paths:
       - 'admin/**'
       - 'server/aims-tracking/**'
