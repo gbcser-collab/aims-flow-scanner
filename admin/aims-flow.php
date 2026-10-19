@@ -201,15 +201,7 @@ $fvServiceRemain=($fv['next_service_km']!==null&&$fv['current_km']!==null)?((int
 </div>
 <div id="flowMsgList" style="margin-top:14px;display:grid;gap:7px"><div class="empty">Üzenetek betöltése…</div></div>
 <p class="muted">A sofőr üzenete az admin telefonjára pushként is megérkezik. Ha ez az oldal nyitva van, a beszélgetés automatikusan frissül. Az admin válasza pushként megy vissza a sofőr AIMS Flow appjába.</p></section>
-<section class="panel" id="flow-operations"><div class="panelhead"><div><small>JÁRMŰVEK</small><h2>Állapot összefoglaló</h2></div><span class="chip ok">SOFŐR → IRODA</span></div>
-<p class="muted">Ez a napi operatív FLOW felület. A sofőrapp munkanap-, kilométer-, Safety Check-, Service Guard- és hibajelzései ide érkeznek; ez nem AIMS CONTROL rendszeradmin.</p>
-<div class="statusbar">
-  <div class="metric"><small>Aktív munkanap</small><b><?=$flowOpenWorkdays?></b></div>
-  <div class="metric"><small>Safety Check 24h</small><b><?=$flowSafety24?></b></div>
-  <div class="metric"><small>Nyitott járműhiba</small><b><?=$flowOpenIssues?></b></div>
-  <div class="metric"><small>Jármű HOLD</small><b><?=$flowHoldCount?></b></div>
-</div></section>
-
+<div id="flow-operations"></div>
 <section class="panel"><div class="panelhead"><div><small>MUNKAIDŐ</small><h2>Munkanapok és km</h2></div><span class="chip <?=$flowOpenWorkdays?'wait':'ok'?>"><?=$flowOpenWorkdays?> aktív</span></div>
 <div class="table"><table><thead><tr><th>Jármű</th><th>Fuvar</th><th>Kezdés</th><th>Vége</th><th>Munkaidő</th><th>Kezdő km</th><th>Záró km</th><th>Nap km</th><th>Állapot</th></tr></thead><tbody>
 <?php if(!$flowWorkdayRows):?><tr><td colspan="9" class="empty">Még nincs rögzített FLOW munkanap.</td></tr>
@@ -340,7 +332,6 @@ $('refreshBtn').addEventListener('click',refreshAll);refreshAll();setInterval(re
     'Fuvar küldése':'jobs',
     'Aktív fuvarok':'overview jobs',
     'Üzenetek':'messages',
-    'Állapot összefoglaló':'vehicles',
     'Munkanapok és km':'vehicles',
     'Safety Check':'vehicles',
     'Service Guard':'vehicles',
