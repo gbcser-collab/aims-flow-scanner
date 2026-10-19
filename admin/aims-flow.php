@@ -84,6 +84,54 @@ $flowFleetRows=$flowPdo->query('SELECT
   LEFT JOIN vehicle_operational_state os ON os.vehicle_id=v.id
   WHERE v.enabled=1
   ORDER BY COALESCE(os.hold,0) DESC,open_issues DESC,v.plate ASC')->fetchAll(PDO::FETCH_ASSOC);
+
+$flowUnreadNotifications=(int)$flowPdo->query('SELECT COUNT(*) FROM notifications WHERE read_at IS NULL')->fetchColumn();
+$flowAttentionRows=$flowPdo->query('SELECT n.id,n.type,n.severity,n.title,n.body,n.payload_json,n.created_at,v.plate,v.label
+  FROM notifications n
+  LEFT JOIN vehicles v ON v.id=n.vehicle_id
+  WHERE n.read_at IS NULL
+  ORDER BY CASE n.severity WHEN "critical" THEN 0 WHEN "warning" THEN 1 ELSE 2 END,n.id DESC
+  LIMIT 40')->fetchAll(PDO::FETCH_ASSOC);
+
+$flowDocumentRows=$flowPdo->query('SELECT j.id,j.reference,j.status,j.document_received_at,j.document_local_id,j.document_sync_state,j.updated_at,
+    v.plate,v.label
+  FROM jobs j JOIN vehicles v ON v.id=j.vehicle_id
+  WHERE j.status<>"deleted"
+  ORDER BY j.updated_at DESC LIMIT 150')->fetchAll(PDO::FETCH_ASSOC);
+
+$flowActivityRows=$flowPdo->query('SELECT n.id,n.type,n.severity,n.title,n.body,n.created_at,n.read_at,v.plate
+  FROM notifications n LEFT JOIN vehicles v ON v.id=n.vehicle_id
+  ORDER BY n.id DESC LIMIT 120')->fetchAll(PDO::FETCH_ASSOC);
+
+$flowJobs24Stmt=$flowPdo->prepare('SELECT COUNT(*) FROM jobs WHERE created_at>=:since');
+$flowJobs24Stmt->execute([':since'=>$flowSince24h]);$flowJobs24=(int)$flowJobs24Stmt->fetchColumn();
+$flowDocs24Stmt=$flowPdo->prepare('SELECT COUNT(*) FROM jobs WHERE document_received_at IS NOT NULL AND document_received_at>=:since');
+$flowDocs24Stmt->execute([':since'=>$flowSince24h]);$flowDocs24=(int)$flowDocs24Stmt->fetchColumn();
+$flowMessages24Stmt=$flowPdo->prepare('SELECT COUNT(*) FROM driver_messages WHERE created_at>=:since');
+$flowMessages24Stmt->execute([':since'=>$flowSince24h]);$flowMessages24=(int)$flowMessages24Stmt->fetchColumn();
+
+$flowPartnerAgg=[];
+$flowPartnerSource=$flowPdo->query('SELECT j.id,j.status,j.reference,j.order_payload_json,j.updated_at
+  FROM jobs j WHERE j.status<>"deleted" ORDER BY j.updated_at DESC LIMIT 500')->fetchAll(PDO::FETCH_ASSOC);
+foreach($flowPartnerSource as $pj){
+  $od=[];if(!empty($pj['order_payload_json'])){$tmp=json_decode((string)$pj['order_payload_json'],true);if(is_array($tmp))$od=$tmp;}
+  $name=trim((string)($od['customer_name']??$od['customer']??$od['client_name']??''));
+  if($name==='')continue;
+  $key=mb_strtolower($name,'UTF-8');
+  if(!isset($flowPartnerAgg[$key]))$flowPartnerAgg[$key]=[
+    'name'=>$name,'email'=>trim((string)($od['customer_email']??'')),'jobs'=>0,'active'=>0,'last_reference'=>'','last_at'=>''
+  ];
+  $flowPartnerAgg[$key]['jobs']++;
+  if(($pj['status']??'')==='active')$flowPartnerAgg[$key]['active']++;
+  if($flowPartnerAgg[$key]['last_at']===''||strcmp((string)$pj['updated_at'],$flowPartnerAgg[$key]['last_at'])>0){
+    $flowPartnerAgg[$key]['last_at']=(string)$pj['updated_at'];
+    $flowPartnerAgg[$key]['last_reference']=(string)$pj['reference'];
+    if(trim((string)($od['customer_email']??''))!=='')$flowPartnerAgg[$key]['email']=trim((string)$od['customer_email']);
+  }
+}
+$flowPartnerRows=array_values($flowPartnerAgg);
+usort($flowPartnerRows,function($a,$b){$x=($b['active']<=>$a['active']);return $x!==0?$x:($b['jobs']<=>$a['jobs']);});
+$flowPartnerRows=array_slice($flowPartnerRows,0,100);
 ?><!doctype html><html lang="hu"><head><meta charset="utf-8"><meta name="robots" content="noindex,nofollow,noarchive"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" href="../favicon.ico" sizes="any"><link rel="icon" type="image/png" sizes="48x48" href="../favicon-48x48.png"><link rel="apple-touch-icon" sizes="180x180" href="../apple-touch-icon.png"><title>AIMS FLOW Admin</title><style>
 :root{--g:#d9ad4e;--g2:#f2d77f;--bg:#08090b;--card:#0d0f11;--line:#29261f;--muted:#858078;--ok:#62dda0;--bad:#ff7d85;--amber:#efca69}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:#eee;font:14px Arial,sans-serif}a{color:inherit;text-decoration:none}.wrap{width:min(1360px,calc(100% - 28px));margin:auto;padding:26px 0 70px}.head{display:flex;justify-content:space-between;gap:18px;align-items:center;margin-bottom:18px}.ey{font-size:9px;letter-spacing:.14em;color:#8c7a4d;text-transform:uppercase}.head h1{margin:5px 0 0;font-size:28px}.head h1 span{color:var(--g2)}.nav{display:flex;gap:7px;flex-wrap:wrap}.nav a,.btn{border:1px solid var(--line);border-radius:999px;padding:9px 12px;font-size:10px;font-weight:800;background:#0c0e10;color:#eee;cursor:pointer}.nav a.active,.btn.gold{border:0;background:linear-gradient(135deg,#f1d77e,#b9852d);color:#090909}.statusbar{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:14px 0}.metric,.panel{border:1px solid var(--line);background:linear-gradient(180deg,#0f1113,#0a0b0d);border-radius:18px;padding:16px}.metric small,.panel small{font-size:8px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}.metric b{display:block;font-size:28px;color:var(--g2);margin-top:7px}.panel{margin-top:12px}.panelhead{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:12px}.panel h2{margin:3px 0 0;font-size:18px}.live{display:grid;grid-template-columns:1.25fr .75fr;gap:12px}.table{overflow:auto;border:1px solid #1e2022;border-radius:13px}table{width:100%;border-collapse:collapse;min-width:900px}th,td{text-align:left;padding:11px;border-bottom:1px solid #1d1f21;vertical-align:top}th{color:#827d72;font-size:8px;text-transform:uppercase;letter-spacing:.11em}.chip{display:inline-flex;align-items:center;gap:6px;padding:5px 8px;border:1px solid #333;border-radius:999px;font-size:8px;font-weight:900;text-transform:uppercase}.chip.ok{color:var(--ok);border-color:#28563e}.chip.bad{color:var(--bad);border-color:#603038}.chip.wait{color:var(--amber);border-color:#5b4e29}.mono{font:11px ui-monospace,SFMono-Regular,Consolas,monospace;color:#bcc3cb}.muted{color:#777;line-height:1.45;font-size:11px}.routebox{min-height:320px;display:flex;flex-direction:column;gap:10px}.routebox svg{width:100%;height:230px;border:1px solid #202327;border-radius:14px;background:radial-gradient(circle at 50% 50%,#111820,#090b0e 70%)}.route-meta{display:grid;grid-template-columns:1fr 1fr;gap:8px}.route-meta div{border:1px solid #202327;border-radius:11px;padding:9px}.route-meta small{display:block}.route-meta b{display:block;margin-top:4px}.actions{display:flex;gap:6px;flex-wrap:wrap}.actions button,.actions a{border:1px solid #34322a;background:#111315;color:#eee;border-radius:8px;padding:7px 9px;font-size:9px;font-weight:900;cursor:pointer}.actions .approve{background:linear-gradient(135deg,#f1d77e,#b9852d);color:#090909;border:0}.actions .danger{color:#ffadb1;border-color:#633}.actions .map{color:#a8d4ff;border-color:#31526a}.notice{border:1px solid #4f4529;background:#15130d;color:#d8c58e;border-radius:12px;padding:11px 13px;margin:10px 0}.error{border-color:#633;background:#1b1011;color:#ffb2b6}.success{border-color:#28563e;background:#0c1711;color:#9de4b9}.empty{padding:20px;color:#666;text-align:center}.dispatchgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}.dispatchgrid label{display:grid;gap:6px;color:#aaa;font-size:10px;font-weight:800}.dispatchgrid label.full{grid-column:1/-1}.dispatchgrid input{width:100%;min-height:45px;border:1px solid #333;background:#090b0d;color:#fff;border-radius:10px;padding:0 12px}.dispatchcheck{display:flex!important;grid-column:1/-1;align-items:center;gap:8px}.dispatchcheck input{width:auto;min-height:auto}.dispatchsend{grid-column:1/-1;border:0;border-radius:12px;min-height:50px;background:linear-gradient(135deg,#f1d77e,#b9852d);color:#090909;font-weight:1000;cursor:pointer}.spin{display:inline-block;width:10px;height:10px;border:2px solid #555;border-top-color:var(--g2);border-radius:50%;animation:spin .8s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}@media(max-width:950px){.live{grid-template-columns:1fr}.statusbar{grid-template-columns:1fr 1fr}.head{align-items:flex-start;flex-direction:column}}@media(max-width:520px){.statusbar{grid-template-columns:1fr}.wrap{width:min(100% - 18px,1360px)}.head h1{font-size:23px}}
 
