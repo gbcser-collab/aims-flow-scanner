@@ -2,7 +2,7 @@ name: Build AIMS Flow NEXT Debug APK
 
 on:
   push:
-    branches: [aims-flow-r105-next-v180-dev3, aims-flow-r105-next-v180-dev4, aims-flow-r105-next-v180-dev5, aims-flow-r105-next-v180-dev6-operations]
+    branches: [aims-flow-r105-next-v180-dev3, aims-flow-r105-next-v180-dev4, aims-flow-r105-next-v180-dev5, aims-flow-r105-next-v180-dev6-operations, aims-flow-r105-next-v180-dev9-admin-everything-useful]
     paths:
       - 'lib/**'
       - 'pubspec.yaml'
@@ -130,20 +130,33 @@ jobs:
         run: flutter test
 
       - name: Build NEXT debug APK
+        env:
+          AIMS_TRACKING_TOKEN: ${{ secrets.AIMS_TRACKING_TOKEN }}
+          AIMS_FIREBASE_API_KEY: ${{ secrets.AIMS_FIREBASE_API_KEY }}
+          AIMS_FIREBASE_PROJECT_ID: ${{ secrets.AIMS_FIREBASE_PROJECT_ID }}
+          AIMS_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.AIMS_FIREBASE_MESSAGING_SENDER_ID }}
+          AIMS_FIREBASE_ANDROID_APP_ID: ${{ secrets.AIMS_FIREBASE_ANDROID_APP_ID }}
+          AIMS_FIREBASE_STORAGE_BUCKET: ${{ secrets.AIMS_FIREBASE_STORAGE_BUCKET }}
         run: |
+          test -n "$AIMS_TRACKING_TOKEN"
           flutter build apk --debug \
             --dart-define=AIMS_TRACKING_BASE_URL=https://logistic-aims.hu/api/aims-tracking \
-            --dart-define=AIMS_TRACKING_TOKEN=next-debug-validation
+            --dart-define=AIMS_TRACKING_TOKEN="$AIMS_TRACKING_TOKEN" \
+            --dart-define=AIMS_FIREBASE_API_KEY="$AIMS_FIREBASE_API_KEY" \
+            --dart-define=AIMS_FIREBASE_PROJECT_ID="$AIMS_FIREBASE_PROJECT_ID" \
+            --dart-define=AIMS_FIREBASE_MESSAGING_SENDER_ID="$AIMS_FIREBASE_MESSAGING_SENDER_ID" \
+            --dart-define=AIMS_FIREBASE_ANDROID_APP_ID="$AIMS_FIREBASE_ANDROID_APP_ID" \
+            --dart-define=AIMS_FIREBASE_STORAGE_BUCKET="$AIMS_FIREBASE_STORAGE_BUCKET"
           test -s build/app/outputs/flutter-apk/app-debug.apk
-          cp build/app/outputs/flutter-apk/app-debug.apk AIMS-Flow-NEXT-v1.8.0-dev6.apk
-          sha256sum AIMS-Flow-NEXT-v1.8.0-dev3.apk | tee AIMS-Flow-NEXT-v1.8.0-dev6.apk.sha256
+          cp build/app/outputs/flutter-apk/app-debug.apk AIMS-Flow-NEXT-v1.8.0-dev9.apk
+          sha256sum AIMS-Flow-NEXT-v1.8.0-dev9.apk | tee AIMS-Flow-NEXT-v1.8.0-dev9.apk.sha256
 
       - name: Upload NEXT APK
         uses: actions/upload-artifact@v4
         with:
-          name: AIMS-Flow-NEXT-v1.8.0-dev6
+          name: AIMS-Flow-NEXT-v1.8.0-dev9
           path: |
-            AIMS-Flow-NEXT-v1.8.0-dev3.apk
-            AIMS-Flow-NEXT-v1.8.0-dev3.apk.sha256
+            AIMS-Flow-NEXT-v1.8.0-dev9.apk
+            AIMS-Flow-NEXT-v1.8.0-dev9.apk.sha256
           if-no-files-found: error
           retention-days: 30
