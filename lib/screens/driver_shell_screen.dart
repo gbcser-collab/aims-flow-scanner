@@ -1577,6 +1577,9 @@ class _DriverShellScreenState extends State<DriverShellScreen>
             (_hasOpenStop(job) || !_hasJobCmr(job)),
       );
 
+  bool get _vehicleOnHold =>
+      _serviceAlerts.any((alert) => alert.id == 'hold');
+
   Future<void> _finishWorkday() async {
     if (_hasAcceptedOpenJob) {
       _snack(
@@ -2079,7 +2082,9 @@ class _DriverShellScreenState extends State<DriverShellScreen>
               : '${alert.remainingKm} km múlva'
           : alert.dueDate != null
               ? 'Határidő: ${alert.dueDate!.year}.${alert.dueDate!.month.toString().padLeft(2, '0')}.${alert.dueDate!.day.toString().padLeft(2, '0')}'
-              : 'Egyeztetés szükséges';
+              : alert.detail.trim().isNotEmpty
+                  ? alert.detail
+                  : 'Egyeztetés szükséges';
 
   Future<void> _reportVehicleIssueFromServiceGuard() async {
     final category = await showModalBottomSheet<String>(
@@ -2152,6 +2157,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
       urgent: urgent,
       message: message.isEmpty ? category : '$category · $message',
     );
+    await _refreshServiceGuard();
   }
 
   Future<void> _showServiceGuardDetails() async {
@@ -2833,6 +2839,10 @@ class _DriverShellScreenState extends State<DriverShellScreen>
 
   Future<void> _acceptAndNavigate(int jobId) async {
     if (_actionBusy || _plate.isEmpty) return;
+    if (_vehicleOnHold) {
+      _snack('A jármű HOLD állapotban van. Új fuvar csak irodai feloldás után indítható.');
+      return;
+    }
     setState(() => _actionBusy = true);
     try {
       var job = _jobById(jobId);
@@ -3047,6 +3057,10 @@ class _DriverShellScreenState extends State<DriverShellScreen>
     required bool closeDialog,
   }) async {
     if (_actionBusy || _plate.isEmpty) return;
+    if (action == 'accepted' && _vehicleOnHold) {
+      _snack('A jármű HOLD állapotban van. Az iroda feloldása szükséges.');
+      return;
+    }
     setState(() => _actionBusy = true);
     try {
       final acceptedAt = action == 'accepted' ? DateTime.now() : null;
