@@ -158,8 +158,15 @@ $flowPartnerRows=array_slice($flowPartnerRows,0,100);
 .flow-vehicle-toolbar label{font-size:9px;font-weight:900;color:#888;text-transform:uppercase;letter-spacing:.1em}
 .flow-vehicle-toolbar select{min-height:38px;border:1px solid #343434;background:#090b0d;color:#fff;border-radius:9px;padding:0 10px;font-weight:800}
 .flow-row-filtered{display:none!important}
+.flow-head-tools{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.flow-search{position:relative;min-width:min(360px,45vw)}.flow-search input{width:100%;min-height:40px;border:1px solid #2f3032;background:#0b0d0f;color:#eee;border-radius:11px;padding:0 36px 0 12px;outline:none}.flow-search input:focus{border-color:#74633a}.flow-search span{position:absolute;right:12px;top:9px;color:#777}
+.flow-quick{grid-template-columns:repeat(6,1fr)}
+.flow-attention-list{display:grid;gap:7px}.flow-attention-item{display:grid;grid-template-columns:10px minmax(0,1fr) auto;gap:11px;align-items:center;border:1px solid #202225;background:#0b0d0f;border-radius:12px;padding:10px 12px}.flow-attention-item small{display:block;color:#5f6468;font-size:9px;margin-top:4px}.flow-attention-icon{width:8px;height:38px;border-radius:99px;background:#3c454b}.flow-attention-icon.bad{background:var(--bad)}.flow-attention-icon.wait{background:var(--amber)}.flow-attention-icon.ok{background:var(--ok)}
+.flow-admin-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}.flow-admin-card{border:1px solid #242628;background:#0b0d0f;border-radius:14px;padding:14px;min-height:120px}.flow-admin-card h3{margin:5px 0 6px;font-size:15px}.flow-admin-card p{margin:0 0 12px;color:#777;font-size:11px;line-height:1.5}.flow-admin-card .actions{margin-top:auto}
+.flow-rule-list{display:grid;gap:7px}.flow-rule{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:10px;align-items:center;border-bottom:1px solid #1d1f21;padding:10px 0}.flow-rule:last-child{border-bottom:0}.flow-rule .rstate{width:9px;height:9px;border-radius:50%;background:var(--ok)}
+.flow-search-hidden{display:none!important}
+@media(max-width:1050px){.flow-admin-cards{grid-template-columns:1fr 1fr}.flow-quick{grid-template-columns:repeat(3,1fr)}}
 @media(max-width:800px){.flow-quick{grid-template-columns:repeat(2,1fr)}.flow-switch{border-radius:12px}.flow-urgent{align-items:flex-start;flex-direction:column}}
-</style></head><body><div class="wrap"><div class="head"><div><div class="ey">LOGISTIC-A.I.M.S.</div><h1>AIMS <span>FLOW</span> Admin</h1><div class="muted" style="margin-top:5px">Fuvar · sofőr · jármű · dokumentum · élő helyzet</div></div><div class="nav"><a href="index.php">Főoldal</a><a href="freights.php">Fuvarok</a><details class="flow-more-nav"><summary>További</summary><div class="flow-more-menu"><a href="partners.php">Partnerek</a><a href="foreign-stay-report.php">Riportok</a><a href="automation.php">E-mail bot</a></div></details><a href="logout.php">Kilépés</a></div></div>
+</style></head><body><div class="wrap"><div class="head"><div><div class="ey">LOGISTIC-A.I.M.S.</div><h1>AIMS <span>FLOW</span> Admin</h1><div class="muted" style="margin-top:5px">Egy helyen: fuvar · sofőr · jármű · partner · dokumentum · iroda</div></div><div class="flow-head-tools"><div class="flow-search"><input id="flowGlobalSearch" type="search" autocomplete="off" placeholder="Keresés: rendszám, referencia, partner…"><span>⌕</span></div><div class="nav"><a href="index.php">Admin főoldal</a><a href="logout.php">Kilépés</a></div></div></div>
 <div id="apiNotice" class="notice">A modul a telefonról beérkező <b>valós GPS-pontokat</b>, Flow-fuvarokat és Scanner-adatokat kezeli. Nincs demo/szimulált járműmozgás.</div>
 <?php if(is_array($flowFlash)):?><div class="notice <?=!empty($flowFlash['ok'])?'success':'error'?>"><?=portal_h($flowFlash['message']??'')?><?php if(!empty($flowFlash['trackingUrl'])):?><div style="margin-top:10px"><input id="customerTrackingUrl" readonly value="<?=portal_h($flowFlash['trackingUrl'])?>" onclick="this.select()" style="width:100%;min-height:42px;border:1px solid #3c4b50;background:#07090b;color:#fff;padding:8px 10px"><button class="btn gold" type="button" style="margin-top:7px" onclick="navigator.clipboard&&navigator.clipboard.writeText(document.getElementById('customerTrackingUrl').value)">MEGBÍZÓI LINK MÁSOLÁSA</button></div><?php endif;?></div><?php endif;?>
 <?php if(is_array($flowOpsFlash)):?><div class="notice <?=!empty($flowOpsFlash['ok'])?'success':'error'?>"><?=portal_h($flowOpsFlash['message']??'')?></div><?php endif;?>
@@ -167,6 +174,7 @@ $flowPartnerRows=array_slice($flowPartnerRows,0,100);
   <button type="button" class="active" data-flow-view="overview">ÁTTEKINTÉS</button>
   <button type="button" data-flow-view="jobs">FUVAROK</button>
   <button type="button" data-flow-view="vehicles">JÁRMŰVEK</button>
+  <button type="button" data-flow-view="office">IRODA</button>
   <button type="button" data-flow-view="messages">ÜZENETEK</button>
   <button type="button" data-flow-view="system">RENDSZER</button>
 </div>
@@ -176,8 +184,21 @@ $flowPartnerRows=array_slice($flowPartnerRows,0,100);
   <div class="q <?=$flowOpenIssues?'danger':'good'?>"><small>Nyitott hiba</small><b><?=$flowOpenIssues?></b></div>
   <div class="q <?=$flowHoldCount?'danger':'good'?>"><small>HOLD</small><b><?=$flowHoldCount?></b></div>
   <div class="q"><small>Safety 24h</small><b><?=$flowSafety24?></b></div>
+  <div class="q <?=$flowUnreadNotifications?'warn':'good'?>"><small>Teendő</small><b><?=$flowUnreadNotifications?></b></div>
 </div>
 <?php if($flowHoldCount>0||$flowOpenIssues>0):?><div class="flow-urgent"><div><b>Figyelem:</b> <?=$flowHoldCount?> jármű HOLD · <?=$flowOpenIssues?> nyitott hiba</div><button type="button" data-open-flow-view="vehicles">JÁRMŰVEK MEGNYITÁSA</button></div><?php endif;?>
+<section class="panel"><div class="panelhead"><div><small>TEENDŐK</small><h2>Figyelmet igényel</h2></div><div class="actions"><?php if($flowUnreadNotifications):?><span class="chip wait"><?=$flowUnreadNotifications?> új</span><form method="post" action="aims-flow-operations.php"><input type="hidden" name="csrf" value="<?=portal_h($csrf)?>"><input type="hidden" name="action" value="notifications_read_all"><button class="btn" type="submit">MIND OLVASVA</button></form><?php else:?><span class="chip ok">NINCS ÚJ</span><?php endif;?></div></div>
+<?php if(!$flowAttentionRows):?><div class="empty">Nincs új teendő. A FLOW itt csak azt fogja kiemelni, ami döntést vagy figyelmet kér.</div>
+<?php else:?><div class="flow-attention-list"><?php foreach(array_slice($flowAttentionRows,0,12) as $at):
+$atSeverity=(string)($at['severity']??'info');$atClass=$atSeverity==='critical'?'bad':($atSeverity==='warning'?'wait':'ok');
+$atView='overview';$atType=(string)($at['type']??'');
+if(str_contains($atType,'message'))$atView='messages';elseif(str_contains($atType,'document')||str_contains($atType,'job'))$atView='jobs';elseif(str_contains($atType,'vehicle')||str_contains($atType,'safety')||str_contains($atType,'service'))$atView='vehicles';
+?><div class="flow-attention-item">
+<div class="flow-attention-icon <?=$atClass?>"></div>
+<div><b><?=portal_h($at['title'])?></b><div class="muted"><?=portal_h($at['body'])?></div><small><?=portal_h($at['plate']??'')?> · <?=portal_h($at['created_at'])?></small></div>
+<div class="actions"><button type="button" class="btn" data-open-flow-view="<?=portal_h($atView)?>"<?=!empty($at['plate'])?' data-flow-plate-target="'.portal_h($at['plate']).'"':''?>>MEGNÉZEM</button><form method="post" action="aims-flow-operations.php"><input type="hidden" name="csrf" value="<?=portal_h($csrf)?>"><input type="hidden" name="action" value="notification_read"><input type="hidden" name="notification_id" value="<?=intval($at['id'])?>"><button class="btn" type="submit">✓</button></form></div>
+</div><?php endforeach;?></div><?php endif;?></section>
+
 <section class="panel" id="flowFleetNow"><div class="panelhead"><div><small>MOST</small><h2>Járművek most</h2></div><span class="chip ok"><?=count($flowFleetRows)?> aktív jármű</span></div>
 <div class="table flow-fleet-table"><table><thead><tr><th>Jármű</th><th>Állapot</th><th>Fuvar</th><th>Km</th><th>GPS</th><th>Safety</th><th>Szerviz</th><th>Hiba</th><th></th></tr></thead><tbody>
 <?php if(!$flowFleetRows):?><tr><td colspan="9" class="empty">Nincs aktív FLOW jármű.</td></tr>
