@@ -106,6 +106,10 @@ $flowFleetRows=$flowPdo->query('SELECT
 .flow-vehicle-name{font-weight:900;font-size:14px}.flow-vehicle-sub{margin-top:3px;color:#777;font-size:10px}
 .flow-status-main{display:flex;gap:5px;flex-wrap:wrap}.flow-km{font-weight:900}.flow-gps-fresh{color:var(--ok)}.flow-gps-stale{color:var(--amber)}
 .flow-detail-btn{border:1px solid #363636;background:#111315;color:#eee;border-radius:8px;padding:7px 9px;font-size:9px;font-weight:900;cursor:pointer}
+.flow-vehicle-toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:12px 0;padding:10px 12px;border:1px solid var(--line);background:#0d0f11;border-radius:13px}
+.flow-vehicle-toolbar label{font-size:9px;font-weight:900;color:#888;text-transform:uppercase;letter-spacing:.1em}
+.flow-vehicle-toolbar select{min-height:38px;border:1px solid #343434;background:#090b0d;color:#fff;border-radius:9px;padding:0 10px;font-weight:800}
+.flow-row-filtered{display:none!important}
 @media(max-width:800px){.flow-quick{grid-template-columns:repeat(2,1fr)}.flow-switch{border-radius:12px}.flow-urgent{align-items:flex-start;flex-direction:column}}
 </style></head><body><div class="wrap"><div class="head"><div><div class="ey">LOGISTIC-A.I.M.S.</div><h1>AIMS <span>FLOW</span> Admin</h1><div class="muted" style="margin-top:5px">Fuvar · sofőr · jármű · dokumentum · élő helyzet</div></div><div class="nav"><a href="index.php">Főoldal</a><a href="freights.php">Fuvarok</a><details class="flow-more-nav"><summary>További</summary><div class="flow-more-menu"><a href="partners.php">Partnerek</a><a href="foreign-stay-report.php">Riportok</a><a href="automation.php">E-mail bot</a></div></details><a href="logout.php">Kilépés</a></div></div>
 <div id="apiNotice" class="notice">A modul a telefonról beérkező <b>valós GPS-pontokat</b>, Flow-fuvarokat és Scanner-adatokat kezeli. Nincs demo/szimulált járműmozgás.</div>
@@ -149,7 +153,7 @@ $fvServiceRemain=($fv['next_service_km']!==null&&$fv['current_km']!==null)?((int
 <td><?=$fv['safety_at']?($fvSafetyProblem?'<span class="chip bad">PROBLÉMA</span>':'<span class="chip ok">RENDBEN</span>'):'<span class="chip wait">NINCS</span>'?><?php if($fv['safety_at']):?><div class="muted"><?=portal_h($fv['safety_at'])?></div><?php endif;?></td>
 <td><?php if($fv['next_service_title']):?><b><?=portal_h($fv['next_service_title'])?></b><div class="muted"><?=$fvServiceRemain!==null?($fvServiceRemain<0?number_format(abs($fvServiceRemain),0,',',' ').' km túllépve':number_format($fvServiceRemain,0,',',' ').' km maradt'):portal_h($fv['next_service_date']??'')?></div><?php else:?><span class="muted">Nincs tétel</span><?php endif;?></td>
 <td><?=$fvIssues?'<span class="chip bad">'.$fvIssues.' NYITOTT</span>':'<span class="chip ok">RENDBEN</span>'?><?php if($fvHold&&trim((string)$fv['hold_reason'])!==''):?><div class="muted"><?=portal_h($fv['hold_reason'])?></div><?php endif;?></td>
-<td><button type="button" class="flow-detail-btn" data-open-flow-view="vehicles">RÉSZLETEK</button><?php if($fv['gps_lat']!==null&&$fv['gps_lng']!==null):?><a class="flow-detail-btn" style="display:inline-block;margin-top:5px" target="_blank" rel="noopener" href="https://www.google.com/maps?q=<?=rawurlencode($fv['gps_lat'].','.$fv['gps_lng'])?>">TÉRKÉP ↗</a><?php endif;?></td>
+<td><button type="button" class="flow-detail-btn" data-open-flow-view="vehicles" data-flow-plate-target="<?=portal_h($fv['plate'])?>">RÉSZLETEK</button><?php if($fv['gps_lat']!==null&&$fv['gps_lng']!==null):?><a class="flow-detail-btn" style="display:inline-block;margin-top:5px" target="_blank" rel="noopener" href="https://www.google.com/maps?q=<?=rawurlencode($fv['gps_lat'].','.$fv['gps_lng'])?>">TÉRKÉP ↗</a><?php endif;?></td>
 </tr>
 <?php endforeach;endif;?></tbody></table></div></section>
 <section class="panel"><div class="panelhead"><div><small>ÚJ FUVAR</small><h2>Fuvar küldése</h2></div><span class="chip ok"><?=$flowPhoneCount?> aktív mobil</span></div>
@@ -202,12 +206,20 @@ $fvServiceRemain=($fv['next_service_km']!==null&&$fv['current_km']!==null)?((int
 <div id="flowMsgList" style="margin-top:14px;display:grid;gap:7px"><div class="empty">Üzenetek betöltése…</div></div>
 <p class="muted">A sofőr üzenete az admin telefonjára pushként is megérkezik. Ha ez az oldal nyitva van, a beszélgetés automatikusan frissül. Az admin válasza pushként megy vissza a sofőr AIMS Flow appjába.</p></section>
 <div id="flow-operations"></div>
+<div class="flow-vehicle-toolbar flow-panel-hidden" id="flowVehicleToolbar">
+  <label for="flowVehicleFilter">Jármű</label>
+  <select id="flowVehicleFilter">
+    <option value="">Összes aktív jármű</option>
+    <?php foreach($flowDriverVehicles as $v):if(empty($v['enabled']))continue;?><option value="<?=portal_h($v['plate'])?>"><?=portal_h(trim((string)$v['label'])!==''?$v['label'].' · '.$v['plate']:$v['plate'])?></option><?php endforeach;?>
+  </select>
+  <span class="muted" id="flowVehicleFilterHint">Minden jármű adata látszik.</span>
+</div>
 <section class="panel"><div class="panelhead"><div><small>MUNKAIDŐ</small><h2>Munkanapok és km</h2></div><span class="chip <?=$flowOpenWorkdays?'wait':'ok'?>"><?=$flowOpenWorkdays?> aktív</span></div>
 <div class="table"><table><thead><tr><th>Jármű</th><th>Fuvar</th><th>Kezdés</th><th>Vége</th><th>Munkaidő</th><th>Kezdő km</th><th>Záró km</th><th>Nap km</th><th>Állapot</th></tr></thead><tbody>
 <?php if(!$flowWorkdayRows):?><tr><td colspan="9" class="empty">Még nincs rögzített FLOW munkanap.</td></tr>
 <?php else:foreach($flowWorkdayRows as $wd):
 $wdStart=strtotime((string)$wd['started_at']);$wdEnd=!empty($wd['finished_at'])?strtotime((string)$wd['finished_at']):time();$wdSec=($wdStart!==false&&$wdEnd!==false)?max(0,$wdEnd-$wdStart):0;$wdDur=sprintf('%02d:%02d',intdiv($wdSec,3600),intdiv($wdSec%3600,60));$wdKm=($wd['end_km']!==null)?((int)$wd['end_km']-(int)$wd['start_km']):null;?>
-<tr>
+<tr data-flow-plate="<?=portal_h($wd['plate'])?>">
 <td><b><?=portal_h(trim((string)$wd['label'])!==''?$wd['label']:$wd['plate'])?></b><div class="muted"><?=portal_h($wd['plate'])?></div></td>
 <td><?=portal_h($wd['reference']??'—')?></td>
 <td><?=portal_h($wd['started_at'])?></td>
@@ -223,7 +235,7 @@ $wdStart=strtotime((string)$wd['started_at']);$wdEnd=!empty($wd['finished_at'])?
 <div class="table"><table><thead><tr><th>Jármű</th><th>Idő</th><th>Km</th><th>Eredmény</th><th>Olaj</th><th>Hűtőfolyadék</th><th>Kerék</th><th>Km-fotó</th></tr></thead><tbody>
 <?php if(!$flowSafetyRows):?><tr><td colspan="8" class="empty">Még nincs beérkezett Safety Check.</td></tr>
 <?php else:foreach($flowSafetyRows as $sc):$scStatus=json_decode((string)$sc['statuses_json'],true);if(!is_array($scStatus))$scStatus=[];?>
-<tr>
+<tr data-flow-plate="<?=portal_h($sc['plate'])?>">
 <td><b><?=portal_h(trim((string)$sc['label'])!==''?$sc['label']:$sc['plate'])?></b><div class="muted"><?=portal_h($sc['plate'])?></div></td>
 <td><?=portal_h($sc['created_at'])?></td>
 <td><?=number_format((int)$sc['km'],0,',',' ')?> km</td>
@@ -243,7 +255,7 @@ $svcDateDays=null;if(!empty($svc['due_date'])){$ts=strtotime((string)$svc['due_d
 $svcBad=($svcRemain!==null&&$svcRemain<=0)||($svcDateDays!==null&&$svcDateDays<0);
 $svcWait=!$svcBad&&(($svcRemain!==null&&$svcRemain<=(int)$svc['warning_km'])||($svcDateDays!==null&&$svcDateDays<=(int)$svc['warning_days']));
 ?>
-<tr>
+<tr data-flow-plate="<?=portal_h($svc['plate'])?>">
 <td><b><?=portal_h($svc['plate'])?></b><?php if(!empty($svc['vehicle_hold'])):?><div><span class="chip bad">HOLD</span></div><?php endif;?></td>
 <td><b><?=portal_h($svc['title'])?></b><div class="muted"><?=portal_h($svc['notes']??'')?></div></td>
 <td><?=$svc['current_km']!==null?number_format((int)$svc['current_km'],0,',',' ').' km':'—'?></td>
@@ -273,7 +285,7 @@ $svcWait=!$svcBad&&(($svcRemain!==null&&$svcRemain<=(int)$svc['warning_km'])||($
 <div class="table"><table><thead><tr><th>Jármű</th><th>Hiba</th><th>Üzenet</th><th>Idő</th><th>Állapot</th><th>HOLD</th><th>Művelet</th></tr></thead><tbody>
 <?php if(!$flowIssueRows):?><tr><td colspan="7" class="empty">Nincs járműhiba.</td></tr>
 <?php else:foreach($flowIssueRows as $issue):?>
-<tr>
+<tr data-flow-plate="<?=portal_h($issue['plate'])?>">
 <td><b><?=portal_h($issue['plate'])?></b></td>
 <td><b><?=portal_h($issue['category'])?></b><?php if(!empty($issue['urgent'])):?><div><span class="chip bad">KRITIKUS</span></div><?php endif;?></td>
 <td><?=portal_h($issue['message'])?></td>
@@ -371,6 +383,25 @@ $('refreshBtn').addEventListener('click',refreshAll);refreshAll();setInterval(re
   const gpsMetrics=document.getElementById('flowGpsMetrics');
   if(gpsMetrics)gpsMetrics.dataset.flowGroups='jobs';
 
+  const vehicleToolbar=document.getElementById('flowVehicleToolbar');
+  const vehicleFilter=document.getElementById('flowVehicleFilter');
+  const vehicleFilterHint=document.getElementById('flowVehicleFilterHint');
+
+  function applyVehicleFilter(plate){
+    const normalized=(plate||'').trim().toUpperCase();
+    document.querySelectorAll('[data-flow-plate]').forEach(row=>{
+      const rowPlate=(row.dataset.flowPlate||'').trim().toUpperCase();
+      row.classList.toggle('flow-row-filtered',!!normalized&&rowPlate!==normalized);
+    });
+    if(vehicleFilter&&vehicleFilter.value!==normalized)vehicleFilter.value=normalized;
+    if(vehicleFilterHint){
+      vehicleFilterHint.textContent=normalized
+        ? normalized+' részletei'
+        : 'Minden jármű adata látszik.';
+    }
+    try{localStorage.setItem('aimsFlowAdminVehicle',normalized)}catch(e){}
+  }
+
   function setView(view){
     panels.forEach(panel=>{
       const groups=(panel.dataset.flowGroups||'').split(/\s+/).filter(Boolean);
@@ -381,6 +412,7 @@ $('refreshBtn').addEventListener('click',refreshAll);refreshAll();setInterval(re
       const groups=(gpsMetrics.dataset.flowGroups||'').split(/\s+/);
       gpsMetrics.classList.toggle('flow-panel-hidden',!groups.includes(view));
     }
+    if(vehicleToolbar)vehicleToolbar.classList.toggle('flow-panel-hidden',view!=='vehicles');
     document.querySelectorAll('#flowViewSwitch button').forEach(btn=>{
       btn.classList.toggle('active',btn.dataset.flowView===view);
     });
@@ -391,12 +423,23 @@ $('refreshBtn').addEventListener('click',refreshAll);refreshAll();setInterval(re
     btn.addEventListener('click',()=>setView(btn.dataset.flowView))
   );
   document.querySelectorAll('[data-open-flow-view]').forEach(btn=>
-    btn.addEventListener('click',()=>setView(btn.dataset.openFlowView))
+    btn.addEventListener('click',()=>{
+      const plate=btn.dataset.flowPlateTarget||'';
+      if(plate)applyVehicleFilter(plate);
+      setView(btn.dataset.openFlowView);
+    })
   );
+  if(vehicleFilter){
+    vehicleFilter.addEventListener('change',()=>applyVehicleFilter(vehicleFilter.value));
+  }
   let initial='overview';
   try{
     const saved=localStorage.getItem('aimsFlowAdminView');
     if(['overview','jobs','vehicles','messages','system'].includes(saved))initial=saved;
+  }catch(e){}
+  try{
+    const savedPlate=localStorage.getItem('aimsFlowAdminVehicle')||'';
+    if(savedPlate)applyVehicleFilter(savedPlate);
   }catch(e){}
   setView(initial);
 })();
