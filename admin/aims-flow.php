@@ -117,6 +117,101 @@ $flowServiceRows=$flowPdo->query('SELECT s.*,v.plate,v.label,
 </div>
 <div id="flowMsgList" style="margin-top:14px;display:grid;gap:7px"><div class="empty">Üzenetek betöltése…</div></div>
 <p class="muted">A sofőr üzenete az admin telefonjára pushként is megérkezik. Ha ez az oldal nyitva van, a beszélgetés automatikusan frissül. Az admin válasza pushként megy vissza a sofőr AIMS Flow appjába.</p></section>
+<section class="panel" id="flow-operations"><div class="panelhead"><div><small>FLOW OFFICE • OPERATÍV KONTROLL</small><h2>Munkanap · Safety · Service Guard · járműhiba</h2></div><span class="chip ok">SOFŐR → IRODA</span></div>
+<p class="muted">Ez a napi operatív FLOW felület. A sofőrapp munkanap-, kilométer-, Safety Check-, Service Guard- és hibajelzései ide érkeznek; ez nem AIMS CONTROL rendszeradmin.</p>
+<div class="statusbar">
+  <div class="metric"><small>Aktív munkanap</small><b><?=$flowOpenWorkdays?></b></div>
+  <div class="metric"><small>Safety Check 24h</small><b><?=$flowSafety24?></b></div>
+  <div class="metric"><small>Nyitott járműhiba</small><b><?=$flowOpenIssues?></b></div>
+  <div class="metric"><small>Jármű HOLD</small><b><?=$flowHoldCount?></b></div>
+</div></section>
+
+<section class="panel"><div class="panelhead"><div><small>MUNKA / PIHENŐ • KM</small><h2>Sofőr munkanapok</h2></div><span class="chip <?=$flowOpenWorkdays?'wait':'ok'?>"><?=$flowOpenWorkdays?> aktív</span></div>
+<div class="table"><table><thead><tr><th>Jármű</th><th>Fuvar</th><th>Kezdés</th><th>Vége</th><th>Munkaidő</th><th>Kezdő km</th><th>Záró km</th><th>Nap km</th><th>Állapot</th></tr></thead><tbody>
+<?php if(!$flowWorkdayRows):?><tr><td colspan="9" class="empty">Még nincs rögzített FLOW munkanap.</td></tr>
+<?php else:foreach($flowWorkdayRows as $wd):
+$wdStart=strtotime((string)$wd['started_at']);$wdEnd=!empty($wd['finished_at'])?strtotime((string)$wd['finished_at']):time();$wdSec=($wdStart!==false&&$wdEnd!==false)?max(0,$wdEnd-$wdStart):0;$wdDur=sprintf('%02d:%02d',intdiv($wdSec,3600),intdiv($wdSec%3600,60));$wdKm=($wd['end_km']!==null)?((int)$wd['end_km']-(int)$wd['start_km']):null;?>
+<tr>
+<td><b><?=portal_h(trim((string)$wd['label'])!==''?$wd['label']:$wd['plate'])?></b><div class="muted"><?=portal_h($wd['plate'])?></div></td>
+<td><?=portal_h($wd['reference']??'—')?></td>
+<td><?=portal_h($wd['started_at'])?></td>
+<td><?=portal_h($wd['finished_at']??'—')?></td>
+<td><b><?=$wdDur?></b></td>
+<td><?=number_format((int)$wd['start_km'],0,',',' ')?> km</td>
+<td><?=$wd['end_km']!==null?number_format((int)$wd['end_km'],0,',',' ').' km':'—'?></td>
+<td><?=$wdKm!==null?number_format($wdKm,0,',',' ').' km':'—'?></td>
+<td><?=$wd['finished_at']?'<span class="chip ok">PIHENŐ / LEZÁRVA</span>':'<span class="chip wait">MUNKÁBAN</span>'?></td>
+</tr><?php endforeach;endif;?></tbody></table></div></section>
+
+<section class="panel"><div class="panelhead"><div><small>FLOW SAFETY • KÖTELEZŐ FOTÓK</small><h2>Járműellenőrzések</h2></div><span class="chip ok"><?=count($flowSafetyRows)?> rekord</span></div>
+<div class="table"><table><thead><tr><th>Jármű</th><th>Idő</th><th>Km</th><th>Eredmény</th><th>Olaj</th><th>Hűtőfolyadék</th><th>Kerék</th><th>Km-fotó</th></tr></thead><tbody>
+<?php if(!$flowSafetyRows):?><tr><td colspan="8" class="empty">Még nincs beérkezett Safety Check.</td></tr>
+<?php else:foreach($flowSafetyRows as $sc):$scStatus=json_decode((string)$sc['statuses_json'],true);if(!is_array($scStatus))$scStatus=[];?>
+<tr>
+<td><b><?=portal_h(trim((string)$sc['label'])!==''?$sc['label']:$sc['plate'])?></b><div class="muted"><?=portal_h($sc['plate'])?></div></td>
+<td><?=portal_h($sc['created_at'])?></td>
+<td><?=number_format((int)$sc['km'],0,',',' ')?> km</td>
+<td><?=!empty($sc['has_problem'])?'<span class="chip bad">PROBLÉMA</span>':'<span class="chip ok">RENDBEN</span>'?><div class="muted"><?=portal_h(implode(' · ',array_map(fn($k,$v)=>$k.':'.$v,array_keys($scStatus),array_values($scStatus))))?></div></td>
+<?php foreach(['oil_photo_id','coolant_photo_id','tires_photo_id','odometer_photo_id'] as $photoKey):?>
+<td><?php if(!empty($sc[$photoKey])):?><a class="btn" target="_blank" rel="noopener" href="aims-flow-safety-photo.php?id=<?=intval($sc[$photoKey])?>">FOTÓ ↗</a><?php else:?><span class="chip bad">HIÁNYZIK</span><?php endif;?></td>
+<?php endforeach;?>
+</tr><?php endforeach;endif;?></tbody></table></div>
+<p class="muted">A fotók nem publikus fájllinkek: csak bejelentkezett admin tudja megnyitni őket.</p></section>
+
+<section class="panel"><div class="panelhead"><div><small>SERVICE GUARD • KM / DÁTUM</small><h2>Szervizfigyelés</h2></div><span class="chip <?=count($flowServiceRows)?'wait':'ok'?>"><?=count($flowServiceRows)?> aktív tétel</span></div>
+<div class="table"><table><thead><tr><th>Jármű</th><th>Tétel</th><th>Aktuális km</th><th>Esedékes km</th><th>Dátum</th><th>Állapot</th><th>Utolsó szerviz</th><th>Művelet</th></tr></thead><tbody>
+<?php if(!$flowServiceRows):?><tr><td colspan="8" class="empty">Még nincs Service Guard tétel. Alul tudsz létrehozni.</td></tr>
+<?php else:foreach($flowServiceRows as $svc):
+$svcRemain=($svc['due_km']!==null&&$svc['current_km']!==null)?((int)$svc['due_km']-(int)$svc['current_km']):null;
+$svcDateDays=null;if(!empty($svc['due_date'])){$ts=strtotime((string)$svc['due_date']);if($ts!==false)$svcDateDays=(int)floor(($ts-strtotime(gmdate('Y-m-d')))/86400);}
+$svcBad=($svcRemain!==null&&$svcRemain<=0)||($svcDateDays!==null&&$svcDateDays<0);
+$svcWait=!$svcBad&&(($svcRemain!==null&&$svcRemain<=(int)$svc['warning_km'])||($svcDateDays!==null&&$svcDateDays<=(int)$svc['warning_days']));
+?>
+<tr>
+<td><b><?=portal_h($svc['plate'])?></b><?php if(!empty($svc['vehicle_hold'])):?><div><span class="chip bad">HOLD</span></div><?php endif;?></td>
+<td><b><?=portal_h($svc['title'])?></b><div class="muted"><?=portal_h($svc['notes']??'')?></div></td>
+<td><?=$svc['current_km']!==null?number_format((int)$svc['current_km'],0,',',' ').' km':'—'?></td>
+<td><?=$svc['due_km']!==null?number_format((int)$svc['due_km'],0,',',' ').' km':'—'?><?php if($svcRemain!==null):?><div class="muted"><?=$svcRemain<0?number_format(abs($svcRemain),0,',',' ').' km túllépés':number_format($svcRemain,0,',',' ').' km maradt'?></div><?php endif;?></td>
+<td><?=portal_h($svc['due_date']??'—')?></td>
+<td><?=$svcBad?'<span class="chip bad">LEJÁRT</span>':($svcWait?'<span class="chip wait">KÖZELEG</span>':'<span class="chip ok">RENDBEN</span>')?></td>
+<td><?=portal_h($svc['last_done_at']??'—')?><?php if($svc['last_done_km']!==null):?><div class="muted"><?=number_format((int)$svc['last_done_km'],0,',',' ')?> km</div><?php endif;?></td>
+<td><form method="post" action="aims-flow-operations.php" class="actions"><input type="hidden" name="csrf" value="<?=portal_h($csrf)?>"><input type="hidden" name="action" value="service_complete"><input type="hidden" name="service_id" value="<?=intval($svc['id'])?>"><input name="completed_km" inputmode="numeric" placeholder="km" style="width:92px;border:1px solid #333;background:#090b0d;color:#fff;border-radius:8px;padding:7px"><button class="approve" type="submit">SZERVIZ KÉSZ</button></form></td>
+</tr><?php endforeach;endif;?></tbody></table></div>
+
+<form class="dispatchgrid" method="post" action="aims-flow-operations.php" style="margin-top:14px">
+<input type="hidden" name="csrf" value="<?=portal_h($csrf)?>"><input type="hidden" name="action" value="service_save">
+<label>Jármű<select name="plate" required style="width:100%;min-height:45px;border:1px solid #333;background:#090b0d;color:#fff;border-radius:10px;padding:0 12px"><?php foreach($flowDriverVehicles as $v):if(empty($v['enabled']))continue;?><option value="<?=portal_h($v['plate'])?>"><?=portal_h($v['plate'])?></option><?php endforeach;?></select></label>
+<label>Típus<select name="service_type" style="width:100%;min-height:45px;border:1px solid #333;background:#090b0d;color:#fff;border-radius:10px;padding:0 12px"><option value="oil">Olajcsere</option><option value="tires">Gumi / kerék</option><option value="brakes">Fék</option><option value="timing">Vezérlés</option><option value="inspection">Műszaki</option><option value="insurance">Biztosítás / assistance</option><option value="custom">Egyéb</option></select></label>
+<label class="full">Tétel neve<input name="title" required placeholder="pl. Motorolaj + szűrő"></label>
+<label>Esedékes km<input name="due_km" inputmode="numeric" placeholder="205000"></label>
+<label>Esedékes dátum<input name="due_date" type="date"></label>
+<label>Figyelmeztetés km-rel előtte<input name="warning_km" inputmode="numeric" value="2000"></label>
+<label>Figyelmeztetés nappal előtte<input name="warning_days" inputmode="numeric" value="30"></label>
+<label>Ismétlődés km<input name="interval_km" inputmode="numeric" placeholder="15000"></label>
+<label>Ismétlődés nap<input name="interval_days" inputmode="numeric" placeholder="365"></label>
+<label class="full">Megjegyzés<input name="notes" placeholder="pl. 5W-30, gyári szűrő"></label>
+<button class="dispatchsend" type="submit">SERVICE GUARD TÉTEL MENTÉSE</button>
+</form></section>
+
+<section class="panel"><div class="panelhead"><div><small>JÁRMŰHIBA • HOLD</small><h2>Nyitott hibák és irodai feloldás</h2></div><span class="chip <?=$flowOpenIssues?'bad':'ok'?>"><?=$flowOpenIssues?> nyitott</span></div>
+<div class="table"><table><thead><tr><th>Jármű</th><th>Hiba</th><th>Üzenet</th><th>Idő</th><th>Állapot</th><th>HOLD</th><th>Művelet</th></tr></thead><tbody>
+<?php if(!$flowIssueRows):?><tr><td colspan="7" class="empty">Nincs járműhiba.</td></tr>
+<?php else:foreach($flowIssueRows as $issue):?>
+<tr>
+<td><b><?=portal_h($issue['plate'])?></b></td>
+<td><b><?=portal_h($issue['category'])?></b><?php if(!empty($issue['urgent'])):?><div><span class="chip bad">KRITIKUS</span></div><?php endif;?></td>
+<td><?=portal_h($issue['message'])?></td>
+<td><?=portal_h($issue['created_at'])?></td>
+<td><?=$issue['status']==='open'?'<span class="chip bad">NYITOTT</span>':'<span class="chip ok">LEZÁRVA</span>'?></td>
+<td><?=!empty($issue['vehicle_hold'])?'<span class="chip bad">HOLD</span>':'<span class="chip ok">MEHET</span>'?><?php if(!empty($issue['hold_reason'])):?><div class="muted"><?=portal_h($issue['hold_reason'])?></div><?php endif;?></td>
+<td><?php if($issue['status']==='open'):?><form method="post" action="aims-flow-operations.php" style="display:grid;gap:6px;min-width:190px"><input type="hidden" name="csrf" value="<?=portal_h($csrf)?>"><input type="hidden" name="action" value="issue_resolve"><input type="hidden" name="issue_id" value="<?=intval($issue['id'])?>"><input name="resolved_note" placeholder="Megoldás / megjegyzés" style="border:1px solid #333;background:#090b0d;color:#fff;border-radius:8px;padding:7px"><label class="muted"><input type="checkbox" name="release_hold" value="1"> HOLD feloldása, ha nincs más kritikus hiba</label><button class="btn gold" type="submit">HIBA LEZÁRÁSA</button></form><?php else:?><span class="muted"><?=portal_h($issue['resolved_note']??'')?></span><?php endif;?></td>
+</tr><?php endforeach;endif;?></tbody></table></div>
+
+<div class="dispatchgrid" style="margin-top:14px">
+<form method="post" action="aims-flow-operations.php" style="display:grid;gap:8px"><input type="hidden" name="csrf" value="<?=portal_h($csrf)?>"><input type="hidden" name="action" value="vehicle_hold"><select name="plate" required style="min-height:45px;border:1px solid #333;background:#090b0d;color:#fff;border-radius:10px;padding:0 12px"><?php foreach($flowDriverVehicles as $v):if(empty($v['enabled']))continue;?><option value="<?=portal_h($v['plate'])?>"><?=portal_h($v['plate'])?></option><?php endforeach;?></select><input name="hold_reason" required placeholder="HOLD oka" style="min-height:45px;border:1px solid #333;background:#090b0d;color:#fff;border-radius:10px;padding:0 12px"><button class="btn danger" type="submit">JÁRMŰ HOLD</button></form>
+<form method="post" action="aims-flow-operations.php" style="display:grid;gap:8px"><input type="hidden" name="csrf" value="<?=portal_h($csrf)?>"><input type="hidden" name="action" value="vehicle_release"><select name="plate" required style="min-height:45px;border:1px solid #333;background:#090b0d;color:#fff;border-radius:10px;padding:0 12px"><?php foreach($flowDriverVehicles as $v):if(empty($v['enabled']))continue;?><option value="<?=portal_h($v['plate'])?>"><?=portal_h($v['plate'])?></option><?php endforeach;?></select><div class="muted">Csak akkor oldd fel, ha a jármű biztonságosan használható.</div><button class="btn approve" type="submit">HOLD FELOLDÁSA</button></form>
+</div></section>
+
 <div class="statusbar"><div class="metric"><small>Aktív fuvar GPS</small><b id="mActive">—</b></div><div class="metric"><small>Aktív Flow-fuvar</small><b><?=$flowActiveJobs?></b></div><div class="metric"><small>Flow mobilok</small><b><?=$flowPhoneCount?></b></div><div class="metric"><small>CMR szinkron 24h</small><b id="mCmr">—</b></div></div>
 <section class="panel"><div class="panelhead"><div><small>REGISTRATION POINT LEARNING</small><h2>Tanult regisztrációs GPS-pontok</h2></div><span class="chip ok"><?=count($flowRegistrationPoints)?> ismert pont</span></div>
 <div class="table"><table><thead><tr><th>Cég</th><th>Típus</th><th>Cím</th><th>GPS</th><th>Megerősítés</th><th>Utolsó tanulás</th><th></th></tr></thead><tbody>
