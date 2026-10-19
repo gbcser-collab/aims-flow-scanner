@@ -1658,7 +1658,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
               style: const TextStyle(
                 fontSize: 9,
                 fontWeight: FontWeight.w900,
-                color: Colors.white70,
+                color: Colors.white,
               ),
             ),
             const SizedBox(height: 3),
@@ -1713,7 +1713,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                               child: Text(
                                 'Offline mentve · szinkronra vár',
                                 style: TextStyle(
-                                  color: Colors.orangeAccent,
+                                  color: Colors.white,
                                   fontSize: 11,
                                   fontWeight: FontWeight.w800,
                                 ),
@@ -1750,7 +1750,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                     const Text(
                       'A munkanap a fuvar és a kötelező dokumentum lezárása után fejezhető be.',
                       style: TextStyle(
-                        color: Colors.white70,
+                        color: Colors.white,
                         fontSize: 11,
                         fontWeight: FontWeight.w700,
                       ),
