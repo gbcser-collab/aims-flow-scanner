@@ -33,6 +33,11 @@ $flowSafety24=(int)$flowSafety24Stmt->fetchColumn();
 $flowMissingDocs=(int)$flowPdo->query('SELECT COUNT(*) FROM jobs j
   WHERE j.status<>"deleted" AND j.document_received_at IS NULL
     AND NOT EXISTS(SELECT 1 FROM job_stops s WHERE s.job_id=j.id AND s.completed_at IS NULL)')->fetchColumn();
+$flowMissingDocRows=$flowPdo->query('SELECT j.id,j.reference,j.updated_at,v.plate,v.label
+  FROM jobs j JOIN vehicles v ON v.id=j.vehicle_id
+  WHERE j.status<>"deleted" AND j.document_received_at IS NULL
+    AND NOT EXISTS(SELECT 1 FROM job_stops s WHERE s.job_id=j.id AND s.completed_at IS NULL)
+  ORDER BY j.updated_at DESC LIMIT 20')->fetchAll(PDO::FETCH_ASSOC);
 
 $flowWorkdayRows=$flowPdo->query('SELECT w.*,v.plate,v.label,j.reference
   FROM driver_workdays w
@@ -65,6 +70,15 @@ $flowServiceRows=$flowPdo->query('SELECT s.*,v.plate,v.label,
   LEFT JOIN vehicle_operational_state os ON os.vehicle_id=s.vehicle_id
   WHERE s.enabled=1
   ORDER BY v.plate,s.due_km,s.due_date,s.id')->fetchAll(PDO::FETCH_ASSOC);
+$flowServiceDueRows=[];
+$flowTodayTs=strtotime(gmdate('Y-m-d'));
+foreach($flowServiceRows as $sd){
+  $kmRemain=($sd['due_km']!==null&&$sd['current_km']!==null)?((int)$sd['due_km']-(int)$sd['current_km']):null;
+  $dateRemain=null;if(!empty($sd['due_date'])){$ts=strtotime((string)$sd['due_date']);if($ts!==false)$dateRemain=(int)floor(($ts-$flowTodayTs)/86400);}
+  $isDue=($kmRemain!==null&&$kmRemain<=0)||($dateRemain!==null&&$dateRemain<0);
+  if($isDue){$sd['_km_remain']=$kmRemain;$sd['_date_remain']=$dateRemain;$flowServiceDueRows[]=$sd;}
+}
+$flowActionCount=$flowUnreadNotifications+count($flowMissingDocRows)+count($flowServiceDueRows);
 
 $flowFleetRows=$flowPdo->query('SELECT
     v.id,v.plate,v.label,v.enabled,
@@ -200,20 +214,20 @@ $flowPartnerRows=array_slice($flowPartnerRows,0,100);
   <div class="q <?=$flowOpenIssues?'danger':'good'?>"><small>Nyitott hiba</small><b><?=$flowOpenIssues?></b></div>
   <div class="q <?=$flowHoldCount?'danger':'good'?>"><small>HOLD</small><b><?=$flowHoldCount?></b></div>
   <div class="q <?=$flowMissingDocs?'warn':'good'?>"><small>Doksi hiány</small><b><?=$flowMissingDocs?></b></div>
-  <div class="q <?=$flowUnreadNotifications?'warn':'good'?>"><small>Teendő</small><b><?=$flowUnreadNotifications?></b></div>
+  <div class="q <?=$flowActionCount?'warn':'good'?>"><small>Teendő</small><b><?=$flowActionCount?></b></div>
 </div>
 <?php if($flowHoldCount>0||$flowOpenIssues>0):?><div class="flow-urgent"><div><b>Figyelem:</b> <?=$flowHoldCount?> jármű HOLD · <?=$flowOpenIssues?> nyitott hiba</div><button type="button" data-open-flow-view="vehicles">JÁRMŰVEK MEGNYITÁSA</button></div><?php endif;?>
-<section class="panel"><div class="panelhead"><div><small>TEENDŐK</small><h2>Figyelmet igényel</h2></div><div class="actions"><?php if($flowUnreadNotifications):?><span class="chip wait"><?=$flowUnreadNotifications?> új</span><form method="post" action="aims-flow-operations.php"><input type="hidden" name="csrf" value="<?=portal_h($csrf)?>"><input type="hidden" name="action" value="notifications_read_all"><button class="btn" type="submit">MIND OLVASVA</button></form><?php else:?><span class="chip ok">NINCS ÚJ</span><?php endif;?></div></div>
-<?php if(!$flowAttentionRows):?><div class="empty">Nincs új teendő. A FLOW itt csak azt fogja kiemelni, ami döntést vagy figyelmet kér.</div>
-<?php else:?><div class="flow-attention-list"><?php foreach(array_slice($flowAttentionRows,0,12) as $at):
+<section class="panel"><div class="panelhead"><div><small>TEENDŐK</small><h2>Figyelmet igényel</h2></div><div class="actions"><?php if($flowActionCount):?><span class="chip wait"><?=$flowActionCount?> tétel</span><?php else:?><span class="chip ok">MINDEN RENDBEN</span><?php endif;?><?php if($flowUnreadNotifications):?><form method="post" action="aims-flow-operations.php"><input type="hidden" name="csrf" value="<?=portal_h($csrf)?>"><input type="hidden" name="action" value="notifications_read_all"><button class="btn" type="submit">ÉRTESÍTÉSEK OLVASVA</button></form><?php endif;?></div></div>
+<?php if(!$flowActionCount):?><div class="empty">Nincs új teendő. A FLOW itt csak azt emeli ki, ami döntést vagy figyelmet kér.</div>
+<?php else:?><div class="flow-attention-list">
+<?php foreach(array_slice($flowMissingDocRows,0,8) as $md):?><div class="flow-attention-item"><div class="flow-attention-icon wait"></div><div><b>Dokumentum hiányzik · <?=portal_h($md['reference'])?></b><div class="muted">A fuvar megállói lezártak, de CMR/POD még nincs rögzítve.</div><small><?=portal_h($md['plate'])?> · <?=portal_h($md['updated_at'])?></small></div><div class="actions"><button type="button" class="btn" data-open-flow-view="office" data-flow-scroll="document-center">DOKSIK</button></div></div><?php endforeach;?>
+<?php foreach(array_slice($flowServiceDueRows,0,8) as $sd):?><div class="flow-attention-item"><div class="flow-attention-icon bad"></div><div><b>Lejárt szerviz · <?=portal_h($sd['title'])?></b><div class="muted"><?=portal_h($sd['plate'])?><?=$sd['_km_remain']!==null?' · '.number_format(abs((int)$sd['_km_remain']),0,',',' ').' km eltérés':''?><?=!empty($sd['due_date'])?' · '.$sd['due_date']:''?></div><small>Service Guard</small></div><div class="actions"><button type="button" class="btn" data-open-flow-view="vehicles" data-flow-plate-target="<?=portal_h($sd['plate'])?>">JÁRMŰ</button></div></div><?php endforeach;?>
+<?php foreach(array_slice($flowAttentionRows,0,12) as $at):
 $atSeverity=(string)($at['severity']??'info');$atClass=$atSeverity==='critical'?'bad':($atSeverity==='warning'?'wait':'ok');
 $atView='overview';$atType=(string)($at['type']??'');
 if(str_contains($atType,'message'))$atView='messages';elseif(str_contains($atType,'document')||str_contains($atType,'job'))$atView='jobs';elseif(str_contains($atType,'vehicle')||str_contains($atType,'safety')||str_contains($atType,'service'))$atView='vehicles';
-?><div class="flow-attention-item">
-<div class="flow-attention-icon <?=$atClass?>"></div>
-<div><b><?=portal_h($at['title'])?></b><div class="muted"><?=portal_h($at['body'])?></div><small><?=portal_h($at['plate']??'')?> · <?=portal_h($at['created_at'])?></small></div>
-<div class="actions"><button type="button" class="btn" data-open-flow-view="<?=portal_h($atView)?>"<?=!empty($at['plate'])?' data-flow-plate-target="'.portal_h($at['plate']).'"':''?>>MEGNÉZEM</button><form method="post" action="aims-flow-operations.php"><input type="hidden" name="csrf" value="<?=portal_h($csrf)?>"><input type="hidden" name="action" value="notification_read"><input type="hidden" name="notification_id" value="<?=intval($at['id'])?>"><button class="btn" type="submit">✓</button></form></div>
-</div><?php endforeach;?></div><?php endif;?></section>
+?><div class="flow-attention-item"><div class="flow-attention-icon <?=$atClass?>"></div><div><b><?=portal_h($at['title'])?></b><div class="muted"><?=portal_h($at['body'])?></div><small><?=portal_h($at['plate']??'')?> · <?=portal_h($at['created_at'])?></small></div><div class="actions"><button type="button" class="btn" data-open-flow-view="<?=portal_h($atView)?>"<?=!empty($at['plate'])?' data-flow-plate-target="'.portal_h($at['plate']).'"':''?>>MEGNÉZEM</button><form method="post" action="aims-flow-operations.php"><input type="hidden" name="csrf" value="<?=portal_h($csrf)?>"><input type="hidden" name="action" value="notification_read"><input type="hidden" name="notification_id" value="<?=intval($at['id'])?>"><button class="btn" type="submit">✓</button></form></div></div><?php endforeach;?>
+</div><?php endif;?></section>
 
 <section class="panel" id="flowFleetNow"><div class="panelhead"><div><small>MOST</small><h2>Járművek most</h2></div><span class="chip ok"><?=count($flowFleetRows)?> aktív jármű</span></div>
 <div class="table flow-fleet-table"><table><thead><tr><th>Jármű</th><th>Állapot</th><th>Fuvar</th><th>Km</th><th>GPS</th><th>Ország</th><th>Safety</th><th>Szerviz</th><th>Hiba</th><th></th></tr></thead><tbody>
@@ -322,7 +336,7 @@ $clCustomer=trim((string)($clOd['customer_name']??$clOd['customer']??''));
 <?php else:foreach($flowPartnerRows as $pr):$prDocPct=$pr['jobs']>0?(int)round($pr['docs']/$pr['jobs']*100):0;?><tr><td><b><?=portal_h($pr['name'])?></b></td><td><?=portal_h($pr['email']?:'—')?></td><td><b><?=intval($pr['jobs'])?></b></td><td><?=$pr['active']?'<span class="chip wait">'.intval($pr['active']).' aktív</span>':'<span class="chip ok">0</span>'?></td><td><span class="chip <?=$prDocPct>=90?'ok':($prDocPct>=70?'wait':'bad')?>"><?=$prDocPct?>%</span><div class="muted"><?=intval($pr['docs'])?> / <?=intval($pr['jobs'])?> dokumentált</div></td><td><?=portal_h($pr['last_reference']?:'—')?></td><td><?=portal_h($pr['last_at']?:'—')?></td></tr><?php endforeach;endif;?>
 </tbody></table></div></section>
 
-<section class="panel"><div class="panelhead"><div><small>DOKUMENTUMKONTROLL</small><h2>Dokumentumközpont</h2></div><a class="btn" href="freights.php">FUVAR ADMIN ↗</a></div>
+<section class="panel" id="document-center"><div class="panelhead"><div><small>DOKUMENTUMKONTROLL</small><h2>Dokumentumközpont</h2></div><a class="btn" href="freights.php">FUVAR ADMIN ↗</a></div>
 <div class="table"><table><thead><tr><th>Fuvar</th><th>Jármű</th><th>Fuvarállapot</th><th>CMR/POD</th><th>Szinkron</th><th>Frissítve</th></tr></thead><tbody>
 <?php if(!$flowDocumentRows):?><tr><td colspan="6" class="empty">Nincs dokumentumadat.</td></tr>
 <?php else:foreach($flowDocumentRows as $dr):$docState=trim((string)($dr['document_sync_state']??''));?>
