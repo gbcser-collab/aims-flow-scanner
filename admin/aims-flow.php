@@ -100,6 +100,17 @@ $flowDocumentRows=$flowPdo->query('SELECT j.id,j.reference,j.status,j.document_r
   WHERE j.status<>"deleted"
   ORDER BY j.updated_at DESC LIMIT 150')->fetchAll(PDO::FETCH_ASSOC);
 
+$flowCustomerShareRows=$flowPdo->query('SELECT j.id,j.reference,j.status,j.customer_tracking_expires_at,j.customer_tracking_created_at,j.customer_tracking_last_view_at,j.order_payload_json,
+    v.plate,v.label
+  FROM jobs j JOIN vehicles v ON v.id=j.vehicle_id
+  WHERE j.customer_tracking_token_hash IS NOT NULL AND j.customer_tracking_token_hash<>""
+  ORDER BY j.customer_tracking_created_at DESC LIMIT 100')->fetchAll(PDO::FETCH_ASSOC);
+$flowActiveCustomerLinks=0;
+foreach($flowCustomerShareRows as $cr){
+  $exp=strtotime((string)($cr['customer_tracking_expires_at']??''));
+  if($exp!==false&&$exp>time())$flowActiveCustomerLinks++;
+}
+
 $flowActivityRows=$flowPdo->query('SELECT n.id,n.type,n.severity,n.title,n.body,n.created_at,n.read_at,v.plate
   FROM notifications n LEFT JOIN vehicles v ON v.id=n.vehicle_id
   ORDER BY n.id DESC LIMIT 120')->fetchAll(PDO::FETCH_ASSOC);
@@ -284,10 +295,22 @@ $fvServiceRemain=($fv['next_service_km']!==null&&$fv['current_km']!==null)?((int
   <div class="metric"><small>Safety 24h</small><b><?=$flowSafety24?></b></div>
 </div>
 <div class="flow-admin-cards">
+  <div class="flow-admin-card"><small>MEGBÍZÓI PORTÁL</small><h3><?=$flowActiveCustomerLinks?> aktív követőlink</h3><p>GPS, ETA, megállók, eseménynapló és dokumentumállapot csak az adott fuvarhoz.</p><div class="actions"><button type="button" class="btn" data-flow-scroll="customer-links">LINKEK</button></div></div>
   <div class="flow-admin-card"><small>FUVAR ADMIN</small><h3>Teljes fuvarlista</h3><p>Régi és új fuvarok, adminisztratív fuvaradatok és irodai előzmények.</p><div class="actions"><a class="btn" href="freights.php">FUVAROK ↗</a></div></div>
   <div class="flow-admin-card"><small>PARTNER ADMIN</small><h3>Partner törzsadat</h3><p>Ügyfelek és fuvarozó partnerek teljes adminisztrációja.</p><div class="actions"><a class="btn" href="partners.php">PARTNEREK ↗</a></div></div>
   <div class="flow-admin-card"><small>ADMIN FŐOLDAL</small><h3>Webes analitika</h3><p>A honlap admin összesített vezetői mutatói és egyéb webes moduljai.</p><div class="actions"><a class="btn" href="index.php">ADMIN ↗</a></div></div>
 </div></section>
+
+<section class="panel" id="customer-links"><div class="panelhead"><div><small>MEGBÍZÓI BETEKINTÉS</small><h2>Megbízói követőlinkek</h2></div><span class="chip <?=$flowActiveCustomerLinks?'ok':'wait'?>"><?=$flowActiveCustomerLinks?> aktív</span></div>
+<div class="table"><table><thead><tr><th>Fuvar</th><th>Ügyfél</th><th>Jármű</th><th>Létrehozva</th><th>Lejár</th><th>Utolsó megnyitás</th><th>Állapot</th><th>Művelet</th></tr></thead><tbody>
+<?php if(!$flowCustomerShareRows):?><tr><td colspan="8" class="empty">Még nincs létrehozott megbízói követőlink.</td></tr>
+<?php else:foreach($flowCustomerShareRows as $cl):
+$clExp=strtotime((string)($cl['customer_tracking_expires_at']??''));$clActive=$clExp!==false&&$clExp>time();
+$clOd=[];if(!empty($cl['order_payload_json'])){$tmp=json_decode((string)$cl['order_payload_json'],true);if(is_array($tmp))$clOd=$tmp;}
+$clCustomer=trim((string)($clOd['customer_name']??$clOd['customer']??''));
+?>
+<tr><td><b><?=portal_h($cl['reference'])?></b></td><td><?=portal_h($clCustomer?:'—')?></td><td><?=portal_h($cl['plate'])?></td><td><?=portal_h($cl['customer_tracking_created_at']??'—')?></td><td><?=portal_h($cl['customer_tracking_expires_at']??'—')?></td><td><?=portal_h($cl['customer_tracking_last_view_at']??'—')?></td><td><?=$clActive?'<span class="chip ok">AKTÍV</span>':'<span class="chip wait">LEJÁRT</span>'?></td><td><div class="actions"><form method="post" action="aims-flow-customer-link.php"><input type="hidden" name="csrf" value="<?=portal_h($csrf)?>"><input type="hidden" name="job_id" value="<?=intval($cl['id'])?>"><input type="hidden" name="action" value="create"><button class="btn" type="submit"><?=$clActive?'ÚJRAGENERÁLÁS':'ÚJ LINK'?></button></form><?php if($clActive):?><form method="post" action="aims-flow-customer-link.php" onsubmit="return confirm('Visszavonod a megbízói linket?')"><input type="hidden" name="csrf" value="<?=portal_h($csrf)?>"><input type="hidden" name="job_id" value="<?=intval($cl['id'])?>"><input type="hidden" name="action" value="revoke"><button class="danger" type="submit">VISSZAVONÁS</button></form><?php endif;?></div></td></tr>
+<?php endforeach;endif;?></tbody></table></div></section>
 
 <section class="panel"><div class="panelhead"><div><small>ÜGYFELEK / PARTNEREK</small><h2>Partnerek</h2></div><a class="btn gold" href="partners.php">TELJES PARTNER ADMIN ↗</a></div>
 <div class="table"><table><thead><tr><th>Partner</th><th>E-mail</th><th>Fuvar</th><th>Aktív</th><th>Utolsó referencia</th><th>Frissült</th></tr></thead><tbody>
@@ -464,6 +487,7 @@ $('refreshBtn').addEventListener('click',refreshAll);refreshAll();setInterval(re
     'Figyelmet igényel':'overview',
     'Járművek most':'overview',
     'Napi analitika':'office',
+    'Megbízói követőlinkek':'office',
     'Partnerek':'office',
     'Dokumentumközpont':'office',
     'Riportok és export':'office',
@@ -566,6 +590,13 @@ $('refreshBtn').addEventListener('click',refreshAll);refreshAll();setInterval(re
     const saved=localStorage.getItem('aimsFlowAdminView');
     if(['overview','jobs','vehicles','office','messages','system'].includes(saved))initial=saved;
   }catch(e){}
+  document.querySelectorAll('[data-flow-scroll]').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      setView('office');
+      setTimeout(()=>document.getElementById(btn.dataset.flowScroll)?.scrollIntoView({behavior:'smooth',block:'start'}),50);
+    });
+  });
+
   const globalSearch=document.getElementById('flowGlobalSearch');
   function applyGlobalSearch(){
     const q=(globalSearch?.value||'').trim().toLocaleLowerCase('hu-HU');
