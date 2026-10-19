@@ -123,7 +123,7 @@ $flowMessages24Stmt=$flowPdo->prepare('SELECT COUNT(*) FROM driver_messages WHER
 $flowMessages24Stmt->execute([':since'=>$flowSince24h]);$flowMessages24=(int)$flowMessages24Stmt->fetchColumn();
 
 $flowPartnerAgg=[];
-$flowPartnerSource=$flowPdo->query('SELECT j.id,j.status,j.reference,j.order_payload_json,j.updated_at
+$flowPartnerSource=$flowPdo->query('SELECT j.id,j.status,j.reference,j.order_payload_json,j.updated_at,j.document_received_at
   FROM jobs j WHERE j.status<>"deleted" ORDER BY j.updated_at DESC LIMIT 500')->fetchAll(PDO::FETCH_ASSOC);
 foreach($flowPartnerSource as $pj){
   $od=[];if(!empty($pj['order_payload_json'])){$tmp=json_decode((string)$pj['order_payload_json'],true);if(is_array($tmp))$od=$tmp;}
@@ -131,10 +131,11 @@ foreach($flowPartnerSource as $pj){
   if($name==='')continue;
   $key=mb_strtolower($name,'UTF-8');
   if(!isset($flowPartnerAgg[$key]))$flowPartnerAgg[$key]=[
-    'name'=>$name,'email'=>trim((string)($od['customer_email']??'')),'jobs'=>0,'active'=>0,'last_reference'=>'','last_at'=>''
+    'name'=>$name,'email'=>trim((string)($od['customer_email']??'')),'jobs'=>0,'active'=>0,'docs'=>0,'last_reference'=>'','last_at'=>''
   ];
   $flowPartnerAgg[$key]['jobs']++;
   if(($pj['status']??'')==='active')$flowPartnerAgg[$key]['active']++;
+  if(!empty($pj['document_received_at']))$flowPartnerAgg[$key]['docs']++;
   if($flowPartnerAgg[$key]['last_at']===''||strcmp((string)$pj['updated_at'],$flowPartnerAgg[$key]['last_at'])>0){
     $flowPartnerAgg[$key]['last_at']=(string)$pj['updated_at'];
     $flowPartnerAgg[$key]['last_reference']=(string)$pj['reference'];
@@ -313,9 +314,9 @@ $clCustomer=trim((string)($clOd['customer_name']??$clOd['customer']??''));
 <?php endforeach;endif;?></tbody></table></div></section>
 
 <section class="panel"><div class="panelhead"><div><small>ÜGYFELEK / PARTNEREK</small><h2>Partnerek</h2></div><a class="btn gold" href="partners.php">TELJES PARTNER ADMIN ↗</a></div>
-<div class="table"><table><thead><tr><th>Partner</th><th>E-mail</th><th>Fuvar</th><th>Aktív</th><th>Utolsó referencia</th><th>Frissült</th></tr></thead><tbody>
-<?php if(!$flowPartnerRows):?><tr><td colspan="6" class="empty">A FLOW fuvarokból még nem azonosítható partneradat.</td></tr>
-<?php else:foreach($flowPartnerRows as $pr):?><tr><td><b><?=portal_h($pr['name'])?></b></td><td><?=portal_h($pr['email']?:'—')?></td><td><b><?=intval($pr['jobs'])?></b></td><td><?=$pr['active']?'<span class="chip wait">'.intval($pr['active']).' aktív</span>':'<span class="chip ok">0</span>'?></td><td><?=portal_h($pr['last_reference']?:'—')?></td><td><?=portal_h($pr['last_at']?:'—')?></td></tr><?php endforeach;endif;?>
+<div class="table"><table><thead><tr><th>Partner</th><th>E-mail</th><th>Fuvar</th><th>Aktív</th><th>Dokumentumfegyelem</th><th>Utolsó referencia</th><th>Frissült</th></tr></thead><tbody>
+<?php if(!$flowPartnerRows):?><tr><td colspan="7" class="empty">A FLOW fuvarokból még nem azonosítható partneradat.</td></tr>
+<?php else:foreach($flowPartnerRows as $pr):$prDocPct=$pr['jobs']>0?(int)round($pr['docs']/$pr['jobs']*100):0;?><tr><td><b><?=portal_h($pr['name'])?></b></td><td><?=portal_h($pr['email']?:'—')?></td><td><b><?=intval($pr['jobs'])?></b></td><td><?=$pr['active']?'<span class="chip wait">'.intval($pr['active']).' aktív</span>':'<span class="chip ok">0</span>'?></td><td><span class="chip <?=$prDocPct>=90?'ok':($prDocPct>=70?'wait':'bad')?>"><?=$prDocPct?>%</span><div class="muted"><?=intval($pr['docs'])?> / <?=intval($pr['jobs'])?> dokumentált</div></td><td><?=portal_h($pr['last_reference']?:'—')?></td><td><?=portal_h($pr['last_at']?:'—')?></td></tr><?php endforeach;endif;?>
 </tbody></table></div></section>
 
 <section class="panel"><div class="panelhead"><div><small>DOKUMENTUMKONTROLL</small><h2>Dokumentumközpont</h2></div><a class="btn" href="freights.php">FUVAR ADMIN ↗</a></div>
