@@ -325,7 +325,7 @@ $('refreshBtn').addEventListener('click',refreshAll);refreshAll();setInterval(re
   });
 
   const gpsMetrics=document.getElementById('flowGpsMetrics');
-  if(gpsMetrics)gpsMetrics.dataset.flowGroups='overview jobs';
+  if(gpsMetrics)gpsMetrics.dataset.flowGroups='jobs';
 
   function setView(view){
     panels.forEach(panel=>{
