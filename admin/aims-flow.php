@@ -30,6 +30,9 @@ $flowHoldCount=(int)$flowPdo->query('SELECT COUNT(*) FROM vehicle_operational_st
 $flowSafety24Stmt=$flowPdo->prepare('SELECT COUNT(*) FROM vehicle_safety_checks WHERE received_at>=:since');
 $flowSafety24Stmt->execute([':since'=>$flowSince24h]);
 $flowSafety24=(int)$flowSafety24Stmt->fetchColumn();
+$flowMissingDocs=(int)$flowPdo->query('SELECT COUNT(*) FROM jobs j
+  WHERE j.status<>"deleted" AND j.document_received_at IS NULL
+    AND NOT EXISTS(SELECT 1 FROM job_stops s WHERE s.job_id=j.id AND s.completed_at IS NULL)')->fetchColumn();
 
 $flowWorkdayRows=$flowPdo->query('SELECT w.*,v.plate,v.label,j.reference
   FROM driver_workdays w
@@ -196,7 +199,7 @@ $flowPartnerRows=array_slice($flowPartnerRows,0,100);
   <div class="q <?=$flowOpenWorkdays?'warn':'good'?>"><small>Munkában</small><b><?=$flowOpenWorkdays?></b></div>
   <div class="q <?=$flowOpenIssues?'danger':'good'?>"><small>Nyitott hiba</small><b><?=$flowOpenIssues?></b></div>
   <div class="q <?=$flowHoldCount?'danger':'good'?>"><small>HOLD</small><b><?=$flowHoldCount?></b></div>
-  <div class="q"><small>Safety 24h</small><b><?=$flowSafety24?></b></div>
+  <div class="q <?=$flowMissingDocs?'warn':'good'?>"><small>Doksi hiány</small><b><?=$flowMissingDocs?></b></div>
   <div class="q <?=$flowUnreadNotifications?'warn':'good'?>"><small>Teendő</small><b><?=$flowUnreadNotifications?></b></div>
 </div>
 <?php if($flowHoldCount>0||$flowOpenIssues>0):?><div class="flow-urgent"><div><b>Figyelem:</b> <?=$flowHoldCount?> jármű HOLD · <?=$flowOpenIssues?> nyitott hiba</div><button type="button" data-open-flow-view="vehicles">JÁRMŰVEK MEGNYITÁSA</button></div><?php endif;?>
