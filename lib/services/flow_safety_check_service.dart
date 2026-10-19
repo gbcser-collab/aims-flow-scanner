@@ -27,6 +27,9 @@ class FlowSafetyCheckRecord {
   final Map<String, String> photoPaths;
   final bool synced;
 
+  bool get hasProblem =>
+      statuses.values.any((value) => value.trim().toLowerCase() != 'ok');
+
   Map<String, dynamic> toJson() => {
         'id': id,
         'plate': plate,
@@ -126,6 +129,22 @@ class FlowSafetyCheckService {
       }
     } catch (_) {}
     return [];
+  }
+
+  Future<List<FlowSafetyCheckRecord>> recentRecords({int limit = 5}) async {
+    final records = await _loadRecords();
+    if (limit <= 0) return const [];
+    return records.take(limit).toList(growable: false);
+  }
+
+  Future<FlowSafetyCheckRecord?> latestRecord() async {
+    final records = await _loadRecords();
+    return records.isEmpty ? null : records.first;
+  }
+
+  Future<int> pendingCount() async {
+    final records = await _loadRecords();
+    return records.where((item) => !item.synced).length;
   }
 
   Future<void> _saveRecords(List<FlowSafetyCheckRecord> records) async {
