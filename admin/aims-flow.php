@@ -117,6 +117,16 @@ $flowDocumentRows=$flowPdo->query('SELECT j.id,j.reference,j.status,j.document_r
   WHERE j.status<>"deleted"
   ORDER BY j.updated_at DESC LIMIT 150')->fetchAll(PDO::FETCH_ASSOC);
 
+$flowFuelRows=$flowPdo->query('SELECT f.id,f.captured_at,f.station,f.total_amount,f.currency,f.liters,f.price_per_liter,f.receipt_number,f.created_at,
+    v.plate,v.label
+  FROM fuel_receipts f JOIN vehicles v ON v.id=f.vehicle_id
+  ORDER BY f.captured_at DESC,f.id DESC LIMIT 100')->fetchAll(PDO::FETCH_ASSOC);
+
+$flowSmartDocRows=$flowPdo->query('SELECT d.id,d.local_id,d.document_type,d.captured_at,d.confidence,d.created_at,
+    v.plate,v.label
+  FROM smart_documents d JOIN vehicles v ON v.id=d.vehicle_id
+  ORDER BY d.captured_at DESC,d.id DESC LIMIT 100')->fetchAll(PDO::FETCH_ASSOC);
+
 $flowCustomerShareRows=$flowPdo->query('SELECT j.id,j.reference,j.status,j.customer_tracking_expires_at,j.customer_tracking_created_at,j.customer_tracking_last_view_at,j.order_payload_json,
     v.plate,v.label
   FROM jobs j JOIN vehicles v ON v.id=j.vehicle_id
@@ -345,6 +355,13 @@ $clCustomer=trim((string)($clOd['customer_name']??$clOd['customer']??''));
 <td><?=$docState!==''?'<span class="chip '.(in_array($docState,['approved','emailed','uploaded'],true)?'ok':($docState==='failed'?'bad':'wait')).'">'.portal_h($docState).'</span>':'—'?></td><td><?=portal_h($dr['updated_at'])?></td></tr>
 <?php endforeach;endif;?></tbody></table></div></section>
 
+<section class="panel"><div class="panelhead"><div><small>SCANNER / BIZONYLAT</small><h2>Bizonylatok és egyéb dokumentumok</h2></div><span class="chip ok"><?=count($flowFuelRows)+count($flowSmartDocRows)?> rekord</span></div>
+<div class="table"><table><thead><tr><th>Típus</th><th>Jármű</th><th>Idő</th><th>Részletek</th><th>Bizalom</th><th>Fájl</th></tr></thead><tbody>
+<?php if(!$flowFuelRows&&!$flowSmartDocRows):?><tr><td colspan="6" class="empty">Még nincs egyéb scanner dokumentum vagy tankolási bizonylat.</td></tr><?php else:?>
+<?php foreach($flowFuelRows as $fr):?><tr><td><span class="chip ok">TANKOLÁS</span></td><td><b><?=portal_h($fr['plate'])?></b></td><td><?=portal_h($fr['captured_at'])?></td><td><?=portal_h($fr['station']??'—')?><?php if($fr['liters']!==null):?><div class="muted"><?=number_format((float)$fr['liters'],2,',',' ')?> l<?php if($fr['total_amount']!==null):?> · <?=number_format((float)$fr['total_amount'],2,',',' ')?> <?=portal_h($fr['currency']??'')?><?php endif;?></div><?php endif;?></td><td>—</td><td><a class="btn" target="_blank" rel="noopener" href="aims-flow-document-file.php?type=fuel&id=<?=intval($fr['id'])?>">BIZONYLAT ↗</a></td></tr><?php endforeach;?>
+<?php foreach($flowSmartDocRows as $sd):?><tr><td><span class="chip"><?=portal_h(strtoupper((string)$sd['document_type']))?></span></td><td><b><?=portal_h($sd['plate'])?></b></td><td><?=portal_h($sd['captured_at'])?></td><td><?=portal_h($sd['local_id'])?></td><td><?=$sd['confidence']!==null?number_format((float)$sd['confidence']*100,0).'%':'—'?></td><td><a class="btn" target="_blank" rel="noopener" href="aims-flow-document-file.php?type=smart&id=<?=intval($sd['id'])?>">DOKUMENTUM ↗</a></td></tr><?php endforeach;?>
+<?php endif;?></tbody></table></div></section>
+
 <section class="panel"><div class="panelhead"><div><small>RIPORT / EXPORT</small><h2>Riportok és export</h2></div><a class="btn" href="foreign-stay-report.php">KÜLFÖLDI TARTÓZKODÁS ↗</a></div>
 <div class="flow-admin-cards">
   <div class="flow-admin-card"><small>MUNKA</small><h3>Munkanap és km</h3><p>Kezdő/záró km, napi futás és munkanapok Excel-kompatibilis CSV-ben.</p><div class="actions"><a class="btn" href="aims-flow-export.php?type=workdays">MUNKANAP CSV</a><a class="btn" href="aims-flow-export.php?type=odometer">KM CSV</a></div></div>
@@ -508,6 +525,7 @@ $('refreshBtn').addEventListener('click',refreshAll);refreshAll();setInterval(re
     'Megbízói követőlinkek':'office',
     'Partnerek':'office',
     'Dokumentumközpont':'office',
+    'Bizonylatok és egyéb dokumentumok':'office',
     'Riportok és export':'office',
     'Automatizálás':'office',
     'Aktivitás / audit':'office system',
@@ -525,7 +543,7 @@ $('refreshBtn').addEventListener('click',refreshAll);refreshAll();setInterval(re
     'CMR / POD dokumentumok':'jobs'
   };
   const collapsedByDefault=new Set([
-    'Fuvar küldése','Munkanapok és km','Safety Check','Tanult pontok',
+    'Fuvar küldése','Munkanapok és km','Safety Check','Bizonylatok és egyéb dokumentumok','Tanult pontok',
     'FLOW telefonok','CMR / POD dokumentumok'
   ]);
   const panels=[...document.querySelectorAll('section.panel')];
@@ -535,7 +553,7 @@ $('refreshBtn').addEventListener('click',refreshAll);refreshAll();setInterval(re
     const title=h2.textContent.trim();
     const groups=titleGroup[title];
     if(groups)panel.dataset.flowGroups=groups;
-    if(['Fuvar küldése','Munkanapok és km','Safety Check','Service Guard','Tanult pontok','Sofőr belépések','FLOW telefonok','CMR / POD dokumentumok'].includes(title)){
+    if(['Fuvar küldése','Munkanapok és km','Safety Check','Service Guard','Bizonylatok és egyéb dokumentumok','Tanult pontok','Sofőr belépések','FLOW telefonok','CMR / POD dokumentumok'].includes(title)){
       panel.classList.add('flow-collapsible');
       const head=panel.querySelector('.panelhead');
       if(head){
