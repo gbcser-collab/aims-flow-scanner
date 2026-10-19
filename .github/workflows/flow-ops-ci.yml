@@ -2,7 +2,7 @@ name: FLOW Operations CI
 
 on:
   push:
-    branches: [aims-flow-r105-next-v180-dev6-operations]
+    branches: [aims-flow-r105-next-v180-dev6-operations, aims-flow-r105-next-v180-dev7-clean-admin]
     paths:
       - 'admin/**'
       - 'server/aims-tracking/**'
@@ -69,8 +69,8 @@ jobs:
               "vehicle_safety_checks","vehicle_service_items",
             ],
             "admin/aims-flow.php":[
-              "FLOW OFFICE • OPERATÍV KONTROLL","Sofőr munkanapok",
-              "Járműellenőrzések","Szervizfigyelés","Nyitott hibák és irodai feloldás",
+              "AIMS FLOW Admin","ÁTTEKINTÉS","FUVAROK","JÁRMŰVEK","ÜZENETEK","RENDSZER",
+              "Munkanapok és km","Safety Check","Service Guard","Járműhibák",
             ],
             "lib/screens/driver_shell_screen.dart":[
               "_vehicleOnHold","A jármű HOLD állapotban van",
