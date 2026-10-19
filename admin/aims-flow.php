@@ -274,6 +274,56 @@ $fvServiceRemain=($fv['next_service_km']!==null&&$fv['current_km']!==null)?((int
 </div>
 <div id="flowMsgList" style="margin-top:14px;display:grid;gap:7px"><div class="empty">Üzenetek betöltése…</div></div>
 <p class="muted">A sofőr üzenete az admin telefonjára pushként is megérkezik. Ha ez az oldal nyitva van, a beszélgetés automatikusan frissül. Az admin válasza pushként megy vissza a sofőr AIMS Flow appjába.</p></section>
+<section class="panel"><div class="panelhead"><div><small>IRODA</small><h2>Napi analitika</h2></div><a class="btn" href="index.php">TELJES ANALITIKA ↗</a></div>
+<div class="statusbar">
+  <div class="metric"><small>Új fuvar 24h</small><b><?=$flowJobs24?></b></div>
+  <div class="metric"><small>Dokumentum 24h</small><b><?=$flowDocs24?></b></div>
+  <div class="metric"><small>Üzenet 24h</small><b><?=$flowMessages24?></b></div>
+  <div class="metric"><small>Safety 24h</small><b><?=$flowSafety24?></b></div>
+</div>
+<div class="flow-admin-cards">
+  <div class="flow-admin-card"><small>FUVAR ADMIN</small><h3>Teljes fuvarlista</h3><p>Régi és új fuvarok, adminisztratív fuvaradatok és irodai előzmények.</p><div class="actions"><a class="btn" href="freights.php">FUVAROK ↗</a></div></div>
+  <div class="flow-admin-card"><small>PARTNER ADMIN</small><h3>Partner törzsadat</h3><p>Ügyfelek és fuvarozó partnerek teljes adminisztrációja.</p><div class="actions"><a class="btn" href="partners.php">PARTNEREK ↗</a></div></div>
+  <div class="flow-admin-card"><small>ADMIN FŐOLDAL</small><h3>Webes analitika</h3><p>A honlap admin összesített vezetői mutatói és egyéb webes moduljai.</p><div class="actions"><a class="btn" href="index.php">ADMIN ↗</a></div></div>
+</div></section>
+
+<section class="panel"><div class="panelhead"><div><small>ÜGYFELEK / PARTNEREK</small><h2>Partnerek</h2></div><a class="btn gold" href="partners.php">TELJES PARTNER ADMIN ↗</a></div>
+<div class="table"><table><thead><tr><th>Partner</th><th>E-mail</th><th>Fuvar</th><th>Aktív</th><th>Utolsó referencia</th><th>Frissült</th></tr></thead><tbody>
+<?php if(!$flowPartnerRows):?><tr><td colspan="6" class="empty">A FLOW fuvarokból még nem azonosítható partneradat.</td></tr>
+<?php else:foreach($flowPartnerRows as $pr):?><tr><td><b><?=portal_h($pr['name'])?></b></td><td><?=portal_h($pr['email']?:'—')?></td><td><b><?=intval($pr['jobs'])?></b></td><td><?=$pr['active']?'<span class="chip wait">'.intval($pr['active']).' aktív</span>':'<span class="chip ok">0</span>'?></td><td><?=portal_h($pr['last_reference']?:'—')?></td><td><?=portal_h($pr['last_at']?:'—')?></td></tr><?php endforeach;endif;?>
+</tbody></table></div></section>
+
+<section class="panel"><div class="panelhead"><div><small>DOKUMENTUMKONTROLL</small><h2>Dokumentumközpont</h2></div><a class="btn" href="freights.php">FUVAR ADMIN ↗</a></div>
+<div class="table"><table><thead><tr><th>Fuvar</th><th>Jármű</th><th>Fuvarállapot</th><th>CMR/POD</th><th>Szinkron</th><th>Frissítve</th></tr></thead><tbody>
+<?php if(!$flowDocumentRows):?><tr><td colspan="6" class="empty">Nincs dokumentumadat.</td></tr>
+<?php else:foreach($flowDocumentRows as $dr):$docState=trim((string)($dr['document_sync_state']??''));?>
+<tr><td><b><?=portal_h($dr['reference'])?></b></td><td><?=portal_h($dr['plate'])?></td><td><span class="chip <?=$dr['status']==='completed'?'ok':'wait'?>"><?=portal_h($dr['status'])?></span></td>
+<td><?=$dr['document_received_at']?'<span class="chip ok">BEÉRKEZETT</span>':'<span class="chip '.($dr['status']==='completed'?'ok':'wait').'">'.($dr['status']==='completed'?'RENDBEN':'HIÁNYZIK').'</span>'?></td>
+<td><?=$docState!==''?'<span class="chip '.(in_array($docState,['approved','emailed','uploaded'],true)?'ok':($docState==='failed'?'bad':'wait')).'">'.portal_h($docState).'</span>':'—'?></td><td><?=portal_h($dr['updated_at'])?></td></tr>
+<?php endforeach;endif;?></tbody></table></div></section>
+
+<section class="panel"><div class="panelhead"><div><small>RIPORT / EXPORT</small><h2>Riportok és export</h2></div><a class="btn" href="foreign-stay-report.php">KÜLFÖLDI TARTÓZKODÁS ↗</a></div>
+<div class="flow-admin-cards">
+  <div class="flow-admin-card"><small>MUNKA</small><h3>Munkanap és km</h3><p>Kezdő/záró km, napi futás és munkanapok Excel-kompatibilis CSV-ben.</p><div class="actions"><a class="btn" href="aims-flow-export.php?type=workdays">MUNKANAP CSV</a><a class="btn" href="aims-flow-export.php?type=odometer">KM CSV</a></div></div>
+  <div class="flow-admin-card"><small>BIZTONSÁG</small><h3>Safety és hibák</h3><p>Járműellenőrzési eredmények, hibajegyek és megoldási előzmények.</p><div class="actions"><a class="btn" href="aims-flow-export.php?type=safety">SAFETY CSV</a><a class="btn" href="aims-flow-export.php?type=issues">HIBÁK CSV</a></div></div>
+  <div class="flow-admin-card"><small>OPERÁCIÓ</small><h3>Fuvar és Service</h3><p>Fuvarállapot, dokumentumállapot és karbantartási törzs exportja.</p><div class="actions"><a class="btn" href="aims-flow-export.php?type=jobs">FUVAR CSV</a><a class="btn" href="aims-flow-export.php?type=service">SERVICE CSV</a></div></div>
+</div></section>
+
+<section class="panel"><div class="panelhead"><div><small>AUTOMATIZÁLÁS</small><h2>Automatizálás</h2></div><a class="btn" href="automation.php">E-MAIL BOT / TELJES MODUL ↗</a></div>
+<div class="flow-rule-list">
+  <div class="flow-rule"><span class="rstate"></span><div><b>Kritikus járműhiba → HOLD</b><div class="muted">Motor/fék kritikus jelzésnél a jármű automatikusan blokkolható, irodai feloldással.</div></div><span class="chip ok">AKTÍV</span></div>
+  <div class="flow-rule"><span class="rstate"></span><div><b>Safety probléma → irodai riasztás</b><div class="muted">A problémás checklist azonnal megjelenik a teendők között.</div></div><span class="chip ok">AKTÍV</span></div>
+  <div class="flow-rule"><span class="rstate"></span><div><b>Service Guard → közelgő / lejárt figyelmeztetés</b><div class="muted">Km vagy dátum alapján jelzi, ha szerviz közeleg vagy lejárt.</div></div><span class="chip ok">AKTÍV</span></div>
+  <div class="flow-rule"><span class="rstate"></span><div><b>Fuvarlezárás → dokumentumkapu</b><div class="muted">CMR/POD nélkül a fuvar és munkanap nem tekinthető teljesen lezártnak.</div></div><span class="chip ok">AKTÍV</span></div>
+  <div class="flow-rule"><span class="rstate"></span><div><b>Sofőr üzenet → admin push</b><div class="muted">A sofőr jelzése és üzenete az admin telefonjára is továbbítható.</div></div><span class="chip ok">AKTÍV</span></div>
+</div></section>
+
+<section class="panel"><div class="panelhead"><div><small>VISSZAKÖVETHETŐSÉG</small><h2>Aktivitás / audit</h2></div><a class="btn" href="aims-flow-export.php?type=activity">AUDIT CSV</a></div>
+<div class="table"><table><thead><tr><th>Idő</th><th>Rendszám</th><th>Típus</th><th>Esemény</th><th>Állapot</th></tr></thead><tbody>
+<?php if(!$flowActivityRows):?><tr><td colspan="5" class="empty">Nincs aktivitás.</td></tr>
+<?php else:foreach($flowActivityRows as $ar):?><tr><td><?=portal_h($ar['created_at'])?></td><td><?=portal_h($ar['plate']??'—')?></td><td><?=portal_h($ar['type'])?></td><td><b><?=portal_h($ar['title'])?></b><div class="muted"><?=portal_h($ar['body'])?></div></td><td><?=$ar['read_at']?'<span class="chip ok">OLVASVA</span>':'<span class="chip wait">ÚJ</span>'?></td></tr><?php endforeach;endif;?>
+</tbody></table></div></section>
+
 <div id="flow-operations"></div>
 <div class="flow-vehicle-toolbar flow-panel-hidden" id="flowVehicleToolbar">
   <label for="flowVehicleFilter">Jármű</label>
