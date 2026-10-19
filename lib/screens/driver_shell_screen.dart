@@ -2861,6 +2861,12 @@ class _DriverShellScreenState extends State<DriverShellScreen>
         final acceptedAt = DateTime.now();
         await _api.acknowledge(plate: _plate, jobId: jobId, action: 'accepted');
         await _ensureWorkdayStarted(jobId, acceptedAt: acceptedAt);
+        await _refreshServiceGuard();
+        if (_vehicleOnHold) {
+          throw StateError(
+            'A jármű HOLD állapotba került. Az iroda feloldása szükséges indulás előtt.',
+          );
+        }
         await _push.cancelJobNotification(jobId);
         await _refreshJobs(showLoading: false);
         job = _jobById(jobId) ?? job;
