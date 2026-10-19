@@ -45,6 +45,19 @@ function flow_ops_nullable_int(mixed $value,int $min,int $max):?int{
   return ($v>=$min&&$v<=$max)?$v:null;
 }
 
+if($action==='notifications_read_all'){
+  $stmt=$pdo->prepare('UPDATE notifications SET read_at=:now WHERE read_at IS NULL');
+  $stmt->execute([':now'=>$now]);
+  flow_ops_flash(true,$stmt->rowCount().' értesítés olvasottnak jelölve.');
+}
+
+if($action==='notification_read'){
+  $id=max(1,(int)($_POST['notification_id']??0));
+  $stmt=$pdo->prepare('UPDATE notifications SET read_at=:now WHERE id=:id AND read_at IS NULL');
+  $stmt->execute([':now'=>$now,':id'=>$id]);
+  flow_ops_flash(true,'Teendő elolvasva.');
+}
+
 if($action==='service_save'){
   $vehicle=flow_ops_vehicle_admin($pdo,(string)($_POST['plate']??''));
   $id=max(0,(int)($_POST['service_id']??0));
