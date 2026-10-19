@@ -70,6 +70,7 @@ $flowFleetRows=$flowPdo->query('SELECT
     (SELECT w.started_at FROM driver_workdays w WHERE w.vehicle_id=v.id AND w.finished_at IS NULL ORDER BY w.started_at DESC LIMIT 1) AS workday_started_at,
     (SELECT j.reference FROM jobs j WHERE j.vehicle_id=v.id AND j.status="active" ORDER BY j.id DESC LIMIT 1) AS active_reference,
     (SELECT o.km FROM vehicle_odometer_log o WHERE o.vehicle_id=v.id ORDER BY o.captured_at DESC,o.id DESC LIMIT 1) AS current_km,
+    (SELECT cs.confirmed_country_code FROM vehicle_country_state cs WHERE cs.vehicle_id=v.id LIMIT 1) AS country_code,
     (SELECT c.created_at FROM vehicle_safety_checks c WHERE c.vehicle_id=v.id ORDER BY c.created_at DESC,c.id DESC LIMIT 1) AS safety_at,
     (SELECT c.has_problem FROM vehicle_safety_checks c WHERE c.vehicle_id=v.id ORDER BY c.created_at DESC,c.id DESC LIMIT 1) AS safety_problem,
     (SELECT COUNT(*) FROM vehicle_issues i WHERE i.vehicle_id=v.id AND i.status="open") AS open_issues,
@@ -200,8 +201,8 @@ if(str_contains($atType,'message'))$atView='messages';elseif(str_contains($atTyp
 </div><?php endforeach;?></div><?php endif;?></section>
 
 <section class="panel" id="flowFleetNow"><div class="panelhead"><div><small>MOST</small><h2>Járművek most</h2></div><span class="chip ok"><?=count($flowFleetRows)?> aktív jármű</span></div>
-<div class="table flow-fleet-table"><table><thead><tr><th>Jármű</th><th>Állapot</th><th>Fuvar</th><th>Km</th><th>GPS</th><th>Safety</th><th>Szerviz</th><th>Hiba</th><th></th></tr></thead><tbody>
-<?php if(!$flowFleetRows):?><tr><td colspan="9" class="empty">Nincs aktív FLOW jármű.</td></tr>
+<div class="table flow-fleet-table"><table><thead><tr><th>Jármű</th><th>Állapot</th><th>Fuvar</th><th>Km</th><th>GPS</th><th>Ország</th><th>Safety</th><th>Szerviz</th><th>Hiba</th><th></th></tr></thead><tbody>
+<?php if(!$flowFleetRows):?><tr><td colspan="10" class="empty">Nincs aktív FLOW jármű.</td></tr>
 <?php else:foreach($flowFleetRows as $fv):
 $fvGpsTs=!empty($fv['gps_at'])?strtotime((string)$fv['gps_at']):false;
 $fvGpsAge=$fvGpsTs!==false?max(0,time()-$fvGpsTs):null;
@@ -219,6 +220,7 @@ $fvServiceRemain=($fv['next_service_km']!==null&&$fv['current_km']!==null)?((int
 <td><?=$fv['active_reference']?'<b>'.portal_h($fv['active_reference']).'</b>':'<span class="muted">Nincs aktív fuvar</span>'?></td>
 <td class="flow-km"><?=$fv['current_km']!==null?number_format((int)$fv['current_km'],0,',',' ').' km':'—'?></td>
 <td><?php if($fvGpsAge===null):?><span class="muted">Nincs adat</span><?php else:?><span class="<?=$fvGpsFresh?'flow-gps-fresh':'flow-gps-stale'?>"><?=$fvGpsFresh?'● ÉLŐ':'● RÉGI'?></span><div class="muted"><?=$fvSpeed!==null?$fvSpeed.' km/h · ':''?><?=intval($fvGpsAge/60)?> perce</div><?php endif;?></td>
+<td><?=!empty($fv['country_code'])?'<span class="chip">'.portal_h(strtoupper((string)$fv['country_code'])).'</span>':'<span class="muted">—</span>'?></td>
 <td><?=$fv['safety_at']?($fvSafetyProblem?'<span class="chip bad">PROBLÉMA</span>':'<span class="chip ok">RENDBEN</span>'):'<span class="chip wait">NINCS</span>'?><?php if($fv['safety_at']):?><div class="muted"><?=portal_h($fv['safety_at'])?></div><?php endif;?></td>
 <td><?php if($fv['next_service_title']):?><b><?=portal_h($fv['next_service_title'])?></b><div class="muted"><?=$fvServiceRemain!==null?($fvServiceRemain<0?number_format(abs($fvServiceRemain),0,',',' ').' km túllépve':number_format($fvServiceRemain,0,',',' ').' km maradt'):portal_h($fv['next_service_date']??'')?></div><?php else:?><span class="muted">Nincs tétel</span><?php endif;?></td>
 <td><?=$fvIssues?'<span class="chip bad">'.$fvIssues.' NYITOTT</span>':'<span class="chip ok">RENDBEN</span>'?><?php if($fvHold&&trim((string)$fv['hold_reason'])!==''):?><div class="muted"><?=portal_h($fv['hold_reason'])?></div><?php endif;?></td>
