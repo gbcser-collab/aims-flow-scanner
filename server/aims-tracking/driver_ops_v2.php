@@ -190,6 +190,28 @@ if ($action==='workday_finish') {
     $stmt=$pdo->prepare('SELECT * FROM driver_workdays WHERE workday_key=:key AND vehicle_id=:vehicle LIMIT 1');
     $stmt->execute([':key'=>$key,':vehicle'=>$vehicleId]);
     $row=$stmt->fetch(PDO::FETCH_ASSOC);
+
+    // A full day can be completed while the phone is offline. If the start
+    // never reached the server, reconstruct it from the immutable local
+    // snapshot attached to the finish retry.
+    if (!$row) {
+        $startKm=isset($data['startKm']) ? flow_ops_int($data['startKm'],0,5000000,'invalid_start_km') : null;
+        $startedAt=trim((string)($data['startedAt']??''));
+        if ($startKm===null || $startedAt==='') {
+            aims_json(['ok'=>false,'error'=>'workday_start_snapshot_required'],409);
+        }
+        $startedAt=flow_ops_iso($startedAt,'invalid_started_at');
+        $jobId=isset($data['jobId']) && is_numeric($data['jobId']) ? max(0,(int)$data['jobId']) : 0;
+        $insert=$pdo->prepare('INSERT INTO driver_workdays
+            (workday_key,vehicle_id,start_job_id,started_at,start_km,created_at,updated_at)
+            VALUES (:key,:vehicle,:job,:started,:km,:created,:updated)');
+        $insert->execute([
+            ':key'=>$key,':vehicle'=>$vehicleId,':job'=>$jobId>0?$jobId:null,
+            ':started'=>$startedAt,':km'=>$startKm,':created'=>$now,':updated'=>$now,
+        ]);
+        $stmt->execute([':key'=>$key,':vehicle'=>$vehicleId]);
+        $row=$stmt->fetch(PDO::FETCH_ASSOC);
+    }
     if (!$row) aims_json(['ok'=>false,'error'=>'workday_not_found'],404);
     if ($endKm < (int)$row['start_km']) aims_json(['ok'=>false,'error'=>'end_km_before_start'],409);
 
