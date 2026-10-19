@@ -2177,7 +2177,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
             const SizedBox(height: 4),
             Text(
               _plate,
-              style: const TextStyle(color: Colors.white70),
+              style: const TextStyle(color: Colors.white),
             ),
             const SizedBox(height: 12),
             for (final alert in _serviceAlerts)
