@@ -167,6 +167,9 @@ class FlowWorkdayService {
         plate: plate,
         finishedAt: finishedAt,
         endKm: endKm,
+        startedAt: current.startedAt,
+        startKm: current.startKm,
+        startJobId: current.startJobId,
       );
       state = FlowWorkdayState(
         active: false,
@@ -209,6 +212,9 @@ class FlowWorkdayService {
           plate: plate,
           finishedAt: state.finishedAt!,
           endKm: state.endKm!,
+          startedAt: state.startedAt,
+          startKm: state.startKm,
+          startJobId: state.startJobId,
         );
       }
       final synced = FlowWorkdayState(
