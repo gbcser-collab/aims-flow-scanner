@@ -1,0 +1,131 @@
+name: AIMS FLOW DEV9 End-to-End
+
+on:
+  push:
+    branches: [aims-flow-r105-next-v180-dev9-admin-everything-useful]
+    paths:
+      - 'server/aims-tracking/**'
+      - 'admin/**'
+      - '.github/workflows/dev9-e2e.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: aims-flow-dev9-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      AIMS_TRACKING_TOKEN: dev9-e2e-driver-token
+      AIMS_ADMIN_TRACKING_TOKEN: dev9-e2e-admin-token
+      AIMS_DEFAULT_ADMIN_NAME: DEV9 E2E
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare isolated database
+        run: |
+          set -euo pipefail
+          export AIMS_TRACKING_DATA_DIR="$RUNNER_TEMP/aims-flow-e2e-data"
+          mkdir -p "$AIMS_TRACKING_DATA_DIR"
+          echo "AIMS_TRACKING_DATA_DIR=$AIMS_TRACKING_DATA_DIR" >> "$GITHUB_ENV"
+
+          php -r '
+            require "server/aims-tracking/bootstrap.php";
+            $pdo=aims_db();
+            $admin=aims_ensure_default_admin($pdo);
+            $now=gmdate(DateTimeInterface::ATOM);
+            $q=$pdo->prepare("INSERT INTO vehicles (plate,label,admin_user_id,enabled,created_at) VALUES (:plate,:label,:admin,1,:created)");
+            $q->execute([":plate"=>"DEV9001",":label"=>"DEV9 TEST",":admin"=>$admin,":created"=>$now]);
+            $v=(int)$pdo->lastInsertId();
+            $s=$pdo->prepare("INSERT INTO vehicle_service_items (vehicle_id,service_type,title,due_km,warning_km,warning_days,enabled,created_at,updated_at) VALUES (:vehicle,\"oil\",\"Motorolaj + szűrő\",100050,2000,30,1,:created,:updated)");
+            $s->execute([":vehicle"=>$v,":created"=>$now,":updated"=>$now]);
+            echo "vehicle=$v\n";
+          '
+
+      - name: Start PHP backend
+        run: |
+          nohup php -S 127.0.0.1:8099 -t server/aims-tracking > "$RUNNER_TEMP/php-server.log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/php-server.pid"
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:8099/README.md >/dev/null; then exit 0; fi
+            sleep 1
+          done
+          cat "$RUNNER_TEMP/php-server.log"
+          exit 1
+
+      - name: Create test Safety images
+        run: |
+          mkdir -p "$RUNNER_TEMP/safety"
+          python3 - <<'PY'
+          from pathlib import Path
+          import base64, os
+          png=base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=")
+          root=Path(os.environ["RUNNER_TEMP"])/"safety"
+          for name in ("oil","coolant","tires","odometer"):
+              (root/f"{name}.png").write_bytes(png)
+          PY
+
+      - name: Driver starts workday
+        run: |
+          curl -fsS -X POST http://127.0.0.1:8099/driver_ops_v2.php             -H "Authorization: Bearer $AIMS_TRACKING_TOKEN"             -H "Content-Type: application/json"             --data '{"action":"workday_start","plate":"DEV9001","workdayId":"dev9-e2e-workday","startedAt":"2026-10-19T06:00:00Z","startKm":100000}'             | tee "$RUNNER_TEMP/workday-start.json"
+          grep -q '"ok":true' "$RUNNER_TEMP/workday-start.json"
+
+      - name: Driver sends odometer and Safety Check
+        run: |
+          curl -fsS -X POST http://127.0.0.1:8099/driver_ops_v2.php             -H "Authorization: Bearer $AIMS_TRACKING_TOKEN"             -H "Content-Type: application/json"             --data '{"action":"odometer","plate":"DEV9001","km":100060,"source":"e2e","capturedAt":"2026-10-19T08:00:00Z"}'             | grep -q '"ok":true'
+
+          curl -fsS -X POST http://127.0.0.1:8099/driver_ops_v2.php             -H "Authorization: Bearer $AIMS_TRACKING_TOKEN"             -F action=safety_check             -F plate=DEV9001             -F id=dev9-e2e-safety             -F km=100060             -F createdAt=2026-10-19T08:05:00Z             -F 'statuses={"oil":"ok","coolant":"ok","tires":"ok","steering":"ok"}'             -F "photo_oil=@$RUNNER_TEMP/safety/oil.png;type=image/png"             -F "photo_coolant=@$RUNNER_TEMP/safety/coolant.png;type=image/png"             -F "photo_tires=@$RUNNER_TEMP/safety/tires.png;type=image/png"             -F "photo_odometer=@$RUNNER_TEMP/safety/odometer.png;type=image/png"             | tee "$RUNNER_TEMP/safety.json"
+          grep -q '"ok":true' "$RUNNER_TEMP/safety.json"
+
+      - name: Service Guard returns due alert
+        run: |
+          curl -fsS -X POST http://127.0.0.1:8099/driver_ops_v2.php             -H "Authorization: Bearer $AIMS_TRACKING_TOKEN"             -H "Content-Type: application/json"             --data '{"action":"service_alerts","plate":"DEV9001","currentKm":100060}'             | tee "$RUNNER_TEMP/service.json"
+          grep -q '"ok":true' "$RUNNER_TEMP/service.json"
+          grep -q 'Motorolaj' "$RUNNER_TEMP/service.json"
+          grep -q '"severity":"overdue"' "$RUNNER_TEMP/service.json"
+
+      - name: Critical driver issue creates HOLD
+        run: |
+          curl -fsS -X POST http://127.0.0.1:8099/driver_event.php             -H "Authorization: Bearer $AIMS_TRACKING_TOKEN"             -H "Content-Type: application/json"             --data '{"plate":"DEV9001","type":"vehicle_issue","message":"Fék · E2E kritikus próba","urgent":true,"eventId":"dev9-e2e-brake","occurredAt":"2026-10-19T08:10:00Z"}'             | tee "$RUNNER_TEMP/issue.json"
+          grep -q '"ok":true' "$RUNNER_TEMP/issue.json"
+          grep -q '"vehicleHold":true' "$RUNNER_TEMP/issue.json"
+
+          curl -fsS -X POST http://127.0.0.1:8099/driver_ops_v2.php             -H "Authorization: Bearer $AIMS_TRACKING_TOKEN"             -H "Content-Type: application/json"             --data '{"action":"service_alerts","plate":"DEV9001","currentKm":100060}'             | tee "$RUNNER_TEMP/hold.json"
+          grep -q 'JÁRMŰ HOLD' "$RUNNER_TEMP/hold.json"
+
+      - name: Driver finishes workday
+        run: |
+          curl -fsS -X POST http://127.0.0.1:8099/driver_ops_v2.php             -H "Authorization: Bearer $AIMS_TRACKING_TOKEN"             -H "Content-Type: application/json"             --data '{"action":"workday_finish","plate":"DEV9001","workdayId":"dev9-e2e-workday","finishedAt":"2026-10-19T16:00:00Z","endKm":100120,"startedAt":"2026-10-19T06:00:00Z","startKm":100000}'             | tee "$RUNNER_TEMP/workday-finish.json"
+          grep -q '"ok":true' "$RUNNER_TEMP/workday-finish.json"
+          grep -q '"distanceKm":120' "$RUNNER_TEMP/workday-finish.json"
+
+      - name: Verify database state used by FLOW Admin
+        run: |
+          php -r '
+            require "server/aims-tracking/bootstrap.php";
+            $pdo=aims_db();
+            $tables=[
+              "driver_workdays"=>1,
+              "vehicle_odometer_log"=>3,
+              "vehicle_safety_checks"=>1,
+              "vehicle_safety_photos"=>4,
+              "vehicle_issues"=>1,
+              "vehicle_operational_state"=>1
+            ];
+            foreach($tables as $table=>$minimum){
+              $count=(int)$pdo->query("SELECT COUNT(*) FROM ".$table)->fetchColumn();
+              echo $table."=".$count."\n";
+              if($count<$minimum)exit(10);
+            }
+            $hold=(int)$pdo->query("SELECT hold FROM vehicle_operational_state LIMIT 1")->fetchColumn();
+            if($hold!==1)exit(11);
+            $wd=$pdo->query("SELECT start_km,end_km FROM driver_workdays LIMIT 1")->fetch(PDO::FETCH_ASSOC);
+            if((int)$wd["start_km"]!==100000 || (int)$wd["end_km"]!==100120)exit(12);
+            echo "DEV9 E2E DATABASE OK\n";
+          '
+
+      - name: Show server log on failure
+        if: failure()
+        run: cat "$RUNNER_TEMP/php-server.log" || true
