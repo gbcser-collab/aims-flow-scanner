@@ -2,7 +2,7 @@ name: Build AIMS Flow NEXT Debug APK
 
 on:
   push:
-    branches: [aims-flow-r105-next-v180-dev3]
+    branches: [aims-flow-r105-next-v180-dev3, aims-flow-r105-next-v180-dev4]
     paths:
       - 'lib/**'
       - 'pubspec.yaml'
@@ -135,13 +135,13 @@ jobs:
             --dart-define=AIMS_TRACKING_BASE_URL=https://logistic-aims.hu/api/aims-tracking \
             --dart-define=AIMS_TRACKING_TOKEN=next-debug-validation
           test -s build/app/outputs/flutter-apk/app-debug.apk
-          cp build/app/outputs/flutter-apk/app-debug.apk AIMS-Flow-NEXT-v1.8.0-dev3.apk
-          sha256sum AIMS-Flow-NEXT-v1.8.0-dev3.apk | tee AIMS-Flow-NEXT-v1.8.0-dev3.apk.sha256
+          cp build/app/outputs/flutter-apk/app-debug.apk AIMS-Flow-NEXT-v1.8.0-dev4.apk
+          sha256sum AIMS-Flow-NEXT-v1.8.0-dev3.apk | tee AIMS-Flow-NEXT-v1.8.0-dev4.apk.sha256
 
       - name: Upload NEXT APK
         uses: actions/upload-artifact@v4
         with:
-          name: AIMS-Flow-NEXT-v1.8.0-dev3
+          name: AIMS-Flow-NEXT-v1.8.0-dev4
           path: |
             AIMS-Flow-NEXT-v1.8.0-dev3.apk
             AIMS-Flow-NEXT-v1.8.0-dev3.apk.sha256
