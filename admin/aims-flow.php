@@ -21,11 +21,53 @@ $flowDriverVehicles=$flowPdo->query('SELECT plate,label,enabled,created_at,drive
 $flowResetSnapshot=[];foreach($flowDriverVehicles as $rv){if(!empty($rv['enabled'])&&($rv['driver_reset_status']??'')==='pending')$flowResetSnapshot[]=['plate'=>(string)($rv['plate']??''),'requestedAt'=>(string)($rv['driver_reset_requested_at']??'')];}
 usort($flowResetSnapshot,function($a,$b){$t=strcmp((string)($b['requestedAt']??''),(string)($a['requestedAt']??''));return $t!==0?$t:strcmp((string)($a['plate']??''),(string)($b['plate']??''));});
 $flowResetSignature=hash('sha256',json_encode($flowResetSnapshot,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES));
+
+$flowOpsFlash=$_SESSION['aims_flow_ops_flash']??null;unset($_SESSION['aims_flow_ops_flash']);
+$flowSince24h=gmdate(DateTimeInterface::ATOM,time()-86400);
+$flowOpenWorkdays=(int)$flowPdo->query('SELECT COUNT(*) FROM driver_workdays WHERE finished_at IS NULL')->fetchColumn();
+$flowOpenIssues=(int)$flowPdo->query('SELECT COUNT(*) FROM vehicle_issues WHERE status="open"')->fetchColumn();
+$flowHoldCount=(int)$flowPdo->query('SELECT COUNT(*) FROM vehicle_operational_state WHERE hold=1')->fetchColumn();
+$flowSafety24Stmt=$flowPdo->prepare('SELECT COUNT(*) FROM vehicle_safety_checks WHERE received_at>=:since');
+$flowSafety24Stmt->execute([':since'=>$flowSince24h]);
+$flowSafety24=(int)$flowSafety24Stmt->fetchColumn();
+
+$flowWorkdayRows=$flowPdo->query('SELECT w.*,v.plate,v.label,j.reference
+  FROM driver_workdays w
+  JOIN vehicles v ON v.id=w.vehicle_id
+  LEFT JOIN jobs j ON j.id=w.start_job_id
+  ORDER BY w.started_at DESC LIMIT 100')->fetchAll(PDO::FETCH_ASSOC);
+
+$flowSafetyRows=$flowPdo->query('SELECT c.*,v.plate,v.label,
+  (SELECT id FROM vehicle_safety_photos p WHERE p.safety_check_id=c.id AND p.photo_type="oil" LIMIT 1) AS oil_photo_id,
+  (SELECT id FROM vehicle_safety_photos p WHERE p.safety_check_id=c.id AND p.photo_type="coolant" LIMIT 1) AS coolant_photo_id,
+  (SELECT id FROM vehicle_safety_photos p WHERE p.safety_check_id=c.id AND p.photo_type="tires" LIMIT 1) AS tires_photo_id,
+  (SELECT id FROM vehicle_safety_photos p WHERE p.safety_check_id=c.id AND p.photo_type="odometer" LIMIT 1) AS odometer_photo_id
+  FROM vehicle_safety_checks c
+  JOIN vehicles v ON v.id=c.vehicle_id
+  ORDER BY c.created_at DESC LIMIT 100')->fetchAll(PDO::FETCH_ASSOC);
+
+$flowIssueRows=$flowPdo->query('SELECT i.*,v.plate,v.label,
+  COALESCE(os.hold,0) AS vehicle_hold,COALESCE(os.hold_reason,"") AS hold_reason
+  FROM vehicle_issues i
+  JOIN vehicles v ON v.id=i.vehicle_id
+  LEFT JOIN vehicle_operational_state os ON os.vehicle_id=i.vehicle_id
+  ORDER BY CASE WHEN i.status="open" THEN 0 ELSE 1 END,i.urgent DESC,i.created_at DESC
+  LIMIT 100')->fetchAll(PDO::FETCH_ASSOC);
+
+$flowServiceRows=$flowPdo->query('SELECT s.*,v.plate,v.label,
+  COALESCE(os.hold,0) AS vehicle_hold,
+  (SELECT o.km FROM vehicle_odometer_log o WHERE o.vehicle_id=s.vehicle_id ORDER BY o.captured_at DESC,o.id DESC LIMIT 1) AS current_km
+  FROM vehicle_service_items s
+  JOIN vehicles v ON v.id=s.vehicle_id
+  LEFT JOIN vehicle_operational_state os ON os.vehicle_id=s.vehicle_id
+  WHERE s.enabled=1
+  ORDER BY v.plate,s.due_km,s.due_date,s.id')->fetchAll(PDO::FETCH_ASSOC);
 ?><!doctype html><html lang="hu"><head><meta charset="utf-8"><meta name="robots" content="noindex,nofollow,noarchive"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" href="../favicon.ico" sizes="any"><link rel="icon" type="image/png" sizes="48x48" href="../favicon-48x48.png"><link rel="apple-touch-icon" sizes="180x180" href="../apple-touch-icon.png"><title>AIMS Flow • Élő GPS és Scanner Admin</title><style>
 :root{--g:#d9ad4e;--g2:#f2d77f;--bg:#08090b;--card:#0d0f11;--line:#29261f;--muted:#858078;--ok:#62dda0;--bad:#ff7d85;--amber:#efca69}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:#eee;font:14px Arial,sans-serif}a{color:inherit;text-decoration:none}.wrap{width:min(1360px,calc(100% - 28px));margin:auto;padding:26px 0 70px}.head{display:flex;justify-content:space-between;gap:18px;align-items:center;margin-bottom:18px}.ey{font-size:9px;letter-spacing:.14em;color:#8c7a4d;text-transform:uppercase}.head h1{margin:5px 0 0;font-size:28px}.head h1 span{color:var(--g2)}.nav{display:flex;gap:7px;flex-wrap:wrap}.nav a,.btn{border:1px solid var(--line);border-radius:999px;padding:9px 12px;font-size:10px;font-weight:800;background:#0c0e10;color:#eee;cursor:pointer}.nav a.active,.btn.gold{border:0;background:linear-gradient(135deg,#f1d77e,#b9852d);color:#090909}.statusbar{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:14px 0}.metric,.panel{border:1px solid var(--line);background:linear-gradient(180deg,#0f1113,#0a0b0d);border-radius:18px;padding:16px}.metric small,.panel small{font-size:8px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}.metric b{display:block;font-size:28px;color:var(--g2);margin-top:7px}.panel{margin-top:12px}.panelhead{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:12px}.panel h2{margin:3px 0 0;font-size:18px}.live{display:grid;grid-template-columns:1.25fr .75fr;gap:12px}.table{overflow:auto;border:1px solid #1e2022;border-radius:13px}table{width:100%;border-collapse:collapse;min-width:900px}th,td{text-align:left;padding:11px;border-bottom:1px solid #1d1f21;vertical-align:top}th{color:#827d72;font-size:8px;text-transform:uppercase;letter-spacing:.11em}.chip{display:inline-flex;align-items:center;gap:6px;padding:5px 8px;border:1px solid #333;border-radius:999px;font-size:8px;font-weight:900;text-transform:uppercase}.chip.ok{color:var(--ok);border-color:#28563e}.chip.bad{color:var(--bad);border-color:#603038}.chip.wait{color:var(--amber);border-color:#5b4e29}.mono{font:11px ui-monospace,SFMono-Regular,Consolas,monospace;color:#bcc3cb}.muted{color:#777;line-height:1.45;font-size:11px}.routebox{min-height:320px;display:flex;flex-direction:column;gap:10px}.routebox svg{width:100%;height:230px;border:1px solid #202327;border-radius:14px;background:radial-gradient(circle at 50% 50%,#111820,#090b0e 70%)}.route-meta{display:grid;grid-template-columns:1fr 1fr;gap:8px}.route-meta div{border:1px solid #202327;border-radius:11px;padding:9px}.route-meta small{display:block}.route-meta b{display:block;margin-top:4px}.actions{display:flex;gap:6px;flex-wrap:wrap}.actions button,.actions a{border:1px solid #34322a;background:#111315;color:#eee;border-radius:8px;padding:7px 9px;font-size:9px;font-weight:900;cursor:pointer}.actions .approve{background:linear-gradient(135deg,#f1d77e,#b9852d);color:#090909;border:0}.actions .danger{color:#ffadb1;border-color:#633}.actions .map{color:#a8d4ff;border-color:#31526a}.notice{border:1px solid #4f4529;background:#15130d;color:#d8c58e;border-radius:12px;padding:11px 13px;margin:10px 0}.error{border-color:#633;background:#1b1011;color:#ffb2b6}.success{border-color:#28563e;background:#0c1711;color:#9de4b9}.empty{padding:20px;color:#666;text-align:center}.dispatchgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}.dispatchgrid label{display:grid;gap:6px;color:#aaa;font-size:10px;font-weight:800}.dispatchgrid label.full{grid-column:1/-1}.dispatchgrid input{width:100%;min-height:45px;border:1px solid #333;background:#090b0d;color:#fff;border-radius:10px;padding:0 12px}.dispatchcheck{display:flex!important;grid-column:1/-1;align-items:center;gap:8px}.dispatchcheck input{width:auto;min-height:auto}.dispatchsend{grid-column:1/-1;border:0;border-radius:12px;min-height:50px;background:linear-gradient(135deg,#f1d77e,#b9852d);color:#090909;font-weight:1000;cursor:pointer}.spin{display:inline-block;width:10px;height:10px;border:2px solid #555;border-top-color:var(--g2);border-radius:50%;animation:spin .8s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}@media(max-width:950px){.live{grid-template-columns:1fr}.statusbar{grid-template-columns:1fr 1fr}.head{align-items:flex-start;flex-direction:column}}@media(max-width:520px){.statusbar{grid-template-columns:1fr}.wrap{width:min(100% - 18px,1360px)}.head h1{font-size:23px}}
 </style></head><body><div class="wrap"><div class="head"><div><div class="ey">LOGISTIC-A.I.M.S. • 2FA SECURE ADMIN</div><h1>AIMS Flow <span>Live Control</span></h1></div><div class="nav"><a href="index.php">Analytics</a><a href="partners.php">Partnerek</a><a href="freights.php">Fuvarok</a><a class="active" href="aims-flow.php">AIMS Flow / GPS</a><a href="foreign-stay-report.php">Riport lekérése</a><a href="automation.php">E-mail bot</a><a href="logout.php">Kilépés</a></div></div>
 <div id="apiNotice" class="notice">A modul a telefonról beérkező <b>valós GPS-pontokat</b>, Flow-fuvarokat és Scanner-adatokat kezeli. Nincs demo/szimulált járműmozgás.</div>
 <?php if(is_array($flowFlash)):?><div class="notice <?=!empty($flowFlash['ok'])?'success':'error'?>"><?=portal_h($flowFlash['message']??'')?><?php if(!empty($flowFlash['trackingUrl'])):?><div style="margin-top:10px"><input id="customerTrackingUrl" readonly value="<?=portal_h($flowFlash['trackingUrl'])?>" onclick="this.select()" style="width:100%;min-height:42px;border:1px solid #3c4b50;background:#07090b;color:#fff;padding:8px 10px"><button class="btn gold" type="button" style="margin-top:7px" onclick="navigator.clipboard&&navigator.clipboard.writeText(document.getElementById('customerTrackingUrl').value)">MEGBÍZÓI LINK MÁSOLÁSA</button></div><?php endif;?></div><?php endif;?>
+<?php if(is_array($flowOpsFlash)):?><div class="notice <?=!empty($flowOpsFlash['ok'])?'success':'error'?>"><?=portal_h($flowOpsFlash['message']??'')?></div><?php endif;?>
 <section class="panel"><div class="panelhead"><div><small>FLOW DISPATCH • FIREBASE PUSH</small><h2>Fuvar küldése a sofőr AIMS Flow appjába</h2></div><span class="chip ok"><?=$flowPhoneCount?> aktív mobil</span></div>
 <form class="dispatchgrid" method="post" action="aims-flow-dispatch.php">
 <input type="hidden" name="csrf" value="<?=portal_h($csrf)?>">
