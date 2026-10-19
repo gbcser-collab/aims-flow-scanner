@@ -459,7 +459,14 @@ $('refreshBtn').addEventListener('click',refreshAll);refreshAll();setInterval(re
 <script>
 (function(){
   const titleGroup={
+    'Figyelmet igényel':'overview',
     'Járművek most':'overview',
+    'Napi analitika':'office',
+    'Partnerek':'office',
+    'Dokumentumközpont':'office',
+    'Riportok és export':'office',
+    'Automatizálás':'office',
+    'Aktivitás / audit':'office system',
     'Fuvar küldése':'jobs',
     'Aktív fuvarok':'jobs',
     'Üzenetek':'messages',
@@ -536,6 +543,7 @@ $('refreshBtn').addEventListener('click',refreshAll);refreshAll();setInterval(re
       btn.classList.toggle('active',btn.dataset.flowView===view);
     });
     try{localStorage.setItem('aimsFlowAdminView',view)}catch(e){}
+    if(typeof applyGlobalSearch==='function')setTimeout(applyGlobalSearch,0);
     window.scrollTo({top:0,behavior:'smooth'});
   }
   document.querySelectorAll('#flowViewSwitch button').forEach(btn=>
@@ -554,13 +562,31 @@ $('refreshBtn').addEventListener('click',refreshAll);refreshAll();setInterval(re
   let initial='overview';
   try{
     const saved=localStorage.getItem('aimsFlowAdminView');
-    if(['overview','jobs','vehicles','messages','system'].includes(saved))initial=saved;
+    if(['overview','jobs','vehicles','office','messages','system'].includes(saved))initial=saved;
   }catch(e){}
+  const globalSearch=document.getElementById('flowGlobalSearch');
+  function applyGlobalSearch(){
+    const q=(globalSearch?.value||'').trim().toLocaleLowerCase('hu-HU');
+    const activePanels=panels.filter(panel=>!panel.classList.contains('flow-panel-hidden'));
+    activePanels.forEach(panel=>{
+      panel.querySelectorAll('tbody tr,.flow-attention-item').forEach(row=>{
+        const text=(row.textContent||'').toLocaleLowerCase('hu-HU');
+        row.classList.toggle('flow-search-hidden',!!q&&!text.includes(q));
+      });
+    });
+  }
+  if(globalSearch){
+    globalSearch.addEventListener('input',applyGlobalSearch);
+    globalSearch.addEventListener('keydown',e=>{
+      if(e.key==='Escape'){globalSearch.value='';applyGlobalSearch();globalSearch.blur();}
+    });
+  }
   try{
     const savedPlate=localStorage.getItem('aimsFlowAdminVehicle')||'';
     if(savedPlate)applyVehicleFilter(savedPlate);
   }catch(e){}
   setView(initial);
+  applyGlobalSearch();
 })();
 </script>
 </body></html>
