@@ -236,6 +236,10 @@ class _DriverShellScreenState extends State<DriverShellScreen>
       _isDark ? Colors.white70 : const Color(0xFF536B7A);
   Color get _textFaint =>
       _isDark ? Colors.white38 : const Color(0xFF8093A0);
+  Color get _headerText =>
+      _isDark ? Colors.white : const Color(0xFF17212A);
+  Color get _headerMuted =>
+      _isDark ? Colors.white70 : const Color(0xFF536B7A);
   static const _prefsPlate = 'aims_driver_plate';
   static const _prefsDriverName = 'aims_driver_name';
   static const _prefsPendingStopPrefix = 'aims_pending_stop_actions_v1_';
@@ -4351,7 +4355,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                   ? const Color(0xFFFFC857)
                   : const Color(0xFFFF6571);
           return Material(
-            color: _isDark ? const Color(0xFF04101A) : const Color(0xFFF8FBFD),
+            color: _isDark ? const Color(0xFF171A1D) : const Color(0xFFF8FBFD),
             child: InkWell(
               onTap: _healthRefreshBusy
                   ? null
@@ -4416,6 +4420,59 @@ class _DriverShellScreenState extends State<DriverShellScreen>
           );
         },
       );
+
+  Future<void> _logoutDriverSession() async {
+    if (_actionBusy) return;
+    if (_workdayState.active) {
+      _snack(
+        _l(
+          'Aktív munkanap alatt a kijelentkezés nem engedélyezett. Előbb zárd le a munkanapot.',
+          'You cannot sign out during an active workday. Finish the workday first.',
+          'Während eines aktiven Arbeitstags ist die Abmeldung gesperrt. Beende zuerst den Arbeitstag.',
+        ),
+      );
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: Text(_l('Kijelentkezés', 'Sign out', 'Abmelden')),
+            content: Text(
+              _l(
+                'A telefon elfelejti a FLOW munkamenetet. A következő használatkor FLOW ID és PIN szükséges.',
+                'This phone will forget the FLOW session. FLOW ID and PIN will be required next time.',
+                'Dieses Telefon vergisst die FLOW-Sitzung. Beim nächsten Mal werden FLOW ID und PIN benötigt.',
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(false),
+                child: Text(_l('MÉGSE', 'CANCEL', 'ABBRECHEN')),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(dialogContext).pop(true),
+                child: Text(_l('KIJELENTKEZÉS', 'SIGN OUT', 'ABMELDEN')),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+    if (!confirmed || !mounted) return;
+
+    setState(() => _actionBusy = true);
+    try {
+      final session = _flowSession ?? await FlowSessionStore.instance.load();
+      await const FlowAccountService().logout(session);
+      if (!mounted) return;
+      await Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const FlowLoginScreen()),
+        (_) => false,
+      );
+    } finally {
+      if (mounted) setState(() => _actionBusy = false);
+    }
+  }
 
   @override
   void dispose() {
@@ -4528,9 +4585,9 @@ class _DriverShellScreenState extends State<DriverShellScreen>
             end: Alignment.bottomRight,
             colors: _isDark
                 ? const [
-                    Color(0xFF071E3D),
-                    Color(0xFF030A13),
-                    Color(0xFF02070E),
+                    Color(0xFF1D2125),
+                    Color(0xFF111315),
+                    Color(0xFF0D0F11),
                   ]
                 : const [
                     Color(0xFFF9FCFF),
@@ -4573,12 +4630,12 @@ class _DriverShellScreenState extends State<DriverShellScreen>
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Text(
+                Text(
                   'AIMS FLOW',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    color: Colors.white,
+                    color: _headerText,
                     fontSize: 14,
                     fontWeight: FontWeight.w900,
                     letterSpacing: 1.4,
@@ -4594,7 +4651,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    color: Colors.white,
+                    color: _headerMuted,
                     fontSize: 11,
                     fontWeight: FontWeight.w800,
                     letterSpacing: .45,
@@ -4626,7 +4683,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
               _restMode.active
                   ? Icons.bedtime_rounded
                   : Icons.bedtime_outlined,
-              color: _restMode.active ? _green : Colors.white54,
+              color: _restMode.active ? _green : _headerMuted,
             ),
           ),
           IconButton(
@@ -4651,6 +4708,12 @@ class _DriverShellScreenState extends State<DriverShellScreen>
             ),
           ),
           const AimsLanguageSelector(compact: true),
+          IconButton(
+            tooltip: _l('Kijelentkezés', 'Sign out', 'Abmelden'),
+            onPressed: _actionBusy ? null : _logoutDriverSession,
+            visualDensity: VisualDensity.compact,
+            icon: Icon(Icons.logout_rounded, color: _headerMuted),
+          ),
         ],
       );
 
@@ -5081,7 +5144,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
               width: double.infinity,
               padding: const EdgeInsets.all(11),
               decoration: BoxDecoration(
-                color: const Color(0xFF04101A),
+                color: const Color(0xFF171A1D),
                 borderRadius: BorderRadius.circular(13),
                 border: Border.all(color: Colors.white10),
               ),
@@ -5707,7 +5770,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                     child: Ink(
                       padding: const EdgeInsets.all(14),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF071725),
+                        color: const Color(0xFF1B1F23),
                         borderRadius: BorderRadius.circular(16),
                         border: Border.all(
                           color: job.id == _job?.id
@@ -5820,9 +5883,9 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                   margin: const EdgeInsets.only(bottom: 10),
                   padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF071725),
+                    color: const Color(0xFF1B1F23),
                     borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: const Color(0xFF173B54)),
+                    border: Border.all(color: const Color(0xFF3A4046)),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -6620,7 +6683,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                 ? _blue
                 : _isStopArrived(stop)
                     ? _green.withValues(alpha: .45)
-                    : const Color(0xFF173B54),
+                    : const Color(0xFF3A4046),
             width: stop.id == _stop?.id ? 2 : 1,
           ),
         ),
