@@ -4,7 +4,7 @@ on:
   push:
     branches: [aims-flow-r105-next-v190-stabilization]
     paths:
-      - 'server/aims-tracking/eco_report_lib.php'
+      - 'server/aims-tracking/**'
       - 'server/aims-tracking/tests/eco_report_test.php'
       - 'admin/aims-flow-eco.php'
       - '.github/workflows/eco-report-ci.yml'
@@ -22,4 +22,5 @@ jobs:
           php -l server/aims-tracking/tests/eco_report_test.php
           php -l admin/aims-flow-eco.php
       - name: ECO A-D scoring test
-        run: php server/aims-tracking/tests/eco_report_test.php
+        run: php server/aims-tracking/tests/eco_regression_test.php
+

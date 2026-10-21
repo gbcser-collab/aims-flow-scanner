@@ -33,14 +33,14 @@ function aims_eco_period(string $fromRaw, string $toRaw): array {
     $utc = new DateTimeZone('UTC');
     $from = DateTimeImmutable::createFromFormat('!Y-m-d', $fromRaw, $tz);
     $to = DateTimeImmutable::createFromFormat('!Y-m-d', $toRaw, $tz);
-    if (!$from || !$to) {
+    if (!$from || !$to || $from->format('Y-m-d') !== $fromRaw || $to->format('Y-m-d') !== $toRaw) {
         throw new InvalidArgumentException('Érvénytelen dátumtartomány.');
     }
     $to = $to->modify('+1 day');
     if ($to <= $from) {
         throw new InvalidArgumentException('A záró dátum nem lehet korábbi a kezdő dátumnál.');
     }
-    if ($to->getTimestamp() - $from->getTimestamp() > 93 * 86400) {
+    if ((int)$from->diff($to)->days > 93) {
         throw new InvalidArgumentException('Legfeljebb 93 nap kérhető le egyszerre.');
     }
     return [
@@ -86,9 +86,6 @@ function aims_eco_driver_for_workday(array $row, array $accounts): array {
     $account = null;
     if ($flowId !== '' && isset($accounts['byFlow'][$flowId])) {
         $account = $accounts['byFlow'][$flowId];
-    } elseif (isset($accounts['byVehicle'][(int)$row['vehicle_id']])) {
-        $account = $accounts['byVehicle'][(int)$row['vehicle_id']];
-        $flowId = trim((string)($account['flow_id'] ?? $flowId));
     }
     $driverName = trim((string)($account['driver_name'] ?? ''));
     if ($driverName === '') {
@@ -112,8 +109,8 @@ function aims_eco_workday_intervals(
                    v.plate,v.label
             FROM driver_workdays w
             JOIN vehicles v ON v.id=w.vehicle_id
-            WHERE w.started_at < :end
-              AND COALESCE(w.finished_at,:end) > :start';
+            WHERE julianday(w.started_at) < julianday(:end)
+              AND julianday(COALESCE(w.finished_at,:end)) > julianday(:start)';
     $params = [
         ':start' => $period['fromUtc']->format(DateTimeInterface::ATOM),
         ':end' => $period['toUtc']->format(DateTimeInterface::ATOM),
@@ -123,7 +120,7 @@ function aims_eco_workday_intervals(
         $sql .= ' AND v.plate=:plate';
         $params[':plate'] = $plateFilter;
     }
-    $sql .= ' ORDER BY w.vehicle_id,w.started_at,w.id';
+    $sql .= ' ORDER BY w.vehicle_id,julianday(w.started_at),w.id';
     $stmt = $pdo->prepare($sql);
     $stmt->execute($params);
 
@@ -149,7 +146,6 @@ function aims_eco_workday_intervals(
         if ($end <= $start) continue;
 
         $driver = aims_eco_driver_for_workday($row, $accounts);
-        if ($driverFilter !== '' && $driver['flowId'] !== $driverFilter) continue;
 
         $plate = aims_normalize_plate((string)$row['plate']);
         $interval = [
@@ -207,7 +203,6 @@ function aims_eco_append_event(
     float $beforeSpeed,
     float $afterSpeed
 ): void {
-    if (count($events) >= 3000) return;
     $events[] = [
         'capturedAt' => $point['_captured'],
         'flowId' => $interval['flowId'],
@@ -221,11 +216,15 @@ function aims_eco_append_event(
         'latitude' => (float)$point['latitude'],
         'longitude' => (float)$point['longitude'],
     ];
+    if (count($events) > 6000) {
+        usort($events, static fn(array $a,array $b): int => $b['capturedAt'] <=> $a['capturedAt']);
+        $events = array_slice($events,0,3000);
+    }
 }
 
 function aims_eco_grade(array $group, array $thresholds): array {
     $distanceKm = $group['distanceM'] / 1000.0;
-    $enough = $distanceKm >= $thresholds['minimum_distance_km']
+    $enough = ($group['flowId'] ?? '') !== '' && $distanceKm >= $thresholds['minimum_distance_km']
         && $group['movingSeconds'] >= $thresholds['minimum_moving_seconds']
         && $group['validSegments'] >= $thresholds['minimum_segments'];
 
@@ -243,20 +242,18 @@ function aims_eco_grade(array $group, array $thresholds): array {
         + $severeAccelRate * 4.0
         + $severeBrakeRate * 5.0
         + max(0.0, (0.75 - $smoothRatio) * 40.0);
-    $score = max(0.0, min(100.0, 100.0 - $penalty));
-    $combinedHard = $hardAccelRate + $hardBrakeRate;
-    $combinedSevere = $severeAccelRate + $severeBrakeRate;
+    $score = round(max(0.0, min(100.0, 100.0 - $penalty)), 1);
 
     if (!$enough) {
         $grade = '—';
-        $label = 'Nincs elég adat';
-    } elseif ($score >= 90.0 && $combinedHard <= 4.0 && $combinedSevere <= 0.5) {
+        $label = ($group['flowId'] ?? '') === '' ? 'Sofőr nem azonosítható' : 'Nincs elég adat';
+    } elseif ($score >= 90.0) {
         $grade = 'A';
         $label = 'Kímélő és egyenletes';
-    } elseif ($score >= 75.0 && $combinedHard <= 10.0 && $combinedSevere <= 2.0) {
+    } elseif ($score >= 75.0) {
         $grade = 'B';
         $label = 'Jó, kisebb kilengésekkel';
-    } elseif ($score >= 55.0 && $combinedHard <= 20.0 && $combinedSevere <= 5.0) {
+    } elseif ($score >= 55.0) {
         $grade = 'C';
         $label = 'Fejlesztendő vezetési minta';
     } else {
@@ -294,6 +291,7 @@ function aims_eco_build_report(
     $events = [];
     $states = [];
     $intervalIndex = [];
+    $activeIntervals = [];
 
     if ($intervalsByVehicle) {
         $vehicleIds = array_map('intval', array_keys($intervalsByVehicle));
@@ -301,16 +299,15 @@ function aims_eco_build_report(
         $sql = 'SELECT id,vehicle_id,captured_at,latitude,longitude,accuracy,speed_mps,source
                 FROM points
                 WHERE vehicle_id IN ('.$placeholders.')
-                  AND captured_at>=? AND captured_at<?
-                  AND speed_mps IS NOT NULL
-                ORDER BY vehicle_id,captured_at,id';
+                  AND julianday(captured_at)>=julianday(?) AND julianday(captured_at)<julianday(?)
+                ORDER BY vehicle_id,julianday(captured_at),id';
         $params = $vehicleIds;
         $params[] = $period['fromUtc']->format(DateTimeInterface::ATOM);
         $params[] = $period['toUtc']->format(DateTimeInterface::ATOM);
         $stmt = $pdo->prepare($sql);
         $stmt->execute($params);
 
-        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $point) {
+        while ($point = $stmt->fetch(PDO::FETCH_ASSOC)) {
             $vehicleId = (int)$point['vehicle_id'];
             if (!isset($intervalsByVehicle[$vehicleId])) continue;
             try {
@@ -322,21 +319,34 @@ function aims_eco_build_report(
             $point['_captured'] = $captured;
             $intervals = $intervalsByVehicle[$vehicleId];
             $index = $intervalIndex[$vehicleId] ?? 0;
-            while ($index < count($intervals) && $captured >= $intervals[$index]['end']) $index++;
+            while ($index < count($intervals) && $intervals[$index]['start'] <= $captured) {
+                $activeIntervals[$vehicleId][] = $intervals[$index++];
+            }
             $intervalIndex[$vehicleId] = $index;
-            if ($index >= count($intervals)) continue;
-            $interval = $intervals[$index];
-            if ($captured < $interval['start'] || $captured >= $interval['end']) continue;
+            $active = array_values(array_filter($activeIntervals[$vehicleId] ?? [],
+                static fn(array $item): bool => $captured < $item['end']));
+            $activeIntervals[$vehicleId] = $active;
+            if (!$active) continue;
+            $owners = array_unique(array_column($active,'flowId'));
+            if (count($owners) !== 1) {
+                foreach ($active as $item) unset($states[$item['workdayId']]);
+                continue;
+            }
+            $interval = $active[count($active)-1];
+            if ($driverFilter !== '' && $interval['flowId'] !== $driverFilter) continue;
 
             $workdayId = $interval['workdayId'];
             $groupKey = ($interval['flowId'] !== '' ? $interval['flowId'] : 'unknown').':'.$vehicleId;
             if (!isset($groups[$groupKey])) $groups[$groupKey] = aims_eco_empty_group($interval);
             $groups[$groupKey]['pointCount']++;
 
-            $speed = max(0.0, (float)$point['speed_mps']);
-            $accuracy = $point['accuracy'] === null ? 20.0 : max(0.0, (float)$point['accuracy']);
-            if ($speed > $thresholds['maximum_speed_mps'] || $accuracy > $thresholds['maximum_accuracy_m']) {
-                $states[$workdayId] = ['point'=>$point,'speed'=>$speed,'inAccel'=>false,'severeAccel'=>false,'inBrake'=>false,'severeBrake'=>false];
+            $speed = (float)$point['speed_mps'];
+            $accuracy = (float)$point['accuracy'];
+            if ($point['speed_mps'] === null || $point['accuracy'] === null
+                || !is_finite($speed) || !is_finite($accuracy) || $speed < 0 || $accuracy < 0
+                || $speed > $thresholds['maximum_speed_mps'] || $accuracy > $thresholds['maximum_accuracy_m']) {
+                // A rejected fix must not become the next segment's baseline.
+                unset($states[$workdayId]);
                 continue;
             }
 
@@ -439,6 +449,7 @@ function aims_eco_build_report(
         return [$a['driverName'],$a['plate']] <=> [$b['driverName'],$b['plate']];
     });
     usort($events, static fn(array $a, array $b): int => $b['capturedAt'] <=> $a['capturedAt']);
+    $events = array_slice($events,0,3000);
 
     return [
         'period' => $period,
@@ -484,3 +495,4 @@ function aims_eco_csv(array $report): string {
     if ($content === false) throw new RuntimeException('CSV nem olvasható.');
     return $content;
 }
+

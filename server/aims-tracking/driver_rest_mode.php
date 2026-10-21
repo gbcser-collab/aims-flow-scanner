@@ -75,12 +75,15 @@ try {
             ]);
         }
 
+        $recordedStart = aims_rest_history_begin(
+            $pdo, $vehicleId, (string)($_SERVER['AIMS_FLOW_DRIVER_FLOW_ID'] ?? ''), $now, $until
+        );
         $update = $pdo->prepare('UPDATE vehicles
-            SET rest_mode_started_at = COALESCE(rest_mode_started_at, :started),
+            SET rest_mode_started_at = :started,
                 rest_mode_until = :until
             WHERE id = :vehicle');
         $update->execute([
-            ':started' => $now->format(DateTimeInterface::ATOM),
+            ':started' => $recordedStart,
             ':until' => $until->format(DateTimeInterface::ATOM),
             ':vehicle' => $vehicleId,
         ]);
@@ -90,9 +93,7 @@ try {
             'ok' => true,
             'restMode' => [
                 'active' => true,
-                'startedAt' => ($state['active'] ?? false)
-                    ? $state['startedAt']
-                    : $now->format(DateTimeInterface::ATOM),
+                'startedAt' => $recordedStart,
                 'until' => $until->format(DateTimeInterface::ATOM),
             ],
         ]);
@@ -123,3 +124,4 @@ try {
     error_log('AIMS rest mode: ' . $error->getMessage());
     aims_json(['ok' => false, 'error' => 'storage_error'], 500);
 }
+

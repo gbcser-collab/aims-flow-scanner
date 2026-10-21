@@ -84,12 +84,12 @@ function eco_grade_class(string $grade):string{return match($grade){'A'=>'grade-
 <div class="metric"><small>C / D minősítés</small><b class="grade-d"><?=($gradeCounts['C']+$gradeCounts['D'])?></b></div>
 </div>
 
-<section class="panel warning note"><b>Admin-kontroll:</b> az ECO osztályzat vezetői jelzés és coaching-adat. Nem használható önmagában automatikus szankcióhoz, bérdöntéshez vagy munkajogi következményhez. A rövid, 50 km alatti vagy 45 percnél kevesebb mozgást tartalmazó minta nem kap osztályzatot.</section>
+<section class="panel warning note"><b>Admin-kontroll:</b> az ECO osztályzat vezetői jelzés és coaching-adat. Nem használható önmagában automatikus szankcióhoz, bérdöntéshez vagy munkajogi következményhez. Legalább 50 km, 45 perc mozgás, 80 érvényes GPS-szakasz és azonosított sofőr szükséges az osztályzathoz.</section>
 
 <div class="section-head"><h2>A–D skála</h2><a class="btn gold" href="?<?=http_build_query(['from'=>$from,'to'=>$to,'driver'=>$driver,'plate'=>$plate,'download'=>'csv'])?>">CSV LETÖLTÉSE</a></div>
 <div class="legend">
-<article><strong class="grade-a">A · 90–100</strong><p>Kímélő, egyenletes vezetés. Legfeljebb 4 hirtelen esemény / 100 km és gyakorlatilag nincs súlyos esemény.</p></article>
-<article><strong class="grade-b">B · 75–89</strong><p>Jó vezetési minta kisebb kilengésekkel. Legfeljebb 10 hirtelen esemény / 100 km.</p></article>
+<article><strong class="grade-a">A · 90–100</strong><p>Kímélő, egyenletes vezetés. A gyorsítások és fékezések gyakoriságából számított pontszám legalább 90.</p></article>
+<article><strong class="grade-b">B · 75–89</strong><p>Jó vezetési minta kisebb kilengésekkel. A pontszám legalább 75 és 90 alatti.</p></article>
 <article><strong class="grade-c">C · 55–74</strong><p>Fejlesztendő. Gyakori erősebb gyorsítás vagy fékezés, de még nem tartósan szélsőséges.</p></article>
 <article><strong class="grade-d">D · 0–54</strong><p>Erősen egyenetlen minta, sok vagy súlyos gyorsítási és fékezési eseménnyel.</p></article>
 </div>
@@ -101,7 +101,7 @@ function eco_grade_class(string $grade):string{return match($grade){'A'=>'grade-
 <td><span class="grade <?=eco_grade_class((string)$row['grade'])?>"><?=eco_h($row['grade'])?></span><div class="muted" style="margin-top:6px"><?=eco_h($row['label'])?></div></td>
 <td><b><?=eco_h($row['driverName'])?></b><div class="muted mono"><?=eco_h($row['flowId']?:'—')?></div></td>
 <td><b><?=eco_h($row['plate'])?></b></td>
-<td><span class="score"><?=eco_num((float)$row['score'],1)?></span></td>
+<td><span class="score"><?=$row['enoughData']?eco_num((float)$row['score'],1):'—'?></span></td>
 <td><?=eco_num((float)$row['distanceKm'],1)?> km</td>
 <td><?=eco_num((float)$row['movingHours'],1)?> óra</td>
 <td><?=eco_num((float)$row['smoothRatio']*100,1)?>%</td>
@@ -120,3 +120,4 @@ function eco_grade_class(string $grade):string{return match($grade){'A'=>'grade-
 
 <p class="muted note" style="margin-top:14px">A rendszer nem állapít meg sebességtúllépést, üzemanyag-fogyasztást vagy hibás vezetést. Ehhez hiteles útszakasz-sebességhatár, jármű-CAN/FMS adat és emberi ellenőrzés szükséges. Az ECO MÓD jelenleg a gyorsítások, fékezések és az egyenletes haladás mintáját elemzi.</p>
 </div></body></html>
+

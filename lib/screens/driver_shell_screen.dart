@@ -20,6 +20,7 @@ import '../services/flow_operations_service.dart';
 import '../services/flow_safety_check_service.dart';
 import '../services/flow_workday_service.dart';
 import '../services/roaming_resilience.dart';
+import '../services/network_recovery.dart';
 import '../services/scan_repository.dart';
 import '../services/sync_coordinator.dart';
 import '../services/vehicle_tracking_service.dart';
@@ -316,6 +317,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
   Timer? _officeMessageTimer;
   Timer? _autopilotTimer;
   Timer? _runtimeHealthTimer;
+  NetworkRecovery? _networkRecovery;
   bool _runtimeHealthBusy = false;
   DateTime? _lastPushRecoveryAt;
   String? _lastAutopilotSpokenSignature;
@@ -2539,7 +2541,29 @@ class _DriverShellScreenState extends State<DriverShellScreen>
     }
   }
 
+  Future<void> _onNetworkRestored() async {
+    if (!mounted || _plate.isEmpty) return;
+    try {
+      await _tracking.syncPending();
+    } catch (_) {
+      // Keep independent operational queues eligible for recovery.
+    }
+    if (!mounted || !_appInForeground) return;
+    await Future.wait([
+      _runtimeRecoverySweep(),
+      _refreshAfterResume(),
+    ]);
+  }
+
   void _startRuntimeSupervisor() {
+    final underTest = WidgetsBinding.instance.runtimeType
+        .toString().contains('TestWidgetsFlutterBinding');
+    if (!underTest && defaultTargetPlatform == TargetPlatform.android) {
+      _networkRecovery ??= NetworkRecovery(
+        NetworkRecovery.androidEvents,
+        _onNetworkRestored,
+      );
+    }
     _runtimeHealthTimer?.cancel();
     _runtimeHealthTimer = Timer.periodic(
       const Duration(seconds: 60),
@@ -4490,6 +4514,9 @@ class _DriverShellScreenState extends State<DriverShellScreen>
     _autopilotTimer = null;
     _runtimeHealthTimer?.cancel();
     _runtimeHealthTimer = null;
+    final networkRecovery = _networkRecovery;
+    _networkRecovery = null;
+    if (networkRecovery != null) unawaited(networkRecovery.dispose());
     _pushSub?.cancel();
     _trackingSub?.cancel();
     _sync.removeListener(_documentSyncChanged);

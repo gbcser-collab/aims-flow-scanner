@@ -1,5 +1,7 @@
 <?php
 declare(strict_types=1);
+require_once __DIR__.'/rest_history.php';
+require_once __DIR__.'/driver_auth_v2.php';
 
 /**
  * Monthly country-presence and driver-attendance reporting for AIMS FLOW.
@@ -179,7 +181,7 @@ function aims_monthly_country_rows(PDO $pdo, array $period): array {
     $stmt = $pdo->prepare('SELECT s.*,v.plate,v.label
         FROM country_stays s
         JOIN vehicles v ON v.id=s.vehicle_id
-        WHERE s.entered_at < :end AND COALESCE(s.exited_at,:end) > :start
+        WHERE julianday(s.entered_at) < julianday(:end) AND julianday(COALESCE(s.exited_at,:end)) > julianday(:start)
         ORDER BY v.plate,s.entered_at,s.id');
     $stmt->execute([
         ':start'=>$start->format(DateTimeInterface::ATOM),
@@ -239,7 +241,8 @@ function aims_monthly_workday_source_rows(PDO $pdo, DateTimeImmutable $start, Da
         FROM driver_workdays w
         JOIN vehicles v ON v.id=w.vehicle_id
         LEFT JOIN driver_accounts a ON a.flow_id=substr(w.workday_key,1,6)
-        WHERE w.started_at < :end AND COALESCE(w.finished_at,:end) > :start
+          AND (length(w.workday_key)=6 OR substr(w.workday_key,7,1)="-")
+        WHERE julianday(w.started_at) < julianday(:end) AND julianday(COALESCE(w.finished_at,:end)) > julianday(:start)
         ORDER BY w.started_at,w.id');
     $stmt->execute([
         ':start'=>$start->format(DateTimeInterface::ATOM),
@@ -252,10 +255,19 @@ function aims_monthly_attendance_daily(PDO $pdo, array $period): array {
     $startUtc = $period['startUtc'];
     $endUtc = $period['endUtc'];
     $tz = $period['tz'];
-    $now = new DateTimeImmutable('now', new DateTimeZone('UTC'));
+    $now = new DateTimeImmutable('now', $period['utc']);
     $rangeEnd = $endUtc < $now ? $endUtc : $now;
+    $coverage = $pdo->query('SELECT started_at FROM report_capture_metadata WHERE name="rest_history"')->fetchColumn();
+    $coverageAt = $coverage ? (new DateTimeImmutable((string)$coverage))->getTimestamp() : PHP_INT_MAX;
+    $rests = [];
+    $stmt = $pdo->prepare('SELECT * FROM driver_rest_periods
+        WHERE julianday(started_at) < julianday(:end)
+          AND julianday(COALESCE(ended_at,planned_until)) > julianday(:start)');
+    $stmt->execute([':start'=>$startUtc->format(DateTimeInterface::ATOM), ':end'=>$rangeEnd->format(DateTimeInterface::ATOM)]);
+    foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $rest) {
+        $rests[(int)$rest['vehicle_id']][] = $rest;
+    }
     $groups = [];
-
     foreach (aims_monthly_workday_source_rows($pdo, $startUtc, $endUtc) as $row) {
         try { $started = new DateTimeImmutable((string)$row['started_at']); } catch (Throwable) { continue; }
         $finished = null;
@@ -266,155 +278,154 @@ function aims_monthly_attendance_daily(PDO $pdo, array $period): array {
         $segmentEnd = $finished ?? $rangeEnd;
         if ($segmentEnd > $rangeEnd) $segmentEnd = $rangeEnd;
         if ($segmentEnd <= $segmentStart) continue;
-
         $flowId = trim((string)($row['flow_id'] ?? ''));
-        if ($flowId === '' && preg_match('/^(\d{6})-/', (string)$row['workday_key'], $match)) {
-            $flowId = $match[1];
-        }
+        if ($flowId === '' && preg_match('/^(\d{6})(?:-|$)/', (string)$row['workday_key'], $match)) $flowId = $match[1];
         $plate = aims_normalize_plate((string)$row['plate']);
         $driverKey = $flowId !== '' ? $flowId : 'UNKNOWN-'.$plate;
         $cursor = $segmentStart->setTimezone($tz);
         $localEnd = $segmentEnd->setTimezone($tz);
-
         while ($cursor < $localEnd) {
             $nextMidnight = $cursor->modify('tomorrow')->setTime(0, 0, 0);
             $partEnd = $nextMidnight < $localEnd ? $nextMidnight : $localEnd;
-            $seconds = $partEnd->getTimestamp() - $cursor->getTimestamp();
-            if ($seconds <= 0) break;
             $date = $cursor->format('Y-m-d');
             $key = $driverKey.'|'.$date.'|'.$plate;
             if (!isset($groups[$key])) {
                 $groups[$key] = [
-                    'flowId'=>$flowId,
-                    'driverName'=>trim((string)($row['driver_name'] ?? '')) ?: 'Ismeretlen sofőr',
-                    'email'=>trim((string)($row['email'] ?? '')),
-                    'plate'=>$plate,
-                    'date'=>$date,
-                    'firstStart'=>$cursor,
-                    'lastEnd'=>$partEnd,
-                    'seconds'=>0,
+                    'flowId'=>$flowId, 'driverName'=>trim((string)($row['driver_name'] ?? '')) ?: 'Ismeretlen sofőr',
+                    'email'=>trim((string)($row['email'] ?? '')), 'plate'=>$plate, 'date'=>$date,
+                    'firstStart'=>$cursor, 'lastEnd'=>$partEnd,
+                    'workIntervals'=>[], 'restIntervals'=>[], 'incompleteRest'=>false, 'openWorkday'=>false,
                 ];
             }
-            $groups[$key]['seconds'] += $seconds;
-            if ($cursor < $groups[$key]['firstStart']) $groups[$key]['firstStart'] = $cursor;
-            if ($partEnd > $groups[$key]['lastEnd']) $groups[$key]['lastEnd'] = $partEnd;
+            $g = &$groups[$key];
+            $cs = $cursor->getTimestamp(); $ce = $partEnd->getTimestamp();
+            $g['workIntervals'][] = [$cs,$ce];
+            $g['incompleteRest'] = $g['incompleteRest'] || $cs < $coverageAt || $flowId === '';
+            $g['openWorkday'] = $g['openWorkday'] || $finished === null;
+            foreach ($rests[(int)$row['vehicle_id']] ?? [] as $rest) {
+                try {
+                    $rs = (new DateTimeImmutable($rest['started_at']))->getTimestamp();
+                    $re = (new DateTimeImmutable($rest['ended_at'] ?? $rest['planned_until']))->getTimestamp();
+                } catch (Throwable) { continue; }
+                $rs = max($cs,$rs); $re = min($ce,$re);
+                if ($re <= $rs) continue;
+                if ($flowId !== '' && $rest['flow_id'] === $flowId) {
+                    $g['restIntervals'][] = [$rs,$re];
+                } elseif ($rest['flow_id'] === '') {
+                    $g['incompleteRest'] = true;
+                }
+            }
+            if ($cursor < $g['firstStart']) $g['firstStart'] = $cursor;
+            if ($partEnd > $g['lastEnd']) $g['lastEnd'] = $partEnd;
+            unset($g);
             $cursor = $partEnd;
         }
     }
-
     $rows = [];
     foreach ($groups as $row) {
-        $hours = $row['seconds'] / 3600.0;
-        $row['duration'] = aims_monthly_duration_parts((int)$row['seconds']);
-        $row['dailyStatus'] = $hours > 15.0
-            ? 'HOSSZÚ NAP – PIHENŐIDŐ ELLENŐRZÉS'
-            : ($hours > 10.0
-                ? '10 ÓRA FELETT – ÉJSZAKAI MUNKÁNÁL ELLENŐRZÉS'
-                : 'RENDBEN');
+        $row['workIntervals'] = aims_time_union($row['workIntervals']);
+        $row['netIntervals'] = aims_time_subtract($row['workIntervals'],$row['restIntervals']);
+        $row['grossSeconds'] = aims_time_seconds($row['workIntervals']);
+        $row['seconds'] = aims_time_seconds($row['netIntervals']);
+        $row['restSeconds'] = $row['grossSeconds']-$row['seconds'];
+        $row['duration'] = aims_monthly_duration_parts($row['seconds']);
+        $row['grossDuration'] = aims_monthly_duration_parts($row['grossSeconds']);
+        $row['restDuration'] = aims_monthly_duration_parts($row['restSeconds']);
+        $flags = [];
+        if ($row['incompleteRest']) $flags[] = 'PIHENŐADAT NEM TELJES';
+        if ($row['openWorkday']) $flags[] = 'NYITOTT MUNKANAP – IDEIGLENES';
+        if ($row['seconds'] > 15*3600) $flags[] = 'HOSSZÚ NAP – IRODAI ELLENŐRZÉS';
+        elseif ($row['seconds'] > 10*3600) $flags[] = '10 ÓRA FELETT – IRODAI ELLENŐRZÉS';
+        $row['dailyStatus'] = $flags ? implode(' | ',$flags) : 'RÖGZÍTETT ADATOK ALAPJÁN';
         $rows[] = $row;
     }
-    usort($rows, static fn(array $a, array $b): int =>
-        [$a['flowId'], $a['driverName'], $a['date'], $a['plate']] <=>
-        [$b['flowId'], $b['driverName'], $b['date'], $b['plate']]
-    );
+    usort($rows, static fn(array $a,array $b): int =>
+        [$a['flowId'],$a['driverName'],$a['date'],$a['plate']] <=> [$b['flowId'],$b['driverName'],$b['date'],$b['plate']]);
     return $rows;
 }
 
 function aims_monthly_reference_average(PDO $pdo, string $flowId, array $period): ?float {
-    if (!preg_match('/^\d{6}$/', $flowId)) return null;
-    $referenceStart = $period['startLocal']->modify('-3 months')->setTimezone($period['utc']);
-    $referenceEnd = $period['endUtc'];
-    $now = new DateTimeImmutable('now', $period['utc']);
-    if ($referenceEnd > $now) $referenceEnd = $now;
-    if ($referenceEnd <= $referenceStart) return null;
-
-    $stmt = $pdo->prepare('SELECT started_at,finished_at FROM driver_workdays
-        WHERE workday_key LIKE :prefix
-          AND started_at < :end AND COALESCE(finished_at,:end) > :start');
-    $stmt->execute([
-        ':prefix'=>$flowId.'-%',
-        ':start'=>$referenceStart->format(DateTimeInterface::ATOM),
-        ':end'=>$referenceEnd->format(DateTimeInterface::ATOM),
-    ]);
-    $seconds = 0;
-    foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
-        try { $start = new DateTimeImmutable((string)$row['started_at']); } catch (Throwable) { continue; }
-        $finish = null;
-        if (trim((string)($row['finished_at'] ?? '')) !== '') {
-            try { $finish = new DateTimeImmutable((string)$row['finished_at']); } catch (Throwable) {}
-        }
-        if ($start < $referenceStart) $start = $referenceStart;
-        $finish ??= $referenceEnd;
-        if ($finish > $referenceEnd) $finish = $referenceEnd;
-        if ($finish > $start) $seconds += $finish->getTimestamp() - $start->getTimestamp();
+    if (!preg_match('/^\d{6}$/',$flowId)) return null;
+    $reference = $period;
+    $reference['startUtc'] = $period['startLocal']->modify('-3 months')->setTimezone($period['utc']);
+    $now = new DateTimeImmutable('now',$period['utc']);
+    if ($reference['endUtc'] > $now) $reference['endUtc'] = $now;
+    $weeks = ($reference['endUtc']->getTimestamp()-$reference['startUtc']->getTimestamp())/604800.0;
+    if ($weeks <= 0) return null;
+    $intervals = [];
+    foreach (aims_monthly_attendance_daily($pdo,$reference) as $row) {
+        if ($row['flowId'] !== $flowId) continue;
+        // Do not present an average as verified if historical rests are missing.
+        if ($row['incompleteRest'] || $row['openWorkday']) return null;
+        $intervals = array_merge($intervals,$row['netIntervals']);
     }
-    $weeks = ($referenceEnd->getTimestamp() - $referenceStart->getTimestamp()) / 604800.0;
-    return $weeks > 0 ? ($seconds / 3600.0) / $weeks : null;
+    return aims_time_seconds($intervals)/3600.0/$weeks;
 }
 
 function aims_monthly_attendance_summary(PDO $pdo, array $period, array $dailyRows): array {
     $summary = [];
-    $weekly = [];
     foreach ($dailyRows as $row) {
-        $flowId = $row['flowId'] !== '' ? $row['flowId'] : 'UNKNOWN-'.$row['plate'];
-        if (!isset($summary[$flowId])) {
-            $summary[$flowId] = [
-                'flowId'=>$row['flowId'],
-                'driverName'=>$row['driverName'],
-                'email'=>$row['email'],
-                'plates'=>[],
-                'seconds'=>0,
-                'days'=>0,
+        $key = $row['flowId'] !== '' ? $row['flowId'] : 'UNKNOWN-'.$row['plate'];
+        if (!isset($summary[$key])) {
+            $summary[$key] = [
+                'flowId'=>$row['flowId'],'driverName'=>$row['driverName'],'email'=>$row['email'],
+                'plates'=>[],'dates'=>[],'workIntervals'=>[],'netIntervals'=>[],
+                'incompleteRest'=>false,'openWorkday'=>false,
             ];
         }
-        $summary[$flowId]['plates'][$row['plate']] = true;
-        $summary[$flowId]['seconds'] += (int)$row['seconds'];
-        $summary[$flowId]['days']++;
-
-        $date = new DateTimeImmutable($row['date'].' 12:00:00', $period['tz']);
-        $weekKey = $flowId.'|'.$date->format('o-W');
-        $weekly[$weekKey] = ($weekly[$weekKey] ?? 0) + (int)$row['seconds'];
+        $g = &$summary[$key];
+        $g['plates'][$row['plate']] = true;
+        $g['dates'][$row['date']] = true;
+        $g['workIntervals'] = array_merge($g['workIntervals'],$row['workIntervals']);
+        $g['netIntervals'] = array_merge($g['netIntervals'],$row['netIntervals']);
+        $g['incompleteRest'] = $g['incompleteRest'] || $row['incompleteRest'];
+        $g['openWorkday'] = $g['openWorkday'] || $row['openWorkday'];
+        unset($g);
     }
-
+    // Include complete ISO weeks crossing either edge of the selected month.
+    $weekPeriod = $period;
+    $weekPeriod['startUtc'] = $period['startLocal']->modify('monday this week')->setTimezone($period['utc']);
+    $weekPeriod['endUtc'] = $period['endLocal']->modify('-1 day')->modify('monday next week')->setTimezone($period['utc']);
+    $weekly = [];
+    foreach (aims_monthly_attendance_daily($pdo,$weekPeriod) as $day) {
+        $key = $day['flowId'] !== '' ? $day['flowId'] : 'UNKNOWN-'.$day['plate'];
+        $week = (new DateTimeImmutable($day['date'],$period['tz']))->format('o-W');
+        $weekly[$key][$week] = array_merge($weekly[$key][$week] ?? [],$day['netIntervals']);
+    }
     $rows = [];
     foreach ($summary as $driverKey=>$row) {
-        $normHours = aims_monthly_calendar_norm_hours($period['month'], (string)$row['flowId']);
-        $actualHours = $row['seconds'] / 3600.0;
+        $row['days'] = count($row['dates']);
+        $row['grossSeconds'] = aims_time_seconds($row['workIntervals']);
+        $row['seconds'] = aims_time_seconds($row['netIntervals']);
+        $row['restSeconds'] = $row['grossSeconds']-$row['seconds'];
+        $normHours = aims_monthly_calendar_norm_hours($period['month'],$row['flowId']);
+        $actualHours = $row['seconds']/3600.0;
         $maxWeeklyHours = 0.0;
-        foreach ($weekly as $key=>$seconds) {
-            if (str_starts_with($key, $driverKey.'|')) {
-                $maxWeeklyHours = max($maxWeeklyHours, $seconds / 3600.0);
-            }
-        }
-        $average4m = aims_monthly_reference_average($pdo, (string)$row['flowId'], $period);
+        foreach ($weekly[$driverKey] ?? [] as $intervals) $maxWeeklyHours = max($maxWeeklyHours,aims_time_seconds($intervals)/3600.0);
+        $average4m = aims_monthly_reference_average($pdo,$row['flowId'],$period);
         $flags = [];
-        if ($actualHours > $normHours + 0.01) {
-            $flags[] = 'HAVI NORMA FELETT – IRODAI ELLENŐRZÉS';
-        }
-        if ($maxWeeklyHours > 60.0 + 0.01) {
-            $flags[] = '60 ÓRA/HÉT FELETT – KRITIKUS';
-        }
-        if ($average4m !== null && $average4m > 48.0 + 0.01) {
-            $flags[] = '4 HÓNAPOS ÁTLAG 48 ÓRA/HÉT FELETT – KRITIKUS';
-        }
-        if (!$flags) $flags[] = 'RENDBEN';
-
-        $row['plates'] = implode(', ', array_keys($row['plates']));
-        $row['duration'] = aims_monthly_duration_parts((int)$row['seconds']);
+        if ($row['incompleteRest']) $flags[] = 'PIHENŐADAT NEM TELJES';
+        if ($row['openWorkday']) $flags[] = 'NYITOTT MUNKANAP – IDEIGLENES';
+        if ($actualHours > $normHours+0.01) $flags[] = 'HAVI NORMA FELETT – IRODAI ELLENŐRZÉS';
+        if ($maxWeeklyHours > 60.0+0.01) $flags[] = '60 ÓRA/HÉT FELETT – IRODAI ELLENŐRZÉS';
+        if ($average4m !== null && $average4m > 48.0+0.01) $flags[] = '4 HÓNAPOS ÁTLAG 48 ÓRA/HÉT FELETT – IRODAI ELLENŐRZÉS';
+        $row['plates'] = implode(', ',array_keys($row['plates']));
+        $row['duration'] = aims_monthly_duration_parts($row['seconds']);
+        $row['grossDuration'] = aims_monthly_duration_parts($row['grossSeconds']);
+        $row['restDuration'] = aims_monthly_duration_parts($row['restSeconds']);
         $row['normHours'] = $normHours;
-        $row['differenceHours'] = $actualHours - $normHours;
+        $row['differenceHours'] = $actualHours-$normHours;
         $row['maxWeeklyHours'] = $maxWeeklyHours;
         $row['average4MonthWeeklyHours'] = $average4m;
-        $row['status'] = implode(' | ', $flags);
+        $row['status'] = $flags ? implode(' | ',$flags) : 'RÖGZÍTETT ADATOK ALAPJÁN';
         $rows[] = $row;
     }
-    usort($rows, static fn(array $a, array $b): int =>
-        [$a['driverName'], $a['flowId']] <=> [$b['driverName'], $b['flowId']]
-    );
+    usort($rows, static fn(array $a,array $b): int => [$a['driverName'],$a['flowId']] <=> [$b['driverName'],$b['flowId']]);
     return $rows;
 }
 
 function aims_monthly_build_report(PDO $pdo, string $month): array {
+    aims_driver_auth_schema($pdo);
     $period = aims_monthly_period($month);
     $country = aims_monthly_country_rows($pdo, $period);
     $daily = aims_monthly_attendance_daily($pdo, $period);
@@ -470,14 +481,15 @@ function aims_monthly_attendance_csv(array $report): string {
             $row['email'], $row['plate'],
             $row['firstStart']->format('Y-m-d H:i:s'),
             $row['lastEnd']->format('Y-m-d H:i:s'),
+            $row['grossDuration']['hhmm'], $row['restDuration']['hhmm'],
             $row['duration']['hhmm'], $row['duration']['seconds'],
             $row['dailyStatus'],
         ];
     }
     return aims_monthly_csv([
         'Hónap','Dátum','FLOW ID','Sofőr','E-mail','Rendszám',
-        'Első munkakezdés','Utolsó munkavégzés vége','Munkaidő HH:MM',
-        'Munkaidő másodperc','Napi ellenőrzési állapot',
+        'Első munkakezdés','Utolsó munkavégzés vége','Bruttó FLOW-idő HH:MM','Rögzített pihenő HH:MM','Nettó FLOW-idő HH:MM',
+        'Nettó FLOW-idő másodperc','Napi ellenőrzési állapot',
     ], $rows);
 }
 
@@ -486,7 +498,7 @@ function aims_monthly_attendance_summary_csv(array $report): string {
     foreach ($report['attendanceSummary'] as $row) {
         $rows[] = [
             $report['month'], $row['flowId'], $row['driverName'], $row['email'],
-            $row['plates'], $row['days'], $row['duration']['hhmm'],
+            $row['plates'], $row['days'], $row['grossDuration']['hhmm'], $row['restDuration']['hhmm'], $row['duration']['hhmm'],
             number_format((float)$row['normHours'], 2, ',', ''),
             number_format((float)$row['differenceHours'], 2, ',', ''),
             number_format((float)$row['maxWeeklyHours'], 2, ',', ''),
@@ -498,7 +510,7 @@ function aims_monthly_attendance_summary_csv(array $report): string {
     }
     return aims_monthly_csv([
         'Hónap','FLOW ID','Sofőr','E-mail','Rendszámok','Munkanapok száma',
-        'Teljesített idő HH:MM','Havi általános norma óra','Eltérés óra',
+        'Bruttó FLOW-idő HH:MM','Rögzített pihenő HH:MM','Nettó FLOW-idő HH:MM','Havi általános norma óra','Eltérés óra',
         'Legmagasabb heti óra','4 havi átlag óra/hét','Állapot',
     ], $rows);
 }
@@ -543,12 +555,11 @@ function aims_monthly_store_report(array $report): array {
 }
 
 function aims_monthly_email_text(array $report): string {
-    $monthLabel = $report['period']['startLocal']->format('Y. F');
     return "Tisztelt Iroda!\n\n"
         ."Az AIMS FLOW elkészítette a {$report['month']} havi ország- és jelenléti összesítést.\n\n"
         ."A csatolmányok tartalmazzák:\n"
         ."- rendszámonként az egyes országokban töltött időt nap / óra / perc bontásban;\n"
-        ."- sofőrönként és naponként a FLOW-ban rögzített munkakezdést, munkavégzés-véget és munkaidőt;\n"
+        ."- sofőrönként és naponként a FLOW-ban rögzített munkakezdést, munkavégzés-véget, bruttó időt, rögzített pihenőt és nettó FLOW-időt;\n"
         ."- a havi általános munkaidőnormához, a heti 60 órás felső ellenőrzési küszöbhöz és a négyhavi 48 órás heti átlaghoz viszonyított figyelmeztetéseket.\n\n"
         ."Fontos: a jelentés az AIMS FLOW GPS- és munkanap-adataiból készült. Nem helyettesíti a tachográf-adatok, a szabadságok, betegállományok, rendelkezésre állási idők, munkaközi szünetek, bérszámfejtési adatok és a munkaidőkeret irodai ellenőrzését.\n\n"
         ."A határátlépés csak akkor kerül a riportba, ha az új országban legalább 5 km hiteles mozgás megerősítette az országváltást.\n\n"
@@ -649,3 +660,4 @@ function aims_monthly_record_run(
         ':files'=>json_encode($paths, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES),
     ]);
 }
+

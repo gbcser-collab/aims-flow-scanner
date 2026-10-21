@@ -123,12 +123,19 @@ $names=aims_monthly_country_names();
 <tr><td><b><?=portal_h($row['plate'])?></b></td><td><?=portal_h($row['countryName'])?> <span class="muted">(<?=portal_h($row['countryCode'])?>)</span></td><td><?=$d['days']?></td><td><?=$d['hours']?></td><td><?=$d['minutes']?></td><td><b><?=portal_h($d['formatted'])?></b></td><td><a class="btn" href="?month=<?=urlencode($month)?>&download=plate:<?=urlencode($row['plate'])?>">CSV</a></td></tr>
 <?php endforeach;endif;?></tbody></table></div>
 
-<div class="section-head"><h2>Sofőr havi jelenléti összesítő</h2><div class="muted">A norma általános munkarendi kontrollérték; a tachográf és a tényleges munkaidőkeret külön ellenőrzendő.</div></div>
-<div class="table"><table><thead><tr><th>FLOW ID</th><th>Sofőr</th><th>Rendszám</th><th>Munkanap</th><th>Teljesített</th><th>Havi norma</th><th>Eltérés</th><th>Max. hét</th><th>4 havi átlag</th><th>Állapot</th></tr></thead><tbody>
-<?php if(!$report['attendanceSummary']):?><tr><td colspan="10" class="muted">Nincs rögzített munkanap ebben a hónapban.</td></tr><?php else:foreach($report['attendanceSummary'] as $row):
-$status=(string)$row['status'];$class=str_contains($status,'KRITIKUS')?'bad':(str_contains($status,'FELETT')?'warn':'ok');?>
-<tr><td class="mono"><?=portal_h($row['flowId']?:'—')?></td><td><b><?=portal_h($row['driverName'])?></b><div class="muted"><?=portal_h($row['email'])?></div></td><td><?=portal_h($row['plates'])?></td><td><?=$row['days']?></td><td><b><?=portal_h($row['duration']['hhmm'])?></b></td><td><?=number_format((float)$row['normHours'],2,',','')?> óra</td><td><?=number_format((float)$row['differenceHours'],2,',','')?> óra</td><td><?=number_format((float)$row['maxWeeklyHours'],2,',','')?> óra</td><td><?=$row['average4MonthWeeklyHours']===null?'—':number_format((float)$row['average4MonthWeeklyHours'],2,',','').' óra/hét'?></td><td><span class="chip <?=$class?>"><?=portal_h($status)?></span></td></tr>
+<div class="section-head"><h2>Sofőr havi jelenléti összesítő</h2><div class="muted">A nettó FLOW-idő a rögzített pihenő levonása utáni idő. A korábbi hiányzó pihenő és a nyitott munkanap külön jelölést kap.</div></div>
+<div class="table"><table><thead><tr><th>FLOW ID</th><th>Sofőr</th><th>Rendszám</th><th>Munkanap</th><th>Bruttó</th><th>Rögzített pihenő</th><th>Nettó FLOW-idő</th><th>Havi norma</th><th>Eltérés</th><th>Max. hét</th><th>4 havi átlag</th><th>Állapot</th></tr></thead><tbody>
+<?php if(!$report['attendanceSummary']):?><tr><td colspan="12" class="muted">Nincs rögzített munkanap ebben a hónapban.</td></tr><?php else:foreach($report['attendanceSummary'] as $row):
+$status=(string)$row['status'];$class=str_contains($status,'KRITIKUS')?'bad':(($row['incompleteRest']||$row['openWorkday']||str_contains($status,'FELETT'))?'warn':'ok');?>
+<tr><td class="mono"><?=portal_h($row['flowId']?:'—')?></td><td><b><?=portal_h($row['driverName'])?></b><div class="muted"><?=portal_h($row['email'])?></div></td><td><?=portal_h($row['plates'])?></td><td><?=$row['days']?></td><td><?=portal_h($row['grossDuration']['hhmm'])?></td><td><?=portal_h($row['restDuration']['hhmm'])?></td><td><b><?=portal_h($row['duration']['hhmm'])?></b></td><td><?=number_format((float)$row['normHours'],2,',','')?> óra</td><td><?=number_format((float)$row['differenceHours'],2,',','')?> óra</td><td><?=number_format((float)$row['maxWeeklyHours'],2,',','')?> óra</td><td><?=$row['average4MonthWeeklyHours']===null?'—':number_format((float)$row['average4MonthWeeklyHours'],2,',','').' óra/hét'?></td><td><span class="chip <?=$class?>"><?=portal_h($status)?></span></td></tr>
+<?php endforeach;endif;?></tbody></table></div>
+
+<div class="section-head"><h2>Napi jelenléti bontás</h2><div class="muted">Az átfedő munkanapokat egyszer számítjuk; a járműváltás nem növeli a munkanapok számát.</div></div>
+<div class="table"><table><thead><tr><th>Dátum</th><th>Sofőr</th><th>Rendszám</th><th>Kezdés</th><th>Vége</th><th>Bruttó</th><th>Rögzített pihenő</th><th>Nettó FLOW-idő</th><th>Állapot</th></tr></thead><tbody>
+<?php if(!$report['attendanceRows']):?><tr><td colspan="9">Nincs rögzített munkanap.</td></tr><?php else:foreach($report['attendanceRows'] as $row):?>
+<tr><td><?=portal_h($row['date'])?></td><td><?=portal_h($row['driverName'])?></td><td><?=portal_h($row['plate'])?></td><td><?=portal_h($row['firstStart']->format('H:i'))?></td><td><?=portal_h($row['lastEnd']->format('H:i'))?></td><td><?=portal_h($row['grossDuration']['hhmm'])?></td><td><?=portal_h($row['restDuration']['hhmm'])?></td><td><b><?=portal_h($row['duration']['hhmm'])?></b></td><td><?=portal_h($row['dailyStatus'])?></td></tr>
 <?php endforeach;endif;?></tbody></table></div>
 
 <p class="muted" style="margin-top:14px">A rendszer a közúti munkavállalóknál figyeli a heti 60 órás ellenőrzési küszöböt és a négyhavi, heti 48 órás átlagot. Az eredmény irodai kontrolljelzés, nem automatikus bérszámfejtési vagy jogi döntés.</p>
 </div></body></html>
+

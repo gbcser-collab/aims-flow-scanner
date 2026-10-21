@@ -14,6 +14,7 @@ if(is_file($aimsSharedConfig)){
   }
 }
 
+require_once __DIR__ . '/rest_history.php';
 require_once __DIR__ . '/smart_rules.php';
 require_once __DIR__ . '/push_service.php';
 
@@ -615,6 +616,7 @@ function aims_db(): PDO {
     $pdo->exec('CREATE INDEX IF NOT EXISTS idx_vehicle_issues_vehicle_status
         ON vehicle_issues(vehicle_id, status, created_at DESC)');
 
+    aims_rest_history_schema($pdo);
     aims_ensure_default_admin($pdo);
     return $pdo;
 }
@@ -650,6 +652,7 @@ function aims_finalize_rest_pause(
     int $vehicleId,
     DateTimeImmutable $endedAt
 ): void {
+    aims_rest_history_finish($pdo, $vehicleId, $endedAt);
     $stmt = $pdo->prepare('SELECT s.id, s.waiting_pause_started_at
         FROM job_stops s
         JOIN jobs j ON j.id = s.job_id
@@ -786,3 +789,4 @@ function aims_vehicle_for_point(PDO $pdo, string $deviceId, string $vehicleLabel
     }
     return $vehicle;
 }
+

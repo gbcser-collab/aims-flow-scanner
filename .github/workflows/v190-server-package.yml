@@ -25,6 +25,11 @@ jobs:
         run: |
           find admin api server/aims-tracking -name '*.php' -print0 | xargs -0 -n1 php -l
 
+      - name: Reporting regression tests
+        run: |
+          php server/aims-tracking/tests/report_regression_test.php
+          php server/aims-tracking/tests/eco_regression_test.php
+
       - name: Build deployment package
         run: |
           set -euo pipefail
@@ -36,6 +41,8 @@ jobs:
           cp admin/foreign-stay-report.php "$ROOT/admin/"
 
           rsync -a \
+            --exclude 'tests/' \
+            --exclude 'test_*.php' \
             --exclude 'data/' \
             --exclude '*.sqlite' \
             --exclude '*.sqlite-*' \
@@ -123,3 +130,4 @@ jobs:
             AIMS-FLOW-v1.9-SERVER-DEPLOY.zip.sha256
           if-no-files-found: error
           retention-days: 30
+
