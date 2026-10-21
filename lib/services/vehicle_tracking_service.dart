@@ -9,6 +9,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'country_code_service.dart';
+import 'flow_account_service.dart';
 import 'gps_point_quality.dart';
 import 'roaming_resilience.dart';
 
@@ -46,6 +47,11 @@ class VehicleTrackingStatus {
   final double? stableLongitude;
 }
 
+/// Driver-friendly, offline-first vehicle tracking.
+///
+/// GPS points are stored locally first and uploaded through the revocable
+/// FLOW ID/PIN driver session. No shared server bearer token is compiled into
+/// the Android application.
 class VehicleTrackingService {
   VehicleTrackingService._();
 
@@ -54,27 +60,35 @@ class VehicleTrackingService {
   static const _enabledKey = 'aims_tracking_enabled';
   static const _deviceIdKey = 'aims_tracking_device_id';
   static const _vehicleLabelKey = 'aims_tracking_vehicle_label';
+  static const _maxQueueLines = 20000;
+  static const _uploadBatchSize = 40;
 
   static const _endpoint = String.fromEnvironment(
     'AIMS_TRACKING_ENDPOINT',
-    defaultValue: 'https://logistic-aims.hu/api/aims-tracking/ingest.php',
+    defaultValue:
+        'https://logistic-aims.hu/api/aims-tracking/session/ingest.php',
   );
-  static const _token = String.fromEnvironment('AIMS_TRACKING_TOKEN', defaultValue: '');
 
-  final _statusController = StreamController<VehicleTrackingStatus>.broadcast();
+  final _statusController =
+      StreamController<VehicleTrackingStatus>.broadcast();
+
   StreamSubscription<Position>? _subscription;
   Timer? _heartbeatTimer;
   Timer? _healthTimer;
   Timer? _retryTimer;
   Timer? _streamRecoveryTimer;
+
   Future<void> _queueIoTail = Future<void>.value();
   Future<void> _positionTail = Future<void>.value();
+
   bool _flushRunning = false;
   bool _flushAgain = false;
+  bool _queueDepthLoaded = false;
   int _flushFailures = 0;
   int _streamFailures = 0;
   int _queueDepth = 0;
   int _rejectedFixes = 0;
+
   Position? _lastPosition;
   Position? _lastAcceptedPosition;
   DateTime? _lastFixAt;
@@ -93,6 +107,7 @@ class VehicleTrackingService {
 
   Future<VehicleTrackingStatus> currentStatus() async {
     await _loadIdentity();
+    await _ensureQueueDepthLoaded();
     return _status;
   }
 
@@ -105,7 +120,10 @@ class VehicleTrackingService {
         latitude: position.latitude,
         longitude: position.longitude,
         accuracy: RoamingResilience.finiteOrZero(position.accuracy),
-        speedMps: max(0.0, RoamingResilience.finiteOrZero(position.speed)),
+        speedMps: max(
+          0.0,
+          RoamingResilience.finiteOrZero(position.speed),
+        ),
         capturedAt: position.timestamp,
       );
       return assessment.accepted &&
@@ -116,8 +134,7 @@ class VehicleTrackingService {
     if (usable(_lastAcceptedPosition)) return _lastAcceptedPosition;
 
     try {
-      final enabled = await Geolocator.isLocationServiceEnabled();
-      if (!enabled) return null;
+      if (!await Geolocator.isLocationServiceEnabled()) return null;
       var permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
@@ -127,6 +144,7 @@ class VehicleTrackingService {
         final fallback = await Geolocator.getLastKnownPosition();
         return usable(fallback) ? fallback : null;
       }
+
       final position = await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(
           accuracy: LocationAccuracy.bestForNavigation,
@@ -152,6 +170,7 @@ class VehicleTrackingService {
 
   Future<void> recover() async {
     await _loadIdentity();
+    await _ensureQueueDepthLoaded();
     if (!_enabled) return;
     if (_subscription == null) {
       await _startLocationStream(requestPermission: false);
@@ -161,11 +180,16 @@ class VehicleTrackingService {
 
   Future<void> startIfEnabled() async {
     await _loadIdentity();
-    if (_enabled) await _startLocationStream(requestPermission: false);
+    await _ensureQueueDepthLoaded();
+    if (_enabled) {
+      await _startLocationStream(requestPermission: false);
+    }
   }
 
   Future<bool> enableWithPermission() async {
     await _loadIdentity();
+    await _ensureQueueDepthLoaded();
+
     if (!await Geolocator.isLocationServiceEnabled()) {
       _lastError = 'A helymeghatározás ki van kapcsolva a telefonon.';
       _emit();
@@ -195,6 +219,7 @@ class VehicleTrackingService {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_enabledKey, false);
     _enabled = false;
+
     await _subscription?.cancel();
     _subscription = null;
     _heartbeatTimer?.cancel();
@@ -211,21 +236,43 @@ class VehicleTrackingService {
   }
 
   Future<void> setVehicleLabel(String label) async {
-    final cleaned = label.trim().toUpperCase();
+    final cleaned = label
+        .trim()
+        .toUpperCase()
+        .replaceAll(RegExp(r'[^A-Z0-9]'), '');
     final prefs = await SharedPreferences.getInstance();
     _vehicleLabel = cleaned;
-    await prefs.setString(_vehicleLabelKey, _vehicleLabel);
+    await prefs.setString(_vehicleLabelKey, cleaned);
     _emit();
+  }
+
+  Future<Map<String, String>> _sessionHeaders() async {
+    final session = await FlowSessionStore.instance.load();
+    if (session == null || session.isExpired) {
+      throw const _TrackingSessionException();
+    }
+    return {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      'Authorization': 'Bearer ${session.sessionToken}',
+    };
   }
 
   Future<void> _loadIdentity() async {
     final prefs = await SharedPreferences.getInstance();
     _enabled = prefs.getBool(_enabledKey) ?? false;
-    _vehicleLabel = prefs.getString(_vehicleLabelKey) ?? '';
+    _vehicleLabel = (prefs.getString(_vehicleLabelKey) ?? '')
+        .trim()
+        .toUpperCase()
+        .replaceAll(RegExp(r'[^A-Z0-9]'), '');
+
     var id = prefs.getString(_deviceIdKey);
     if (id == null || id.trim().isEmpty) {
       final random = Random.secure();
-      final suffix = List.generate(8, (_) => random.nextInt(16).toRadixString(16)).join();
+      final suffix = List.generate(
+        16,
+        (_) => random.nextInt(16).toRadixString(16),
+      ).join();
       id = 'aims-${DateTime.now().millisecondsSinceEpoch}-$suffix';
       await prefs.setString(_deviceIdKey, id);
     }
@@ -251,19 +298,28 @@ class VehicleTrackingService {
       return;
     }
 
-    final settings = AndroidSettings(
-      accuracy: LocationAccuracy.bestForNavigation,
-      distanceFilter: 3,
-      intervalDuration: const Duration(seconds: 8),
-      foregroundNotificationConfig: const ForegroundNotificationConfig(
-        notificationTitle: 'AIMS Flow nyomkövetés aktív',
-        notificationText: 'A jármű helyzete a munkavégzés alatt frissül.',
-        enableWakeLock: true,
-        setOngoing: true,
-      ),
-    );
+    final LocationSettings settings = Platform.isAndroid
+        ? AndroidSettings(
+            accuracy: LocationAccuracy.bestForNavigation,
+            distanceFilter: 3,
+            intervalDuration: const Duration(seconds: 8),
+            foregroundNotificationConfig:
+                const ForegroundNotificationConfig(
+              notificationTitle: 'AIMS FLOW nyomkövetés aktív',
+              notificationText:
+                  'A jármű helyzete a munkavégzés alatt frissül.',
+              enableWakeLock: true,
+              setOngoing: true,
+            ),
+          )
+        : const LocationSettings(
+            accuracy: LocationAccuracy.bestForNavigation,
+            distanceFilter: 3,
+          );
 
-    _subscription = Geolocator.getPositionStream(locationSettings: settings).listen(
+    _subscription = Geolocator.getPositionStream(
+      locationSettings: settings,
+    ).listen(
       _enqueuePosition,
       onError: (Object error) {
         _lastError = 'GPS stream hiba: $error';
@@ -280,6 +336,7 @@ class VehicleTrackingService {
     _heartbeatTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       unawaited(_sendHeartbeat());
     });
+
     _healthTimer?.cancel();
     _healthTimer = Timer.periodic(const Duration(seconds: 45), (_) {
       if (!_enabled) return;
@@ -295,6 +352,7 @@ class VehicleTrackingService {
         unawaited(_requestFlush());
       }
     });
+
     unawaited(_requestFlush());
     _emit();
   }
@@ -325,15 +383,11 @@ class VehicleTrackingService {
     _streamFailures++;
     final current = _subscription;
     _subscription = null;
-    if (current != null) {
-      unawaited(current.cancel());
-    }
+    if (current != null) unawaited(current.cancel());
     _streamRecoveryTimer?.cancel();
     final delay = RoamingResilience.retryDelay(_streamFailures);
     _streamRecoveryTimer = Timer(delay, () {
-      if (_enabled && _subscription == null) {
-        unawaited(recover());
-      }
+      if (_enabled && _subscription == null) unawaited(recover());
     });
   }
 
@@ -354,7 +408,8 @@ class VehicleTrackingService {
       } catch (_) {}
     }
     if (_lastSentAt != null &&
-        DateTime.now().difference(_lastSentAt!) < const Duration(seconds: 25)) {
+        DateTime.now().difference(_lastSentAt!) <
+            const Duration(seconds: 25)) {
       return;
     }
 
@@ -371,8 +426,9 @@ class VehicleTrackingService {
     } catch (_) {
       position = await Geolocator.getLastKnownPosition();
     }
-    if (position == null) return;
-    await _queueAndFlush(position, source: 'heartbeat');
+    if (position != null) {
+      await _queueAndFlush(position, source: 'heartbeat');
+    }
   }
 
   Future<File> _queueFile() async {
@@ -399,14 +455,62 @@ class VehicleTrackingService {
     return completer.future;
   }
 
-  Future<List<String>> _queueSnapshot({int maxLines = 25}) {
+  Future<void> _ensureQueueDepthLoaded() async {
+    if (_queueDepthLoaded) return;
+    await _withQueueLock(() async {
+      final file = await _queueFile();
+      _queueDepth = (await file.readAsLines())
+          .where((line) => line.trim().isNotEmpty)
+          .length;
+      _queueDepthLoaded = true;
+    });
+  }
+
+  Future<List<String>> _queueSnapshot({
+    int maxLines = _uploadBatchSize,
+  }) {
     return _withQueueLock(() async {
       final file = await _queueFile();
       final lines = (await file.readAsLines())
           .where((line) => line.trim().isNotEmpty)
           .toList();
       _queueDepth = lines.length;
+      _queueDepthLoaded = true;
       return lines.take(maxLines).toList();
+    });
+  }
+
+  Future<void> _appendQueueLine(String line) {
+    return _withQueueLock(() async {
+      final file = await _queueFile();
+      var lines = (await file.readAsLines())
+          .where((item) => item.trim().isNotEmpty)
+          .toList();
+      lines.add(line);
+      if (lines.length > _maxQueueLines) {
+        final removed = lines.length - _maxQueueLines;
+        final discarded = lines.take(removed).toList();
+        lines = lines.sublist(removed);
+        final quarantine = await _quarantineFile();
+        final now = DateTime.now().toUtc().toIso8601String();
+        for (final item in discarded) {
+          await quarantine.writeAsString(
+            '${jsonEncode({
+              'quarantinedAt': now,
+              'reason': 'queue_capacity',
+              'raw': item,
+            })}\n',
+            mode: FileMode.append,
+            flush: false,
+          );
+        }
+      }
+      await file.writeAsString(
+        lines.isEmpty ? '' : '${lines.join('\n')}\n',
+        flush: true,
+      );
+      _queueDepth = lines.length;
+      _queueDepthLoaded = true;
     });
   }
 
@@ -418,8 +522,8 @@ class VehicleTrackingService {
           .where((line) => line.trim().isNotEmpty)
           .toList();
       if (current.length < consumed.length) return false;
-      for (var i = 0; i < consumed.length; i++) {
-        if (current[i] != consumed[i]) return false;
+      for (var index = 0; index < consumed.length; index++) {
+        if (current[index] != consumed[index]) return false;
       }
       final remaining = current.sublist(consumed.length);
       await file.writeAsString(
@@ -427,6 +531,7 @@ class VehicleTrackingService {
         flush: true,
       );
       _queueDepth = remaining.length;
+      _queueDepthLoaded = true;
       return true;
     });
   }
@@ -447,7 +552,10 @@ class VehicleTrackingService {
     });
   }
 
-  Future<void> _queueAndFlush(Position position, {required String source}) async {
+  Future<void> _queueAndFlush(
+    Position position, {
+    required String source,
+  }) async {
     if (!RoamingResilience.validCoordinates(
       position.latitude,
       position.longitude,
@@ -458,7 +566,10 @@ class VehicleTrackingService {
     }
 
     final previous = _lastAcceptedPosition;
-    final speed = max(0.0, RoamingResilience.finiteOrZero(position.speed));
+    final speed = max(
+      0.0,
+      RoamingResilience.finiteOrZero(position.speed),
+    );
     final accuracy = RoamingResilience.finiteOrZero(position.accuracy);
     final assessment = GpsPointQuality.assess(
       latitude: position.latitude,
@@ -469,10 +580,15 @@ class VehicleTrackingService {
       previousLatitude: previous?.latitude,
       previousLongitude: previous?.longitude,
       previousAccuracy: previous?.accuracy,
-      previousSpeedMps:
-          previous == null ? null : max(0.0, RoamingResilience.finiteOrZero(previous.speed)),
+      previousSpeedMps: previous == null
+          ? null
+          : max(
+              0.0,
+              RoamingResilience.finiteOrZero(previous.speed),
+            ),
       previousCapturedAt: previous?.timestamp,
     );
+
     if (!assessment.accepted) {
       _gpsQuality = assessment.quality.name;
       _gpsScore = assessment.score;
@@ -514,6 +630,10 @@ class VehicleTrackingService {
     _emit();
 
     final countryCode = await CountryCodeService.instance.resolve(position);
+    final normalizedPlate = _vehicleLabel
+        .trim()
+        .toUpperCase()
+        .replaceAll(RegExp(r'[^A-Z0-9]'), '');
 
     final point = <String, dynamic>{
       'pointId': RoamingResilience.pointId(
@@ -522,8 +642,9 @@ class VehicleTrackingService {
         latitude: position.latitude,
         longitude: position.longitude,
       ),
+      'plate': normalizedPlate,
       'deviceId': _deviceId,
-      'vehicleLabel': _vehicleLabel,
+      'vehicleLabel': normalizedPlate,
       'countryCode': countryCode,
       'timestamp': position.timestamp.toUtc().toIso8601String(),
       'latitude': _stableLatitude ?? position.latitude,
@@ -539,15 +660,7 @@ class VehicleTrackingService {
       'source': source,
     };
 
-    await _withQueueLock(() async {
-      final file = await _queueFile();
-      await file.writeAsString(
-        '${jsonEncode(point)}\n',
-        mode: FileMode.append,
-        flush: true,
-      );
-      _queueDepth++;
-    });
+    await _appendQueueLine(jsonEncode(point));
     _emit();
     unawaited(_requestFlush());
   }
@@ -568,18 +681,21 @@ class VehicleTrackingService {
     }
   }
 
-  void _scheduleRetry(String message) {
+  void _scheduleRetry(String message, {Duration? minimumDelay}) {
     _flushFailures++;
     _lastError = message;
     _retryTimer?.cancel();
-    final delay = RoamingResilience.retryDelay(_flushFailures);
+    final calculated = RoamingResilience.retryDelay(_flushFailures);
+    final delay = minimumDelay != null && calculated < minimumDelay
+        ? minimumDelay
+        : calculated;
     _retryTimer = Timer(delay, () => unawaited(_requestFlush()));
     _emit();
   }
 
   Future<void> _flushQueuePass() async {
-    if (_endpoint.trim().isEmpty || _token.trim().isEmpty) {
-      _lastError = 'A nyomkövető szerver kulcsa még nincs beállítva.';
+    if (_endpoint.trim().isEmpty) {
+      _lastError = 'A nyomkövető szerver címe nincs beállítva.';
       _emit();
       return;
     }
@@ -588,6 +704,18 @@ class VehicleTrackingService {
     if (lines.isEmpty) {
       _flushFailures = 0;
       _queueDepth = 0;
+      _emit();
+      return;
+    }
+
+    Map<String, String> headers;
+    try {
+      headers = await _sessionHeaders();
+    } on _TrackingSessionException {
+      _scheduleRetry(
+        'A FLOW munkamenet lejárt. A GPS-pontok helyben maradnak; jelentkezz be újra.',
+        minimumDelay: const Duration(minutes: 5),
+      );
       return;
     }
 
@@ -615,18 +743,17 @@ class VehicleTrackingService {
       payload['sentAt'] = now.toIso8601String();
       payload['delayed'] =
           captured != null && RoamingResilience.isDelayed(captured, now);
+      payload['plate'] = _vehicleLabel;
+      payload['vehicleLabel'] = _vehicleLabel;
 
       try {
         final response = await http
             .post(
               Uri.parse(_endpoint),
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': 'Bearer $_token',
-              },
+              headers: headers,
               body: jsonEncode(payload),
             )
-            .timeout(const Duration(seconds: 8));
+            .timeout(const Duration(seconds: 10));
 
         if (response.statusCode >= 200 && response.statusCode < 300) {
           Map<String, dynamic>? body;
@@ -635,9 +762,8 @@ class VehicleTrackingService {
             if (decoded is Map) {
               body = Map<String, dynamic>.from(decoded);
             }
-          } catch (_) {
-            body = null;
-          }
+          } catch (_) {}
+
           if (body == null || body['ok'] != true) {
             networkFailed = true;
             _scheduleRetry(
@@ -652,10 +778,20 @@ class VehicleTrackingService {
             );
             break;
           }
+
           consumed.add(line);
           _lastSentAt = DateTime.now();
           _lastError = null;
           continue;
+        }
+
+        if (response.statusCode == 401 || response.statusCode == 403) {
+          networkFailed = true;
+          _scheduleRetry(
+            'A FLOW hozzáférés ellenőrzése szükséges. A GPS-pontok helyben maradnak.',
+            minimumDelay: const Duration(minutes: 5),
+          );
+          break;
         }
 
         if (response.statusCode == 400 || response.statusCode == 422) {
@@ -681,18 +817,14 @@ class VehicleTrackingService {
 
     if (consumed.isNotEmpty) {
       final removed = await _removeQueuePrefix(consumed);
-      if (!removed) {
-        _flushAgain = true;
-      }
+      if (!removed) _flushAgain = true;
     }
 
     if (!networkFailed) {
       _flushFailures = 0;
       _retryTimer?.cancel();
       _retryTimer = null;
-      if (lines.length >= 25) {
-        _flushAgain = true;
-      }
+      if (lines.length >= _uploadBatchSize) _flushAgain = true;
       _emit();
     }
   }
@@ -715,6 +847,12 @@ class VehicleTrackingService {
       );
 
   void _emit() {
-    if (!_statusController.isClosed) _statusController.add(_status);
+    if (!_statusController.isClosed) {
+      _statusController.add(_status);
+    }
   }
+}
+
+class _TrackingSessionException implements Exception {
+  const _TrackingSessionException();
 }
