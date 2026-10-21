@@ -1,0 +1,29 @@
+name: AIMS FLOW v1.9 Suspect Tests
+
+on:
+  push:
+    branches: [aims-flow-r105-next-v190-stabilization]
+    paths:
+      - '.github/workflows/v190-suspect-tests.yml'
+  workflow_dispatch:
+
+jobs:
+  isolated:
+    strategy:
+      fail-fast: false
+      matrix:
+        test_file:
+          - test/app_smoke_test.dart
+          - test/driver_job_stress_test.dart
+          - test/invoice_parser_test.dart
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - name: Run ${{ matrix.test_file }}
+        run: timeout --signal=TERM --kill-after=10s 180s flutter test -r expanded "${{ matrix.test_file }}"
