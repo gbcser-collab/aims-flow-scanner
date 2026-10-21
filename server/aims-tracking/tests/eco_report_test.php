@@ -68,7 +68,7 @@ eco_create_workday($pdo,$vehicleA,'123456',$start->format(DateTimeInterface::ATO
 eco_create_workday($pdo,$vehicleD,'654321',$start->format(DateTimeInterface::ATOM),$finish);
 
 $speedsA=array_fill(0,900,20.0);
-foreach([150,350,550,750] as $index){
+foreach([250,650] as $index){
     $speedsA[$index-1]=10.0;
     $speedsA[$index]=22.0;
     $speedsA[$index+1]=22.0;
