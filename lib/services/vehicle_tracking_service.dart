@@ -1,12 +1,14 @@
 import 'dart:async';
 import 'dart:convert';
+import 'flow_http_client.dart';
+import 'flow_auth_service.dart';
 import 'dart:io';
 import 'dart:math';
 
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'flow_preferences.dart';
 
 import 'country_code_service.dart';
 import 'gps_point_quality.dart';
@@ -59,7 +61,6 @@ class VehicleTrackingService {
     'AIMS_TRACKING_ENDPOINT',
     defaultValue: 'https://logistic-aims.hu/api/aims-tracking/ingest.php',
   );
-  static const _token = String.fromEnvironment('AIMS_TRACKING_TOKEN', defaultValue: '');
 
   final _statusController = StreamController<VehicleTrackingStatus>.broadcast();
   StreamSubscription<Position>? _subscription;
@@ -152,7 +153,7 @@ class VehicleTrackingService {
 
   Future<void> recover() async {
     await _loadIdentity();
-    if (!_enabled) return;
+    if (!_enabled || !FlowAuthService.instance.authenticated) return;
     if (_subscription == null) {
       await _startLocationStream(requestPermission: false);
     }
@@ -183,7 +184,7 @@ class VehicleTrackingService {
       return false;
     }
 
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await FlowPreferences.getInstance();
     await prefs.setBool(_enabledKey, true);
     _enabled = true;
     _lastError = null;
@@ -192,7 +193,7 @@ class VehicleTrackingService {
   }
 
   Future<void> disable() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await FlowPreferences.getInstance();
     await prefs.setBool(_enabledKey, false);
     _enabled = false;
     await _subscription?.cancel();
@@ -212,14 +213,14 @@ class VehicleTrackingService {
 
   Future<void> setVehicleLabel(String label) async {
     final cleaned = label.trim().toUpperCase();
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await FlowPreferences.getInstance();
     _vehicleLabel = cleaned;
     await prefs.setString(_vehicleLabelKey, _vehicleLabel);
     _emit();
   }
 
   Future<void> _loadIdentity() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await FlowPreferences.getInstance();
     _enabled = prefs.getBool(_enabledKey) ?? false;
     _vehicleLabel = prefs.getString(_vehicleLabelKey) ?? '';
     var id = prefs.getString(_deviceIdKey);
@@ -282,7 +283,7 @@ class VehicleTrackingService {
     });
     _healthTimer?.cancel();
     _healthTimer = Timer.periodic(const Duration(seconds: 45), (_) {
-      if (!_enabled) return;
+      if (!_enabled || !FlowAuthService.instance.authenticated) return;
       final now = DateTime.now();
       final noFixTooLong = _lastFixAt == null &&
           _streamStartedAt != null &&
@@ -300,7 +301,7 @@ class VehicleTrackingService {
   }
 
   Future<void> _restartLocationStream() async {
-    if (!_enabled) return;
+    if (!_enabled || !FlowAuthService.instance.authenticated) return;
     final current = _subscription;
     _subscription = null;
     if (current != null) {
@@ -321,7 +322,7 @@ class VehicleTrackingService {
   }
 
   void _scheduleStreamRecovery() {
-    if (!_enabled) return;
+    if (!_enabled || !FlowAuthService.instance.authenticated) return;
     _streamFailures++;
     final current = _subscription;
     _subscription = null;
@@ -347,7 +348,7 @@ class VehicleTrackingService {
   }
 
   Future<void> _sendHeartbeat() async {
-    if (!_enabled) return;
+    if (!_enabled || !FlowAuthService.instance.authenticated) return;
     if (_subscription == null) {
       try {
         await _startLocationStream(requestPermission: false);
@@ -377,14 +378,14 @@ class VehicleTrackingService {
 
   Future<File> _queueFile() async {
     final dir = await getApplicationDocumentsDirectory();
-    final file = File('${dir.path}/aims_tracking_queue.jsonl');
+    final file = File('${dir.path}/flow_${FlowAuthService.instance.storageScope}_tracking_queue.jsonl');
     if (!await file.exists()) await file.create(recursive: true);
     return file;
   }
 
   Future<File> _quarantineFile() async {
     final dir = await getApplicationDocumentsDirectory();
-    return File('${dir.path}/aims_tracking_queue_corrupt.jsonl');
+    return File('${dir.path}/flow_${FlowAuthService.instance.storageScope}_tracking_queue_corrupt.jsonl');
   }
 
   Future<T> _withQueueLock<T>(Future<T> Function() action) {
@@ -578,8 +579,8 @@ class VehicleTrackingService {
   }
 
   Future<void> _flushQueuePass() async {
-    if (_endpoint.trim().isEmpty || _token.trim().isEmpty) {
-      _lastError = 'A nyomkövető szerver kulcsa még nincs beállítva.';
+    if (_endpoint.trim().isEmpty || !FlowAuthService.instance.authenticated) {
+      _lastError = 'A nyomkövetéshez bejelentkezés szükséges.';
       _emit();
       return;
     }
@@ -617,12 +618,11 @@ class VehicleTrackingService {
           captured != null && RoamingResilience.isDelayed(captured, now);
 
       try {
-        final response = await http
-            .post(
+        final response = await FlowHttpClient.instance.post(
               Uri.parse(_endpoint),
               headers: {
                 'Content-Type': 'application/json',
-                'Authorization': 'Bearer $_token',
+
               },
               body: jsonEncode(payload),
             )

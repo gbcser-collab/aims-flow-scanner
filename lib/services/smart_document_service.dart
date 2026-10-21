@@ -1,8 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
+import 'flow_http_client.dart';
+import 'flow_auth_service.dart';
 import 'dart:io';
 
-import 'package:http/http.dart' as http;
 
 import 'smart_document_classifier.dart';
 import 'smart_document_repository.dart';
@@ -40,13 +41,11 @@ class SmartDocumentService {
     defaultValue:
         'https://logistic-aims.hu/api/aims-tracking/smart_document.php',
   );
-  static const _token =
-      String.fromEnvironment('AIMS_TRACKING_TOKEN', defaultValue: '');
 
   Future<SmartDocumentUploadResult> send(
     PendingSmartDocument document,
   ) async {
-    if (_token.trim().isEmpty) {
+    if (!FlowAuthService.instance.authenticated) {
       throw StateError('Az AIMS Flow szerverkulcs nincs beállítva.');
     }
     if (document.plate.trim().isEmpty) {
@@ -79,12 +78,11 @@ class SmartDocumentService {
     Object? lastError;
     for (var attempt = 0; attempt < 2; attempt++) {
       try {
-        final response = await http
-            .post(
+        final response = await FlowHttpClient.instance.post(
               Uri.parse(_endpoint),
               headers: {
                 'Content-Type': 'application/json',
-                'Authorization': 'Bearer $_token',
+
                 'X-AIMS-Idempotency-Key': document.id,
               },
               body: payload,

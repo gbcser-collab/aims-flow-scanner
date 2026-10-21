@@ -68,6 +68,46 @@ class SyncCoordinator extends ChangeNotifier {
     notifyListeners();
 
     try {
+      final smartPending = await _smartRepository.pendingForSync();
+      for (final document in smartPending) {
+        try {
+          final result = await _smartService.send(document);
+          await _smartRepository.update(
+            document.copyWith(
+              syncState: SmartDocumentSyncState.uploaded,
+              serverDocumentId: result.documentId,
+              uploadedAt: DateTime.now().toUtc(),
+              clearLastError: true,
+            ),
+          );
+        } on SmartDocumentUploadException catch (e) {
+          await _smartRepository.update(
+            document.copyWith(
+              syncState: SmartDocumentSyncState.failed,
+              lastError: e.code,
+            ),
+          );
+          _lastError = e.retryable
+              ? 'Nincs stabil kapcsolat. A Smart Document offline sorban marad.'
+              : 'Smart Document hiba: ${e.code}';
+          if (e.retryable) {
+            // Do not hammer the same broken mobile connection with every
+            // queued document. The next sync cycle will retry safely.
+            break;
+          }
+        } catch (e) {
+          await _smartRepository.update(
+            document.copyWith(
+              syncState: SmartDocumentSyncState.failed,
+              lastError: e.toString(),
+            ),
+          );
+          _lastError =
+              'Smart Document szinkron várakozik. A fájl biztonságosan a telefonon marad.';
+          break;
+        }
+      }
+
       final identity = await _identityService.loadOrCreate();
       final enroll = await _api.enroll(identity, label: 'AIMS Flow Smart Scanner');
       _deviceState = enroll['state'] as String? ?? _deviceState;
@@ -109,45 +149,6 @@ class SyncCoordinator extends ChangeNotifier {
             lastSyncError: e.toString(),
           ));
           _lastError = 'Nincs kapcsolat. A dokumentum offline sorban marad.';
-        }
-      }
-      final smartPending = await _smartRepository.pendingForSync();
-      for (final document in smartPending) {
-        try {
-          final result = await _smartService.send(document);
-          await _smartRepository.update(
-            document.copyWith(
-              syncState: SmartDocumentSyncState.uploaded,
-              serverDocumentId: result.documentId,
-              uploadedAt: DateTime.now().toUtc(),
-              clearLastError: true,
-            ),
-          );
-        } on SmartDocumentUploadException catch (e) {
-          await _smartRepository.update(
-            document.copyWith(
-              syncState: SmartDocumentSyncState.failed,
-              lastError: e.code,
-            ),
-          );
-          _lastError = e.retryable
-              ? 'Nincs stabil kapcsolat. A Smart Document offline sorban marad.'
-              : 'Smart Document hiba: ${e.code}';
-          if (e.retryable) {
-            // Do not hammer the same broken mobile connection with every
-            // queued document. The next sync cycle will retry safely.
-            break;
-          }
-        } catch (e) {
-          await _smartRepository.update(
-            document.copyWith(
-              syncState: SmartDocumentSyncState.failed,
-              lastError: e.toString(),
-            ),
-          );
-          _lastError =
-              'Smart Document szinkron várakozik. A fájl biztonságosan a telefonon marad.';
-          break;
         }
       }
 

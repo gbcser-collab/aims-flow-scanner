@@ -182,40 +182,9 @@ if($admin){
   ]);
 }
 
-$plate=aims_normalize_plate($login);
-$driverCode=flow_normalize_driver_code($password);
-
-if($plate!==''&&flow_driver_code_format_valid($driverCode)){
-  $plateRate=aims_rate_limit('flow-driver-plate',$plate,12,3600,false);
-  if(!$plateRate['allowed']) flow_reply(['ok'=>false,'error'=>'rate_limited'],429);
-
-  try{
-    $pdo=aims_db();
-    $q=$pdo->prepare('SELECT * FROM vehicles WHERE plate=:plate LIMIT 1');
-    $q->execute([':plate'=>$plate]);
-    $vehicle=$q->fetch(PDO::FETCH_ASSOC);
-    $reason='invalid';
-
-    if($vehicle&&!empty($vehicle['enabled'])&&flow_vehicle_driver_code_valid($vehicle,$driverCode,$reason)){
-      aims_rate_limit_clear('flow-native-login',$key);
-      aims_rate_limit_clear('flow-driver-plate',$plate);
-      aims_audit('flow_native_login',['actor'=>'driver','detail'=>$plate,'result'=>'ok']);
-      flow_reply([
-        'ok'=>true,
-        'role'=>'driver',
-        'displayName'=>$vehicle['label']??$plate,
-        'plate'=>$plate,
-        'forceCodeChange'=>$reason==='temp',
-        'language'=>in_array($vehicle['driver_language']??'hu',['hu','en','de'],true)?$vehicle['driver_language']:'hu',
-      ]);
-    }
-
-    aims_rate_limit('flow-driver-plate',$plate,12,3600,true);
-    if($reason==='temp_expired') flow_reply(['ok'=>false,'error'=>'temp_expired'],401);
-  }catch(Throwable $e){}
+if ($login==='ADMIN') {
+  aims_rate_limit('flow-native-login',$key,6,900,true);
+  usleep(250000);
+  flow_reply(['ok'=>false,'error'=>'invalid_credentials'],401);
 }
-
-aims_rate_limit('flow-native-login',$key,6,900,true);
-usleep(250000);
-flow_reply(['ok'=>false,'error'=>'invalid_credentials'],401);
-
+flow_reply(['ok'=>false,'error'=>'driver_upgrade_required'],426);

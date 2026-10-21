@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:shared_preferences/shared_preferences.dart';
+import 'flow_preferences.dart';
 
 import 'flow_account_service.dart';
 import 'flow_operations_service.dart';
@@ -72,7 +72,7 @@ class FlowWorkdayService {
   final _ops = const FlowOperationsService();
 
   Future<FlowWorkdayState> load() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await FlowPreferences.getInstance();
     var raw = prefs.getString(_key);
     if (raw == null || raw.isEmpty) {
       raw = prefs.getString(_legacyKey);
@@ -90,7 +90,7 @@ class FlowWorkdayService {
   }
 
   Future<void> _save(FlowWorkdayState state) async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await FlowPreferences.getInstance();
     await prefs.setString(_key, jsonEncode(state.toJson()));
   }
 

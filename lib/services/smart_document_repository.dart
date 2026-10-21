@@ -2,7 +2,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:path_provider/path_provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'flow_preferences.dart';
+import 'flow_auth_service.dart';
 
 import 'smart_document_classifier.dart';
 
@@ -136,7 +137,7 @@ class SmartDocumentRepository {
   }
 
   Future<List<PendingSmartDocument>> loadAll() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await FlowPreferences.getInstance();
     final primaryRaw = prefs.getString(_prefsKey);
     final primary = await _decodeIndex(primaryRaw);
     if (primary != null) return primary;
@@ -169,7 +170,7 @@ class SmartDocumentRepository {
     final now = DateTime.now().toUtc();
     final id = 'smart_${now.microsecondsSinceEpoch}';
     final root = await getApplicationDocumentsDirectory();
-    final dir = Directory('${root.path}/aims_smart_documents');
+    final dir = Directory('${root.path}/flow_${FlowAuthService.instance.storageScope}/aims_smart_documents');
     if (!await dir.exists()) await dir.create(recursive: true);
     final target = '${dir.path}/$id.jpg';
     final source = File(sourceImagePath);
@@ -206,7 +207,7 @@ class SmartDocumentRepository {
   }
 
   Future<void> _writeAll(List<PendingSmartDocument> documents) async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await FlowPreferences.getInstance();
     final payload =
         jsonEncode([for (final document in documents) document.toJson()]);
     final current = prefs.getString(_prefsKey);

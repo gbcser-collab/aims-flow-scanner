@@ -34,6 +34,10 @@ aims_require_token('AIMS_TRACKING_TOKEN');
 $data=json_decode(file_get_contents('php://input')?:'',true);if(!is_array($data))aims_json(['ok'=>false,'error'=>'invalid_json'],400);
 $deviceId=vi_text($data['deviceId']??'',160);$plate=vi_text($data['plate']??'',30);if($plate==='')aims_json(['ok'=>false,'error'=>'missing_plate'],422);
 $link=vi_find_vehicle($plate);if(!$link)aims_json(['ok'=>false,'error'=>'partner_vehicle_not_found'],409);
+$owner=$GLOBALS['flow_driver_identity'];
+if (empty($owner['portalCompanyId']) || (string)$link['company']['id']!==$owner['portalCompanyId']) {
+    aims_json(['ok'=>false,'error'=>'permission_denied'],403);
+}
 $vehicle=$link['vehicle'];$company=$link['company'];$companyId=(string)$company['id'];$vehicleId=(string)$vehicle['id'];
 $image=$data['image']??null;if(!is_array($image))aims_json(['ok'=>false,'error'=>'missing_image'],422);
 $bytes=base64_decode((string)($image['base64']??''),true);if($bytes===false||strlen($bytes)<60||strlen($bytes)>12*1024*1024)aims_json(['ok'=>false,'error'=>'invalid_image'],422);

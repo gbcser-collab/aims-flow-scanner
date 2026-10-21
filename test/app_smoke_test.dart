@@ -3,8 +3,11 @@ import 'package:aims_flow_scanner/screens/driver_shell_screen.dart';
 import 'package:aims_flow_scanner/widgets/aims_flow_logo.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:aims_flow_scanner/services/flow_auth_service.dart';
+import 'support/driver_fixture.dart';
 
 void main() {
+  tearDown(() => FlowAuthService.instance.session = null);
 
   testWidgets('Flow keeps the operational UI dark with white text everywhere',
       (tester) async {
@@ -30,7 +33,7 @@ void main() {
     expect(theme.snackBarTheme.contentTextStyle?.color, Colors.white);
   });
 
-  testWidgets('AIMS Flow starts on plate and short-code login', (tester) async {
+  testWidgets('AIMS Flow starts on FLOW ID and PIN login', (tester) async {
     await tester.pumpWidget(const AimsFlowApp());
     await tester.pump();
 
@@ -44,10 +47,10 @@ void main() {
     expect(find.byKey(const Key('flow-login-submit')), findsOneWidget);
     expect(find.byKey(const Key('flow-register-open')), findsOneWidget);
     expect(
-      find.textContaining('Sofőr belépés rendszámmal és 6 karakteres kóddal'),
+      find.textContaining('Sofőr belépés 6 számjegyű FLOW ID-val és 5 számjegyű PIN-nel'),
       findsOneWidget,
     );
-    expect(find.textContaining('3 betű és 3 szám'), findsOneWidget);
+    expect(find.textContaining('A FLOW ID és az 5 számjegyű PIN'), findsOneWidget);
     expect(find.byKey(const Key('flow-forgot-code-open')), findsOneWidget);
   });
 
@@ -118,6 +121,7 @@ void main() {
   });
 
   testWidgets('driver shell keeps developed core actions', (tester) async {
+    installDriverFixture();
     await tester.pumpWidget(
       const MaterialApp(home: DriverShellScreen()),
     );
@@ -133,6 +137,7 @@ void main() {
     expect(find.text('Doksi'), findsOneWidget);
   });
   testWidgets('driver shell has no overflow on a narrow phone', (tester) async {
+    installDriverFixture();
     tester.view.physicalSize = const Size(360, 800);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
