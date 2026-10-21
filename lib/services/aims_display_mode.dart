@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 enum AimsDisplayMode { auto, light, dark }
@@ -24,6 +25,16 @@ class AimsDisplayModeController extends ChangeNotifier {
   AimsDisplayMode get mode => _mode;
   bool get isDark => _mode == AimsDisplayMode.dark ||
       (_mode == AimsDisplayMode.auto && _resolvedDark);
+
+  bool get _runningUnderFlutterTest {
+    try {
+      return WidgetsBinding.instance.runtimeType
+          .toString()
+          .contains('TestWidgetsFlutterBinding');
+    } catch (_) {
+      return false;
+    }
+  }
 
   Future<void> initialize() async {
     final prefs = await SharedPreferences.getInstance();
@@ -126,6 +137,14 @@ class AimsDisplayModeController extends ChangeNotifier {
   }
 
   Future<void> _applyBrightness() async {
+    // Brightness is an Android-only enhancement. Widget tests and desktop/web
+    // previews must never wait for a platform channel that does not exist.
+    if (_runningUnderFlutterTest ||
+        kIsWeb ||
+        defaultTargetPlatform != TargetPlatform.android) {
+      return;
+    }
+
     try {
       if (isDark) {
         await _channel.invokeMethod<void>('applyNightBrightnessCap', {
