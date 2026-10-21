@@ -22,7 +22,7 @@ concurrency:
 jobs:
   validate:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 35
     env:
       AIMS_TRACKING_TOKEN: v190-internal-server-token
       AIMS_ADMIN_TRACKING_TOKEN: v190-admin-token
@@ -58,8 +58,7 @@ jobs:
             $a->execute([":pin"=>password_hash("12345",PASSWORD_DEFAULT),":vehicle"=>$vehicle,":created"=>$now,":updated"=>$now]);
             $session=aims_driver_issue_session($pdo,(int)$pdo->lastInsertId(),str_repeat("d",64),1);
             file_put_contents(getenv("RUNNER_TEMP")."/flow-session-token",$session["token"]);
-            $tables=["driver_accounts","driver_sessions"];
-            foreach($tables as $table){
+            foreach(["driver_accounts","driver_sessions"] as $table){
               $exists=$pdo->query("SELECT name FROM sqlite_master WHERE type=\"table\" AND name=".$pdo->quote($table))->fetchColumn();
               if(!$exists)exit(10);
             }
@@ -119,8 +118,15 @@ jobs:
       - name: Static analysis
         run: flutter analyze
 
-      - name: Unit and widget tests
-        run: flutter test
+      - name: Unit and widget tests file by file
+        run: |
+          set -euo pipefail
+          for file in test/*_test.dart; do
+            echo "============================================================"
+            echo "RUNNING $file"
+            echo "============================================================"
+            timeout --signal=TERM --kill-after=15s 150s flutter test -r expanded "$file"
+          done
 
       - name: Security and UX guards
         run: |
@@ -131,6 +137,7 @@ jobs:
           grep -q "6 jegyű FLOW ID" lib/screens/flow_login_screen.dart
           grep -q "5 jegyű PIN" lib/screens/flow_login_screen.dart
           grep -q "aims-flow-auth-v2.php" lib/services/flow_account_service.dart
+          grep -q "flutter_secure_storage" lib/services/flow_account_service.dart
           grep -q "ThemeMode.light" lib/main.dart
           grep -q "ThemeMode.dark" lib/main.dart
           ! grep -q "themeMode: ThemeMode.dark" lib/main.dart
