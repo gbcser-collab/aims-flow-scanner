@@ -1,0 +1,41 @@
+name: Apply FLOW v1.9 Stabilization Patch
+
+on:
+  push:
+    branches: [aims-flow-r105-next-v190-stabilization]
+    paths:
+      - 'tools/apply_v190_stabilization_patch.py'
+      - '.github/workflows/v190-apply-stabilization.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: flow-v190-patch-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  apply:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: aims-flow-r105-next-v190-stabilization
+          fetch-depth: 0
+
+      - name: Apply deterministic source patch
+        run: python3 tools/apply_v190_stabilization_patch.py
+
+      - name: Commit patched sources
+        run: |
+          if git diff --quiet; then
+            echo "No source changes required."
+            exit 0
+          fi
+          git config user.name "AIMS FLOW CI"
+          git config user.email "actions@users.noreply.github.com"
+          git add lib/services/driver_api_service.dart lib/screens/driver_shell_screen.dart admin/aims-flow.php
+          git commit -m "FLOW v1.9: apply session API and neutral theme patch"
+          git push origin HEAD:aims-flow-r105-next-v190-stabilization
