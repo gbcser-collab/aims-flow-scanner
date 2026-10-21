@@ -37,15 +37,16 @@ void main() {
     expect(ids.length, greaterThan(9950));
   });
 
-  test('backoff is bounded during 10000 simulated failures', () {
+  test('backoff is fast and bounded during 10000 simulated failures', () {
     for (var i = 1; i <= 10000; i++) {
       final delay = RoamingResilience.retryDelay(i);
-      expect(delay, lessThanOrEqualTo(const Duration(seconds: 120)));
+      expect(delay, lessThanOrEqualTo(const Duration(seconds: 30)));
       expect(delay, greaterThan(Duration.zero));
     }
-    expect(RoamingResilience.retryDelay(1), const Duration(seconds: 2));
-    expect(RoamingResilience.retryDelay(2), const Duration(seconds: 4));
-    expect(RoamingResilience.retryDelay(7), const Duration(seconds: 120));
+    expect(RoamingResilience.retryDelay(1), const Duration(seconds: 1));
+    expect(RoamingResilience.retryDelay(2), const Duration(seconds: 2));
+    expect(RoamingResilience.retryDelay(7), const Duration(seconds: 30));
+    expect(RoamingResilience.retryDelay(10000), const Duration(seconds: 30));
   });
 
   test('freshness survives 10000 roaming time variants', () {
