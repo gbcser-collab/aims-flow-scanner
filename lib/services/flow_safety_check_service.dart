@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:math';
 
 import 'package:geolocator/geolocator.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'flow_preferences.dart';
 
 import 'flow_account_service.dart';
 import 'flow_operations_service.dart';
@@ -62,7 +62,7 @@ class FlowSafetyCheckService {
   final _ops = const FlowOperationsService();
 
   Future<DateTime> _ensureNextDue() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await FlowPreferences.getInstance();
     final existing = DateTime.tryParse(prefs.getString(_nextDueKey) ?? '');
     if (existing != null) return existing;
     final minutes = 120 + Random.secure().nextInt(181);
@@ -98,13 +98,13 @@ class FlowSafetyCheckService {
   }
 
   Future<void> snooze() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await FlowPreferences.getInstance();
     final due = DateTime.now().add(const Duration(minutes: 15));
     await prefs.setString(_nextDueKey, due.toUtc().toIso8601String());
   }
 
   Future<void> completeSchedule() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await FlowPreferences.getInstance();
     await prefs.setString(
       _lastCompleteKey,
       DateTime.now().toUtc().toIso8601String(),
@@ -114,7 +114,7 @@ class FlowSafetyCheckService {
   }
 
   Future<List<FlowSafetyCheckRecord>> _loadRecords() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await FlowPreferences.getInstance();
     final raw = prefs.getString(_recordsKey);
     if (raw == null || raw.isEmpty) return [];
     try {
@@ -148,7 +148,7 @@ class FlowSafetyCheckService {
   }
 
   Future<void> _saveRecords(List<FlowSafetyCheckRecord> records) async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await FlowPreferences.getInstance();
     await prefs.setString(
       _recordsKey,
       jsonEncode(records.map((item) => item.toJson()).toList()),

@@ -1,7 +1,8 @@
 import 'dart:convert';
+import 'flow_http_client.dart';
+import 'flow_auth_service.dart';
 import 'dart:io';
 
-import 'package:http/http.dart' as http;
 
 import 'fuel_receipt_parser.dart';
 
@@ -12,7 +13,6 @@ class FuelReceiptService {
     'AIMS_FUEL_RECEIPT_ENDPOINT',
     defaultValue: 'https://logistic-aims.hu/api/aims-tracking/fuel_receipt.php',
   );
-  static const _token = String.fromEnvironment('AIMS_TRACKING_TOKEN', defaultValue: '');
 
   Future<int> send({
     required String imagePath,
@@ -20,19 +20,18 @@ class FuelReceiptService {
     required String plate,
     required FuelReceiptData data,
   }) async {
-    if (_token.trim().isEmpty) {
+    if (!FlowAuthService.instance.authenticated) {
       throw StateError('A céges feltöltési kulcs nincs beállítva.');
     }
     final file = File(imagePath);
     if (!await file.exists()) throw StateError('A bizonylat képe nem található.');
 
     final bytes = await file.readAsBytes();
-    final response = await http
-        .post(
+    final response = await FlowHttpClient.instance.post(
           Uri.parse(_endpoint),
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': 'Bearer $_token',
+
           },
           body: jsonEncode({
             'deviceId': deviceId,

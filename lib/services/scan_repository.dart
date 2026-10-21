@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'flow_auth_service.dart';
 
 import 'package:path_provider/path_provider.dart';
 import 'package:pdf/pdf.dart';
@@ -13,7 +14,7 @@ class ScanRepository {
 
   Future<Directory> _scanDirectory() async {
     final root = await getApplicationDocumentsDirectory();
-    final directory = Directory('${root.path}/aims_scans');
+    final directory = Directory('${root.path}/flow_${FlowAuthService.instance.storageScope}/aims_scans');
     if (!await directory.exists()) {
       await directory.create(recursive: true);
     }

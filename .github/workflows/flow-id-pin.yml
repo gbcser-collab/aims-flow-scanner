@@ -1,0 +1,41 @@
+name: FLOW ID and PIN regression
+on:
+  push:
+    branches: ['codex/flow-id-pin-dev9']
+  pull_request:
+    branches: [aims-flow-r105-next-v180-dev9-admin-everything-useful]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: flow-id-pin-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  auth-and-r105:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      CI: 'true'
+      FLUTTER_SUPPRESS_ANALYTICS: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - name: PHP modules
+        run: sudo apt-get update -qq && sudo apt-get install -y php-cli php-sqlite3 php-mbstring php-curl
+      - name: PHP syntax and authentication regression
+        run: |
+          find api server/aims-tracking tests -name '*.php' -print0 | xargs -0 -n1 php -l
+          AIMS_TRACKING_DATA_DIR=$(mktemp -d) php tests/flow_auth_test.php
+          python3 tests/flow_auth_http_test.py
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.7'
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: flutter analyze
+      - run: flutter test
+      - name: R105 guards
+        run: |
+          python3 ci/r105_white_text_guard.py
+          python3 ci/r102_driver_first_guard.py
+          python3 ci/r100_message_signal_guard.py

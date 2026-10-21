@@ -1,3 +1,4 @@
+import '../services/flow_auth_service.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
@@ -6,7 +7,7 @@ import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import '../services/flow_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../models/scan_models.dart';
@@ -207,8 +208,10 @@ class DriverShellScreen extends StatefulWidget {
     super.key,
     this.initialPlate = '',
     this.initialDriverName = '',
+    this.adminMode = false,
   });
 
+  final bool adminMode;
   final String initialPlate;
   final String initialDriverName;
 
@@ -236,8 +239,6 @@ class _DriverShellScreenState extends State<DriverShellScreen>
       _isDark ? Colors.white70 : const Color(0xFF536B7A);
   Color get _textFaint =>
       _isDark ? Colors.white38 : const Color(0xFF8093A0);
-  static const _prefsPlate = 'aims_driver_plate';
-  static const _prefsDriverName = 'aims_driver_name';
   static const _prefsPendingStopPrefix = 'aims_pending_stop_actions_v1_';
   static const _prefsJobsCachePrefix = 'aims_driver_jobs_cache_v1_';
   static const _prefsJobsCacheAtPrefix = 'aims_driver_jobs_cache_at_v1_';
@@ -430,7 +431,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
   }
 
   Future<void> _quarantineLocalState(
-    SharedPreferences prefs, {
+    FlowPreferences prefs, {
     required String key,
     required String raw,
     required String reason,
@@ -466,7 +467,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
   }
 
   Future<void> _loadJobCmrLinks(
-    SharedPreferences prefs,
+    FlowPreferences prefs,
     String plate,
   ) async {
     _jobCmrIds.clear();
@@ -504,7 +505,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
 
   Future<void> _saveJobCmrLinks() async {
     if (_plate.isEmpty) return;
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await FlowPreferences.getInstance();
     await prefs.setString(
       _jobCmrPrefsKey(),
       jsonEncode({
@@ -666,7 +667,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
 
 
   Future<void> _loadPendingRegistrationPoints(
-    SharedPreferences prefs,
+    FlowPreferences prefs,
     String plate,
   ) async {
     _pendingRegistrationPoints.clear();
@@ -707,7 +708,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
 
   Future<void> _savePendingRegistrationPoints() async {
     if (_plate.isEmpty) return;
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await FlowPreferences.getInstance();
     final key = _pendingRegistrationPrefsKey();
     if (_pendingRegistrationPoints.isEmpty) {
       await prefs.remove(key);
@@ -829,7 +830,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
   }
 
   Future<void> _loadPendingSignals(
-    SharedPreferences prefs,
+    FlowPreferences prefs,
     String plate,
   ) async {
     _pendingSignals.clear();
@@ -863,7 +864,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
 
   Future<void> _savePendingSignals() async {
     if (_plate.isEmpty) return;
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await FlowPreferences.getInstance();
     final key = _pendingSignalPrefsKey();
     if (_pendingSignals.isEmpty) {
       await prefs.remove(key);
@@ -904,7 +905,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
   }
 
   Future<List<DriverJob>> _loadCachedJobs(
-    SharedPreferences prefs,
+    FlowPreferences prefs,
     String plate,
   ) async {
     if (plate.trim().isEmpty) return const [];
@@ -938,7 +939,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
 
   Future<void> _saveJobsCache(List<DriverJob> jobs) async {
     if (_plate.isEmpty) return;
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await FlowPreferences.getInstance();
     await prefs.setString(
       _jobsCachePrefsKey(),
       jsonEncode([for (final job in jobs) job.toJson()]),
@@ -950,7 +951,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
   }
 
   Future<void> _loadPendingStopActions(
-    SharedPreferences prefs,
+    FlowPreferences prefs,
     String plate,
   ) async {
     _pendingStopActions.clear();
@@ -997,7 +998,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
 
   Future<void> _savePendingStopActions() async {
     if (_plate.isEmpty) return;
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await FlowPreferences.getInstance();
     final key = _pendingStopPrefsKey();
     if (_pendingStopActions.isEmpty) {
       await prefs.remove(key);      return;
@@ -1302,9 +1303,10 @@ class _DriverShellScreenState extends State<DriverShellScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    FlowAuthService.instance.invalidated.addListener(_authInvalidated);
     _pushSub = _push.events.listen(_handlePush);
     _sync.addListener(_documentSyncChanged);
-    unawaited(_initializeSyncSafely());
+    if (!widget.adminMode && FlowAuthService.instance.authenticated) unawaited(_initializeSyncSafely());
     _trackingSub = _tracking.statusStream.listen((status) {
       if (mounted) setState(() => _trackingStatus = status);
       final position = status.lastPosition;
@@ -1314,6 +1316,31 @@ class _DriverShellScreenState extends State<DriverShellScreen>
       unawaited(_maybeAnnouncePreArrivalSafely(status));
     });
     unawaited(_initializeSafely());
+  }
+
+  bool _authRedirecting = false;
+  bool _logoutBusy = false;
+  Future<void> _logout() async {
+    if (_logoutBusy) return;
+    setState(() => _logoutBusy = true);
+    try {
+      await FlowAuthService.instance.logout();
+    } catch (_) {
+      // logout always clears local credentials, including when offline.
+    } finally {
+      if (mounted) setState(() => _logoutBusy = false);
+    }
+  }
+
+  void _authInvalidated() {
+    if (widget.adminMode || !mounted || _authRedirecting) return;
+    if (FlowAuthService.instance.authenticated) return;
+    _authRedirecting = true;
+    unawaited(_tracking.disable());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const FlowLoginScreen()), (_) => false);
+    });
   }
 
   Future<void> _initializeSyncSafely() async {
@@ -1444,7 +1471,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
   }
 
   Future<int> _lastKnownOdometer() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await FlowPreferences.getInstance();
     return prefs.getInt('aims_driver_last_odometer_km') ??
         _flowSession?.currentKm ??
         0;
@@ -1514,7 +1541,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
   }
 
   Future<void> _rememberOdometer(int km, {required String source}) async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await FlowPreferences.getInstance();
     await prefs.setInt('aims_driver_last_odometer_km', km);
     final session = _flowSession;
     if (session != null) {
@@ -2005,7 +2032,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
     final workdayId = _workdayState.workdayId;
     if (workdayId.isEmpty) return;
 
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await FlowPreferences.getInstance();
     final key = 'aims_flow_vehicle_quick_check_$workdayId';
     if (prefs.getBool(key) ?? false) return;
 
@@ -2060,7 +2087,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
       if (mounted) setState(() => _serviceAlerts = alerts);
       final urgent = alerts.where((item) => item.urgent).toList();
       if (urgent.isNotEmpty) {
-        final prefs = await SharedPreferences.getInstance();
+        final prefs = await FlowPreferences.getInstance();
         final day = DateTime.now().toIso8601String().substring(0, 10);
         final key = 'aims_service_guard_spoken_${urgent.first.id}_$day';
         if (!(prefs.getBool(key) ?? false)) {
@@ -2360,37 +2387,15 @@ class _DriverShellScreenState extends State<DriverShellScreen>
   }
 
   Future<void> _initialize() async {
-    final prefs = await SharedPreferences.getInstance();
-    final role = (prefs.getString('aims_user_role') ?? 'driver').trim();
+    final role = widget.adminMode ? 'admin' : 'driver';
+    final auth = FlowAuthService.instance.session;
+    if (role != 'admin' && auth == null) { _authInvalidated(); return; }
+    final prefs = await FlowPreferences.getInstance();
     _flowSession = await FlowSessionStore.instance.load();
     _workdayState = await _workday.load();
-    var plate = widget.initialPlate.trim().isNotEmpty
-        ? widget.initialPlate.trim().toUpperCase()
-        : (prefs.getString(_prefsPlate) ?? '').trim().toUpperCase();
-    final driverName = widget.initialDriverName.trim().isNotEmpty
-        ? widget.initialDriverName.trim()
-        : (prefs.getString(_prefsDriverName) ?? '').trim();
-
+    final plate = auth?.plate ?? '';
+    final driverName = auth?.displayName ?? '';
     final status = await _tracking.currentStatus();
-
-    // Android can rebuild the shell before SharedPreferences has restored the
-    // in-memory plate. Recover it from the tracking identity first; only show
-    // login when no durable driver identity exists anywhere.
-    if (role != 'admin' &&
-        plate.isEmpty &&
-        status.vehicleLabel.trim().isNotEmpty) {
-      plate = status.vehicleLabel.trim().toUpperCase();
-      await prefs.setString(_prefsPlate, plate);
-    }
-
-    if (role != 'admin' && plate.isEmpty) {
-      if (!mounted) return;
-      await Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(builder: (_) => const FlowLoginScreen()),
-        (_) => false,
-      );
-      return;
-    }
 
     // Admin phones must never inherit a stale driver plate or start driver GPS.
     if (role == 'admin') {
@@ -3282,48 +3287,11 @@ class _DriverShellScreenState extends State<DriverShellScreen>
   }
 
   Future<bool> _ensureDriverIdentity() async {
-    if (_plate.trim().isNotEmpty) return true;
+    final auth = FlowAuthService.instance.session;
+    if (auth == null) { _authInvalidated(); return false; }
     if (!mounted) return false;
-
-    // Self-heal a missing in-memory plate before a driver action. The login
-    // persists the identity, but Android lifecycle/rebuild timing must never
-    // turn the quick-signal/message buttons into a navigation-triggered crash.
-    final prefs = await SharedPreferences.getInstance();
-    var recoveredPlate =
-        (prefs.getString(_prefsPlate) ?? '').trim().toUpperCase();
-
-    if (recoveredPlate.isEmpty) {
-      try {
-        final status = await _tracking.currentStatus();
-        recoveredPlate = status.vehicleLabel.trim().toUpperCase();
-      } catch (_) {
-        // Identity recovery must remain independent from GPS availability.
-      }
-    }
-
-    if (recoveredPlate.isNotEmpty) {
-      await prefs.setString(_prefsPlate, recoveredPlate);
-      if (!mounted) return false;
-      setState(() => _plate = recoveredPlate);
-      try {
-        await _tracking.setVehicleLabel(recoveredPlate);
-      } catch (_) {}
-      unawaited(_activateDriverServices());
-      return true;
-    }
-
-    // Do not tear down the whole widget tree from an active TextField/button
-    // callback. That path caused Flutter's framework.dart _dependents.isEmpty
-    // assertion on real devices.
-    FocusManager.instance.primaryFocus?.unfocus();
-    _snack(
-      _l(
-        'Hiányzik a sofőrazonosítás. Lépj ki, majd jelentkezz be újra.',
-        'Driver identity is missing. Sign out, then sign in again.',
-        'Die Fahreridentität fehlt. Bitte abmelden und erneut anmelden.',
-      ),
-    );
-    return false;
+    if (_plate != auth.plate) setState(() => _plate = auth.plate);
+    return true;
   }
 
   String _newOfficeMessageId(DateTime occurredAt) {
@@ -3332,7 +3300,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
   }
 
   Future<void> _loadPendingOfficeMessages(
-    SharedPreferences prefs,
+    FlowPreferences prefs,
     String plate,
   ) async {
     _pendingOfficeMessages.clear();
@@ -3368,7 +3336,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
 
   Future<void> _savePendingOfficeMessages() async {
     if (_plate.isEmpty) return;
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await FlowPreferences.getInstance();
     final key = _pendingOfficeMessagePrefsKey();
     if (_pendingOfficeMessages.isEmpty) {
       await prefs.remove(key);
@@ -4191,6 +4159,9 @@ class _DriverShellScreenState extends State<DriverShellScreen>
     if (state != AppLifecycleState.resumed || !mounted || _plate.isEmpty) {
       return;
     }
+    if (!widget.adminMode) {
+      unawaited(FlowAuthService.instance.validate().catchError((_) {}));
+    }
     _appInForeground = true;
     _officeMessageTimer?.cancel();
     _officeMessageTimer = Timer.periodic(const Duration(seconds: 15), (_) {
@@ -4419,6 +4390,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
 
   @override
   void dispose() {
+    FlowAuthService.instance.invalidated.removeListener(_authInvalidated);
     WidgetsBinding.instance.removeObserver(this);
     _refreshGeneration++;
     _pendingStopRetryTimer?.cancel();
@@ -4651,6 +4623,14 @@ class _DriverShellScreenState extends State<DriverShellScreen>
             ),
           ),
           const AimsLanguageSelector(compact: true),
+          if (!widget.adminMode)
+            IconButton(
+              key: const Key('flow-logout'),
+              tooltip: _l('Kijelentkezés', 'Log out', 'Abmelden'),
+              onPressed: _logoutBusy ? null : _logout,
+              visualDensity: VisualDensity.compact,
+              icon: const Icon(Icons.logout, color: Colors.white),
+            ),
         ],
       );
 

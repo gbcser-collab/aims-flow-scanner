@@ -7,7 +7,7 @@ server = Path("server/aims-tracking/driver_messages.php").read_text(encoding="ut
 
 required_shell = [
     "Future<bool> _ensureDriverIdentity()",
-    "status.vehicleLabel.trim().isNotEmpty",
+    "final auth = FlowAuthService.instance.session;",
     "Future<void> _sendOfficeMessage()",
     "_pendingOfficeMessages",
     "NATÍV FLOW ÜZENET • NEM KÉR WEBES BELÉPÉST",
@@ -29,10 +29,8 @@ if (
 if "Message cannot be sent. Check sign in." in shell:
     raise SystemExit("stale fake-login message remains")
 
-fallback = shell.find("status.vehicleLabel.trim().isNotEmpty")
-login_redirect = shell.find("MaterialPageRoute(builder: (_) => const FlowLoginScreen())")
-if fallback < 0 or login_redirect < 0 or fallback > login_redirect:
-    raise SystemExit("driver identity fallback must run before login redirect")
+if "if (auth == null) { _authInvalidated(); return false; }" not in shell:
+    raise SystemExit("driver actions must require a verified session")
 
 if "Future<DriverChatMessage> sendMessage" not in api:
     raise SystemExit("native message API method missing")
@@ -42,9 +40,9 @@ if "aims_require_token('AIMS_TRACKING_TOKEN')" not in server:
     raise SystemExit("driver message endpoint is not token protected")
 if "clientMessageId" not in server:
     raise SystemExit("message idempotency key missing")
-if "textTheme: TextTheme(" not in main:
+if "textTheme: TextTheme(" not in main and "final whiteText = base.textTheme.apply(" not in main:
     raise SystemExit("global typography theme missing")
-if "inputDecorationTheme: InputDecorationTheme(" not in main:
+if "inputDecorationTheme: InputDecorationTheme(" not in main and "inputDecorationTheme: const InputDecorationTheme(" not in main:
     raise SystemExit("global input theme missing")
 
 print("R100 message/signal/typography guard: PASS")

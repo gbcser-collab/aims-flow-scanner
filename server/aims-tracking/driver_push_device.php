@@ -20,4 +20,6 @@ $q=$pdo->prepare('INSERT INTO driver_push_devices (vehicle_id,platform,device_id
 VALUES (:vehicle,:platform,:device,:fcm,1,:created,:updated)
 ON CONFLICT(fcm_token) DO UPDATE SET vehicle_id=excluded.vehicle_id,platform=excluded.platform,device_id=excluded.device_id,enabled=1,updated_at=excluded.updated_at');
 $q->execute([':vehicle'=>$vehicle['id'],':platform'=>$platform,':device'=>$deviceId,':fcm'=>$fcm,':created'=>$now,':updated'=>$now]);
+$pdo->prepare('INSERT INTO flow_push_sessions VALUES (?,?) ON CONFLICT(fcm_token) DO UPDATE SET session_id=excluded.session_id')
+    ->execute([$fcm,$GLOBALS['flow_driver_identity']['sessionId']]);
 aims_json(['ok'=>true,'registered'=>true]);

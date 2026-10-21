@@ -2,18 +2,15 @@ import 'package:aims_flow_scanner/screens/driver_shell_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:aims_flow_scanner/services/flow_auth_service.dart';
+import 'package:aims_flow_scanner/screens/flow_login_screen.dart';
+import 'support/driver_fixture.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  setUp(() {
-    SharedPreferences.setMockInitialValues({
-      'aims_user_role': 'driver',
-      'aims_driver_plate': 'SIP-115',
-      'aims_driver_name': 'Teszt Sofőr',
-      'aims_hands_free': false,
-    });
-  });
+  setUp(installDriverFixture);
+  tearDown(() => FlowAuthService.instance.session = null);
 
   testWidgets(
     'R93 quick signal and office message do not crash the widget tree',
@@ -73,8 +70,9 @@ void main() {
   );
 
   testWidgets(
-    'R93 shell accepts login identity directly without redirecting',
+    'R105 shell rejects constructor identity and legacy local profile without a session',
     (tester) async {
+      FlowAuthService.instance.session = null;
       SharedPreferences.setMockInitialValues({
         'aims_user_role': 'driver',
         'aims_driver_name': 'Teszt Sofőr',
@@ -90,13 +88,11 @@ void main() {
         ),
       );
       await tester.pump(const Duration(seconds: 1));
+      await tester.pump(const Duration(seconds: 1));
 
-      // The stability contract is that a valid identity supplied by login
-      // keeps the shell mounted and does not tear down the widget tree.
       expect(tester.takeException(), isNull);
-      expect(find.byType(DriverShellScreen), findsOneWidget);
-      // NavigationBar renders the selected destination with selectedIcon.
-      expect(find.byIcon(Icons.home_rounded), findsOneWidget);
+      expect(find.byType(DriverShellScreen), findsNothing);
+      expect(find.byType(FlowLoginScreen), findsOneWidget);
     },
   );
 }

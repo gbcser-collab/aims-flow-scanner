@@ -32,6 +32,11 @@ function aims_bearer(): string {
 }
 
 function aims_require_token(string $envName): void {
+    if ($envName === 'AIMS_TRACKING_TOKEN') {
+        require_once __DIR__.'/flow_auth.php';
+        flow_require_driver_request();
+        return;
+    }
     $expected = getenv($envName) ?: '';
     if ($expected === '') aims_json(['ok' => false, 'error' => 'server_not_configured'], 503);
     $provided = aims_bearer();
@@ -767,6 +772,11 @@ function aims_notify(
 }
 
 function aims_vehicle_for_point(PDO $pdo, string $deviceId, string $vehicleLabel): ?array {
+    if (isset($GLOBALS['flow_driver_identity'])) {
+        $q=$pdo->prepare('SELECT * FROM vehicles WHERE id=? AND enabled=1');
+        $q->execute([$GLOBALS['flow_driver_identity']['localVehicleId']]);
+        return $q->fetch(PDO::FETCH_ASSOC) ?: null;
+    }
     $plate = aims_normalize_plate($vehicleLabel);
     $vehicle = null;
 

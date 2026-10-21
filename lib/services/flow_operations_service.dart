@@ -1,4 +1,6 @@
 import 'dart:convert';
+import 'flow_http_client.dart';
+import 'flow_auth_service.dart';
 import 'dart:io';
 
 import 'package:http/http.dart' as http;
@@ -46,16 +48,14 @@ class FlowOperationsService {
     defaultValue:
         'https://logistic-aims.hu/api/aims-tracking/driver_ops_v2.php',
   );
-  static const _token =
-      String.fromEnvironment('AIMS_TRACKING_TOKEN', defaultValue: '');
 
   bool get configured =>
-      driverOpsUrl.trim().isNotEmpty && _token.trim().isNotEmpty;
+      driverOpsUrl.trim().isNotEmpty && FlowAuthService.instance.authenticated;
 
   Map<String, String> get _headers => {
         'Accept': 'application/json',
         'Content-Type': 'application/json',
-        'Authorization': 'Bearer $_token',
+
       };
 
   void _ensureConfigured() {
@@ -86,8 +86,7 @@ class FlowOperationsService {
 
   Future<Map<String, dynamic>> _postJson(Map<String, dynamic> payload) async {
     _ensureConfigured();
-    final response = await http
-        .post(
+    final response = await FlowHttpClient.instance.post(
           Uri.parse(driverOpsUrl),
           headers: _headers,
           body: jsonEncode(payload),
@@ -186,7 +185,7 @@ class FlowOperationsService {
     final request = http.MultipartRequest('POST', Uri.parse(driverOpsUrl));
     request.headers.addAll({
       'Accept': 'application/json',
-      'Authorization': 'Bearer $_token',
+
     });
     request.fields.addAll({
       'action': 'safety_check',
@@ -210,7 +209,7 @@ class FlowOperationsService {
     }
 
     final streamed =
-        await request.send().timeout(const Duration(seconds: 60));
+        await FlowHttpClient.instance.send(request).timeout(const Duration(seconds: 60));
     final response = await http.Response.fromStream(streamed);
     await _decode(response);
   }

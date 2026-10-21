@@ -404,6 +404,8 @@ function aims_send_driver_direct_push(
     $failed = 0;
 
     foreach ($rows as $device) {
+        require_once __DIR__.'/flow_auth.php';
+        if (!(new FlowAuth($pdo,new FlowControlHttpClient()))->pushAllowed((string)$device['fcm_token'],(int)$device['vehicle_id'])) continue;
         if ($config['mode'] === 'fake') {
             $line = json_encode([
                 'driverVehicleId' => $vehicleId,
@@ -517,6 +519,8 @@ function aims_send_driver_job_push(PDO $pdo, int $jobId): array {
     $sent = 0;
     $failed = 0;
     foreach ($rows as $device) {
+        require_once __DIR__.'/flow_auth.php';
+        if (!(new FlowAuth($pdo,new FlowControlHttpClient()))->pushAllowed((string)$device['fcm_token'],(int)$device['vehicle_id'])) continue;
         if ($config['mode'] === 'fake') {
             $line = json_encode([
                 'driverVehicleId' => (int)$job['vehicle_id'],

@@ -13,7 +13,7 @@ void main() {
     expect(find.text('DRIVER OPERATIONS'), findsOneWidget);
     expect(find.text('Belépés'), findsOneWidget);
     expect(
-      find.textContaining('Sofőr belépés rendszámmal és 6 karakteres kóddal'),
+      find.textContaining('Sofőr belépés 6 számjegyű FLOW ID-val és 5 számjegyű PIN-nel'),
       findsOneWidget,
     );
   });

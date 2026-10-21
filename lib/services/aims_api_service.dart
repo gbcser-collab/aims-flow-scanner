@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import '../models/scan_models.dart';
 import '../models/tracking_models.dart';
 import 'device_identity_service.dart';
+import 'flow_auth_service.dart';
 
 class AimsApiException implements Exception {
   const AimsApiException(this.code, this.statusCode, [this.detail]);
@@ -22,12 +23,19 @@ class AimsApiService {
 
   final String baseUrl;
 
-  Map<String, String> _authHeaders(DeviceIdentity identity) => {
+  Map<String, String> _authHeaders(DeviceIdentity identity) {
+    throw const FlowAuthException('scanner_auth_bridge_required', 503);
+  }
+
+  /* Legacy device-secret transport is intentionally disabled until its backend
+     supports CONTROL identity and personal session authorization.
+  Map<String, String> _legacyHeaders(DeviceIdentity identity) => {
         'content-type': 'application/json; charset=utf-8',
         'accept': 'application/json',
         'X-AIMS-Device-ID': identity.deviceId,
         'Authorization': 'Bearer ${identity.secret}',
       };
+  */
 
   Map<String, dynamic> _decode(http.Response response) {
     Map<String, dynamic> decoded = <String, dynamic>{};
@@ -48,6 +56,7 @@ class AimsApiService {
   }
 
   Future<Map<String, dynamic>> enroll(DeviceIdentity identity, {required String label}) async {
+    _authHeaders(identity);
     final response = await http
         .post(
           Uri.parse('$baseUrl/device/enroll'),

@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'flow_auth_service.dart';
 
 import 'package:path_provider/path_provider.dart';
 
@@ -10,7 +11,7 @@ class TrackingRepository {
 
   Future<File> _file() async {
     final root = await getApplicationDocumentsDirectory();
-    final directory = Directory('${root.path}/aims_tracking');
+    final directory = Directory('${root.path}/flow_${FlowAuthService.instance.storageScope}/aims_tracking');
     if (!await directory.exists()) await directory.create(recursive: true);
     return File('${directory.path}/current_trip.json');
   }

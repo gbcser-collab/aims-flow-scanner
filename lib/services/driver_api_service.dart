@@ -1,4 +1,6 @@
 import 'dart:convert';
+import 'flow_http_client.dart';
+import 'flow_auth_service.dart';
 
 import 'package:http/http.dart' as http;
 
@@ -338,18 +340,16 @@ class DriverApiService {
     'AIMS_TRACKING_BASE_URL',
     defaultValue: 'https://logistic-aims.hu/api/aims-tracking',
   );
-  static const _token =
-      String.fromEnvironment('AIMS_TRACKING_TOKEN', defaultValue: '');
 
   String _base() => _baseUrl.trim().replaceAll(RegExp(r'/+$'), '');
 
   Map<String, String> get _headers => {
         'Content-Type': 'application/json',
-        'Authorization': 'Bearer $_token',
+
       };
 
   void _ensureConfigured() {
-    if (_token.trim().isEmpty) {
+    if (!FlowAuthService.instance.authenticated) {
       throw StateError('Az AIMS Flow szerverkulcs nincs beállítva.');
     }
   }
@@ -364,8 +364,7 @@ class DriverApiService {
     Object? lastError;
     for (var attempt = 0; attempt < 3; attempt++) {
       try {
-        final response = await http
-            .get(uri, headers: _headers)
+        final response = await FlowHttpClient.instance.get(uri, headers: _headers)
             .timeout(const Duration(seconds: 12));
         final body = _decodeResponse(response);
         final rawJobs = body['jobs'];
@@ -398,8 +397,7 @@ class DriverApiService {
     Object? lastError;
     for (var attempt = 0; attempt < 2; attempt++) {
       try {
-        final response = await http
-            .get(uri, headers: _headers)
+        final response = await FlowHttpClient.instance.get(uri, headers: _headers)
             .timeout(const Duration(seconds: 6));
         final body = _decodeResponse(response);
         final raw = body['autopilot'];
@@ -429,8 +427,7 @@ class DriverApiService {
     required String action,
   }) async {
     _ensureConfigured();
-    final response = await http
-        .post(
+    final response = await FlowHttpClient.instance.post(
           Uri.parse('${_base()}/driver_job_ack.php'),
           headers: _headers,
           body: jsonEncode({
@@ -452,8 +449,7 @@ class DriverApiService {
     double? accuracy,
   }) async {
     _ensureConfigured();
-    final response = await http
-        .post(
+    final response = await FlowHttpClient.instance.post(
           Uri.parse('${_base()}/registration_point.php'),
           headers: _headers,
           body: jsonEncode({
@@ -480,8 +476,7 @@ class DriverApiService {
     DateTime? occurredAt,
   }) async {
     _ensureConfigured();
-    final response = await http
-        .post(
+    final response = await FlowHttpClient.instance.post(
           Uri.parse('${_base()}/driver_stop_action.php'),
           headers: _headers,
           body: jsonEncode({
@@ -503,8 +498,7 @@ class DriverApiService {
     required String syncState,
   }) async {
     _ensureConfigured();
-    final response = await http
-        .post(
+    final response = await FlowHttpClient.instance.post(
           Uri.parse('${_base()}/driver_job_document.php'),
           headers: _headers,
           body: jsonEncode({
@@ -521,8 +515,7 @@ class DriverApiService {
   Future<DriverRestModeState> fetchRestMode(String plate) async {
     _ensureConfigured();
     final normalized = plate.trim().toUpperCase();
-    final response = await http
-        .get(
+    final response = await FlowHttpClient.instance.get(
           Uri.parse(
             '${_base()}/driver_rest_mode.php?plate=${Uri.encodeQueryComponent(normalized)}',
           ),
@@ -542,8 +535,7 @@ class DriverApiService {
     int durationMinutes = 540,
   }) async {
     _ensureConfigured();
-    final response = await http
-        .post(
+    final response = await FlowHttpClient.instance.post(
           Uri.parse('${_base()}/driver_rest_mode.php'),
           headers: _headers,
           body: jsonEncode({
@@ -566,8 +558,7 @@ class DriverApiService {
     required String fcmToken,
   }) async {
     _ensureConfigured();
-    final response = await http
-        .post(
+    final response = await FlowHttpClient.instance.post(
           Uri.parse('${_base()}/driver_push_device.php'),
           headers: _headers,
           body: jsonEncode({
@@ -592,8 +583,7 @@ class DriverApiService {
     DateTime? occurredAt,
   }) async {
     _ensureConfigured();
-    final response = await http
-        .post(
+    final response = await FlowHttpClient.instance.post(
           Uri.parse('${_base()}/driver_event.php'),
           headers: _headers,
           body: jsonEncode({
@@ -625,8 +615,7 @@ class DriverApiService {
     Object? lastError;
     for (var attempt = 0; attempt < 2; attempt++) {
       try {
-        final response = await http
-            .get(uri, headers: _headers)
+        final response = await FlowHttpClient.instance.get(uri, headers: _headers)
             .timeout(const Duration(seconds: 10));
         final body = _decodeResponse(response);
         final rawMessages = body['messages'];
@@ -668,8 +657,7 @@ class DriverApiService {
 
     for (var attempt = 0; attempt < attempts; attempt++) {
       try {
-        final response = await http
-            .post(
+        final response = await FlowHttpClient.instance.post(
               Uri.parse('${_base()}/driver_messages.php'),
               headers: _headers,
               body: jsonEncode({

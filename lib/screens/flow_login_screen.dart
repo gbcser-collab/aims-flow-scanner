@@ -3,7 +3,10 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+
+import '../services/flow_preferences.dart';
+import '../services/flow_auth_service.dart';
+import '../services/vehicle_tracking_service.dart';
 
 import '../services/aims_display_mode.dart';
 import '../services/aims_locale.dart';
@@ -11,8 +14,6 @@ import '../services/device_unlock_service.dart';
 import '../services/driver_push_service.dart';
 import '../services/native_auth_service.dart';
 import 'driver_shell_screen.dart';
-import 'flow_change_code_screen.dart';
-import 'flow_forgot_code_screen.dart';
 import 'flow_register_screen.dart';
 
 class FlowLoginScreen extends StatefulWidget {
@@ -25,9 +26,9 @@ class FlowLoginScreen extends StatefulWidget {
 class _FlowLoginScreenState extends State<FlowLoginScreen> {
   static const _blue = Color(0xFF1CB8FF);
   static const _auth = NativeAuthService();
-  static const _e2e =
-      bool.fromEnvironment('AIMS_E2E_TEST', defaultValue: false);
-  static final Uint8List _logo = base64Decode('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');
+  static final Uint8List _logo = base64Decode(
+    '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',
+  );
 
   final _login = TextEditingController();
   final _password = TextEditingController();
@@ -47,22 +48,43 @@ class _FlowLoginScreenState extends State<FlowLoginScreen> {
   }
 
   Future<void> _tryDeviceUnlock() async {
-    if (_e2e || _autoUnlockTried || !mounted) return;
+    if (_autoUnlockTried || !mounted || _busy) return;
     _autoUnlockTried = true;
-    final prefs = await SharedPreferences.getInstance();
-    final plate = (prefs.getString('aims_driver_plate') ?? '').trim();
-    final enabled = prefs.getBool('aims_driver_local_unlock') ?? false;
-    if (plate.isEmpty || !enabled || !mounted) return;
+    var ownsBusy = false;
+    try {
+      if (!await FlowAuthService.instance.hasStoredSession()) return;
+      if (!await DeviceUnlockService.instance.isAvailable() || !mounted) return;
+      if (_busy || _adminMode) return;
+      ownsBusy = true;
+      setState(() => _busy = true);
+      if (!await DeviceUnlockService.instance.authenticate() || !mounted)
+        return;
+      if (!await FlowAuthService.instance.restore() || !mounted) return;
+      final session = FlowAuthService.instance.session!;
+      await _saveDriverProfile(session);
+      if (!mounted) return;
+      await Navigator.of(context).pushReplacement(
+        MaterialPageRoute(
+          builder: (_) => DriverShellScreen(
+            initialPlate: session.plate,
+            initialDriverName: session.displayName,
+          ),
+        ),
+      );
+    } catch (_) {
+      /* Manual FLOW ID + PIN remains available. */
+    } finally {
+      if (ownsBusy && mounted) setState(() => _busy = false);
+    }
+  }
 
-    final available = await DeviceUnlockService.instance.isAvailable();
-    if (!available || !mounted) return;
-
-    final ok = await DeviceUnlockService.instance.authenticate();
-    if (!ok || !mounted) return;
-
-    await Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (_) => const DriverShellScreen()),
-    );
+  Future<void> _saveDriverProfile(FlowAuthSession session) async {
+    final prefs = await FlowPreferences.getInstance();
+    await prefs.setString('aims_driver_plate', session.plate);
+    await prefs.setString('aims_driver_name', session.displayName);
+    await prefs.setString('aims_flow_id', session.flowId);
+    await prefs.setString('aims_user_role', 'driver');
+    await AimsLocaleController.instance.setLanguage(session.language);
   }
 
   @override
@@ -73,159 +95,75 @@ class _FlowLoginScreenState extends State<FlowLoginScreen> {
     super.dispose();
   }
 
-  Future<String?> _askDriverName() async {
-    final t = AimsLocaleController.instance.t;
-    final prefs = await SharedPreferences.getInstance();
-    final controller = TextEditingController(
-      text: prefs.getString('aims_driver_name') ?? '',
-    );
-    final result = await showDialog<String>(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        backgroundColor: Theme.of(context).colorScheme.surface,
-        title: Text(t('driver_name_question')),
-        content: TextField(
-          key: const Key('flow-driver-name'),
-          controller: controller,
-          autofocus: true,
-          textCapitalization: TextCapitalization.words,
-          maxLength: 40,
-          decoration: InputDecoration(
-            labelText: t('driver_name'),
-            hintText: t('driver_name_hint'),
-            counterText: '',
-          ),
-          onSubmitted: (value) {
-            final name = value.trim();
-            if (name.isNotEmpty) Navigator.pop(context, name);
-          },
-        ),
-        actions: [
-          FilledButton(
-            onPressed: () {
-              final name = controller.text.trim();
-              if (name.isNotEmpty) Navigator.pop(context, name);
-            },
-            child: Text(t('continue')),
-          ),
-        ],
-      ),
-    );
-    controller.dispose();
-    return result?.trim();
-  }
-
   Future<void> _submit() async {
     if (_busy) return;
     final t = AimsLocaleController.instance.t;
-    if (!_e2e) {
-      if (_adminMode) {
-        if (_password.text.isEmpty) {
-          setState(() => _error = t('admin_password_required'));
-          return;
-        }
-      } else {
-        final plate = _login.text.trim();
-        final accessCode = _password.text.trim().toUpperCase();
-        if (plate.length < 4 || accessCode.length != 6) {
-          setState(
-            () => _error = t('invalid_driver_fields'),
-          );
-          return;
-        }
-      }
+    if (_adminMode
+        ? _password.text.isEmpty
+        : !FlowAuthService.credentialsValid(_login.text, _password.text)) {
+      setState(
+        () => _error = t(
+          _adminMode ? 'admin_password_required' : 'invalid_driver_fields',
+        ),
+      );
+      return;
     }
     setState(() {
       _busy = true;
       _error = null;
     });
     try {
-      NativeAuthResult? authResult;
-      Map<String, String> adminPush = const <String, String>{};
-      if (!_e2e && _adminMode) {
-        try {
-          adminPush =
-              await DriverPushService.instance.adminRegistrationPayload();
-        } catch (e) {
-          throw StateError(
-            'Az admin push regisztráció nem készíthető elő: '
-            '${e.toString().replaceFirst('Bad state: ', '')}',
-          );
-        }
-      }
-      if (!_e2e) {
-        authResult = await _auth.login(
-          login: _adminMode ? 'ADMIN' : _login.text,
-          password: _adminMode
-              ? _password.text
-              : _password.text.trim().toUpperCase(),
-          code: _adminMode ? _code.text : '',
-          pushDeviceId: adminPush['deviceId'] ?? '',
-          fcmToken: adminPush['fcmToken'] ?? '',
-          pushPlatform: adminPush['platform'] ?? 'android',
+      await VehicleTrackingService.instance.disable();
+      if (_adminMode) {
+        final push = await DriverPushService.instance
+            .adminRegistrationPayload();
+        final result = await _auth.login(
+          login: 'ADMIN',
+          password: _password.text,
+          code: _code.text,
+          pushDeviceId: push['deviceId'] ?? '',
+          fcmToken: push['fcmToken'] ?? '',
+          pushPlatform: push['platform'] ?? 'android',
         );
-      }
-      if (!mounted) return;
-
-      if (!_e2e && authResult?.role == 'admin') {
-        if (authResult?.adminPushRegistered != true) {
+        if (result.role != 'admin' || !result.adminPushRegistered) {
           throw StateError(
-            'Az admintelefon belépett, de a push regisztráció nem sikerült.',
+            'Az admin belépés vagy push regisztráció nem sikerült.',
           );
         }
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('aims_user_role', 'admin');
-        await prefs.remove('aims_driver_plate');
-        await prefs.remove('aims_driver_name');
-        await prefs.setBool('aims_driver_local_unlock', false);
-      }
-
-      if (!_e2e && authResult?.role == 'driver') {
-        final driver = authResult!;
-        if (driver.forceCodeChange) {
-          final changed = await Navigator.of(context).push<bool>(
-            MaterialPageRoute(
-              builder: (_) => FlowChangeCodeScreen(
-                plate: driver.plate,
-                currentCode: _password.text.trim().toUpperCase(),
-              ),
-            ),
-          );
-          if (!mounted || changed != true) return;
-        }
-
-        final name = await _askDriverName();
-        if (!mounted || name == null || name.isEmpty) return;
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString(
-          'aims_driver_plate',
-          driver.plate.trim().toUpperCase(),
-        );
-        await prefs.setString('aims_driver_name', name);
-        await prefs.setBool('aims_driver_local_unlock', true);
-        await prefs.setString('aims_user_role', 'driver');
-      }
-
-      final prefs = await SharedPreferences.getInstance();
-      final initialPlate =
-          (prefs.getString('aims_driver_plate') ?? '').trim().toUpperCase();
-      final initialDriverName =
-          (prefs.getString('aims_driver_name') ?? '').trim();
-
-      await Navigator.of(context).pushReplacement(
-        MaterialPageRoute(
-          builder: (_) => DriverShellScreen(
-            initialPlate: initialPlate,
-            initialDriverName: initialDriverName,
+        await FlowAuthService.instance.clear();
+        if (!mounted) return;
+        await Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+            builder: (_) => const DriverShellScreen(adminMode: true),
           ),
-        ),
-      );
+        );
+      } else {
+        FlowAuthSession session;
+        try {
+          session = await FlowAuthService.instance.login(
+            _login.text,
+            _password.text,
+          );
+        } finally {
+          _password.clear();
+        }
+        await _saveDriverProfile(session);
+        if (!mounted) return;
+        await Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+            builder: (_) => DriverShellScreen(
+              initialPlate: session.plate,
+              initialDriverName: session.displayName,
+            ),
+          ),
+        );
+      }
     } catch (e) {
-      if (!mounted) return;
-      final value = e.toString().replaceFirst('Bad state: ', '');
-      setState(() => _error = value);
+      if (mounted)
+        setState(() => _error = e.toString().replaceFirst('Bad state: ', ''));
     } finally {
+      _password.clear();
+      _code.clear();
       if (mounted) setState(() => _busy = false);
     }
   }
@@ -247,9 +185,7 @@ class _FlowLoginScreenState extends State<FlowLoginScreen> {
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
       filled: true,
       fillColor: dark ? const Color(0xFF0A2236) : const Color(0xFFF5F9FC),
-      hintStyle: TextStyle(
-        color: Colors.white,
-      ),
+      hintStyle: TextStyle(color: Colors.white),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(16),
         borderSide: BorderSide(
@@ -272,8 +208,9 @@ class _FlowLoginScreenState extends State<FlowLoginScreen> {
         final t = locale.t;
         final dark = Theme.of(context).brightness == Brightness.dark;
         return Scaffold(
-          backgroundColor:
-              dark ? const Color(0xFF020813) : const Color(0xFFF5F9FC),
+          backgroundColor: dark
+              ? const Color(0xFF020813)
+              : const Color(0xFFF5F9FC),
           body: Container(
             decoration: BoxDecoration(
               gradient: LinearGradient(
@@ -312,7 +249,9 @@ class _FlowLoginScreenState extends State<FlowLoginScreen> {
                                     .instance
                                     .cycleMode(),
                                 icon: Icon(
-                                  switch (AimsDisplayModeController.instance.mode) {
+                                  switch (AimsDisplayModeController
+                                      .instance
+                                      .mode) {
                                     AimsDisplayMode.auto =>
                                       Icons.brightness_auto_rounded,
                                     AimsDisplayMode.light =>
@@ -322,8 +261,8 @@ class _FlowLoginScreenState extends State<FlowLoginScreen> {
                                   },
                                   color:
                                       AimsDisplayModeController.instance.isDark
-                                          ? const Color(0xFF8BD8FF)
-                                          : const Color(0xFFFFC857),
+                                      ? const Color(0xFF8BD8FF)
+                                      : const Color(0xFFFFC857),
                                 ),
                               ),
                               const AimsLanguageSelector(),
@@ -401,39 +340,41 @@ class _FlowLoginScreenState extends State<FlowLoginScreen> {
                                 TextField(
                                   key: const Key('flow-login-user'),
                                   controller: _login,
-                                  textCapitalization:
-                                      TextCapitalization.characters,
+                                  keyboardType: TextInputType.number,
+                                  autocorrect: false,
+                                  enableSuggestions: false,
                                   textInputAction: TextInputAction.next,
                                   inputFormatters: [
                                     FilteringTextInputFormatter.allow(
-                                      RegExp(r'[A-Za-z0-9 -]'),
+                                      RegExp(r'[0-9]'),
                                     ),
-                                    LengthLimitingTextInputFormatter(12),
+                                    LengthLimitingTextInputFormatter(6),
                                   ],
                                   style: const TextStyle(
                                     fontSize: 18,
                                     fontWeight: FontWeight.w800,
                                     letterSpacing: .8,
                                   ),
-                                  decoration: _decoration(context, 
-                                    t('plate'),
-                                    Icons.local_shipping_outlined,
-                                  ).copyWith(
-                                    hintText: t('plate_hint'),
-                                  ),
+                                  decoration: _decoration(
+                                    context,
+                                    'FLOW ID',
+                                    Icons.person_outline,
+                                  ).copyWith(hintText: '000000'),
                                 ),
                                 const SizedBox(height: 12),
                                 TextField(
                                   key: const Key('flow-login-password'),
                                   controller: _password,
                                   obscureText: _obscure,
-                                  textCapitalization:
-                                      TextCapitalization.characters,
+                                  keyboardType: TextInputType.number,
+                                  autocorrect: false,
+                                  enableSuggestions: false,
                                   textInputAction: TextInputAction.done,
-                                  maxLength: 6,
+                                  maxLength: 5,
+                                  enableIMEPersonalizedLearning: false,
                                   inputFormatters: [
                                     FilteringTextInputFormatter.allow(
-                                      RegExp(r'[A-Za-z0-9]'),
+                                      RegExp(r'[0-9]'),
                                     ),
                                   ],
                                   onSubmitted: (_) => _submit(),
@@ -442,23 +383,25 @@ class _FlowLoginScreenState extends State<FlowLoginScreen> {
                                     fontWeight: FontWeight.w900,
                                     letterSpacing: 3,
                                   ),
-                                  decoration: _decoration(context, 
-                                    t('driver_code'),
-                                    Icons.key_rounded,
-                                  ).copyWith(
-                                    counterText: '',
-                                    hintText: t('driver_code_hint'),
-                                    suffixIcon: IconButton(
-                                      onPressed: () => setState(
-                                        () => _obscure = !_obscure,
+                                  decoration:
+                                      _decoration(
+                                        context,
+                                        'PIN',
+                                        Icons.key_rounded,
+                                      ).copyWith(
+                                        counterText: '',
+                                        hintText: '•••••',
+                                        suffixIcon: IconButton(
+                                          onPressed: () => setState(
+                                            () => _obscure = !_obscure,
+                                          ),
+                                          icon: Icon(
+                                            _obscure
+                                                ? Icons.visibility_off_outlined
+                                                : Icons.visibility_outlined,
+                                          ),
+                                        ),
                                       ),
-                                      icon: Icon(
-                                        _obscure
-                                            ? Icons.visibility_off_outlined
-                                            : Icons.visibility_outlined,
-                                      ),
-                                    ),
-                                  ),
                                 ),
                                 Align(
                                   alignment: Alignment.centerRight,
@@ -466,14 +409,22 @@ class _FlowLoginScreenState extends State<FlowLoginScreen> {
                                     key: const Key('flow-forgot-code-open'),
                                     onPressed: _busy
                                         ? null
-                                        : () => Navigator.of(context).push(
-                                              MaterialPageRoute(
-                                                builder: (_) =>
-                                                    FlowForgotCodeScreen(
-                                                  initialPlate: _login.text,
-                                                ),
+                                        : () => showDialog<void>(
+                                            context: context,
+                                            builder: (_) => AlertDialog(
+                                              title: const Text(
+                                                'FLOW ID / PIN',
                                               ),
+                                              content: Text(t('flow_pin_help')),
+                                              actions: [
+                                                TextButton(
+                                                  onPressed: () =>
+                                                      Navigator.pop(context),
+                                                  child: const Text('OK'),
+                                                ),
+                                              ],
                                             ),
+                                          ),
                                     icon: const Icon(
                                       Icons.help_outline_rounded,
                                       size: 18,
@@ -487,21 +438,23 @@ class _FlowLoginScreenState extends State<FlowLoginScreen> {
                                   controller: _password,
                                   obscureText: _obscure,
                                   textInputAction: TextInputAction.next,
-                                  decoration: _decoration(context, 
-                                    t('admin_password'),
-                                    Icons.lock_outline_rounded,
-                                  ).copyWith(
-                                    suffixIcon: IconButton(
-                                      onPressed: () => setState(
-                                        () => _obscure = !_obscure,
+                                  decoration:
+                                      _decoration(
+                                        context,
+                                        t('admin_password'),
+                                        Icons.lock_outline_rounded,
+                                      ).copyWith(
+                                        suffixIcon: IconButton(
+                                          onPressed: () => setState(
+                                            () => _obscure = !_obscure,
+                                          ),
+                                          icon: Icon(
+                                            _obscure
+                                                ? Icons.visibility_off_outlined
+                                                : Icons.visibility_outlined,
+                                          ),
+                                        ),
                                       ),
-                                      icon: Icon(
-                                        _obscure
-                                            ? Icons.visibility_off_outlined
-                                            : Icons.visibility_outlined,
-                                      ),
-                                    ),
-                                  ),
                                 ),
                               ],
                               const SizedBox(height: 10),
@@ -511,13 +464,14 @@ class _FlowLoginScreenState extends State<FlowLoginScreen> {
                                 onTap: _busy
                                     ? null
                                     : () => setState(() {
-                                          _adminMode = !_adminMode;
-                                          _password.clear();
-                                          _code.clear();
-                                        }),
+                                        _adminMode = !_adminMode;
+                                        _password.clear();
+                                        _code.clear();
+                                      }),
                                 child: Padding(
-                                  padding:
-                                      const EdgeInsets.symmetric(vertical: 4),
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 4,
+                                  ),
                                   child: Row(
                                     children: [
                                       const Icon(
@@ -551,10 +505,10 @@ class _FlowLoginScreenState extends State<FlowLoginScreen> {
                                         onChanged: _busy
                                             ? null
                                             : (value) => setState(() {
-                                                  _adminMode = value;
-                                                  _password.clear();
-                                                  _code.clear();
-                                                }),
+                                                _adminMode = value;
+                                                _password.clear();
+                                                _code.clear();
+                                              }),
                                       ),
                                     ],
                                   ),
@@ -569,7 +523,8 @@ class _FlowLoginScreenState extends State<FlowLoginScreen> {
                                   maxLength: 6,
                                   textInputAction: TextInputAction.done,
                                   onSubmitted: (_) => _submit(),
-                                  decoration: _decoration(context, 
+                                  decoration: _decoration(
+                                    context,
                                     t('authenticator_code'),
                                     Icons.shield_outlined,
                                   ).copyWith(counterText: ''),
@@ -621,13 +576,14 @@ class _FlowLoginScreenState extends State<FlowLoginScreen> {
                                 onPressed: _busy
                                     ? null
                                     : () => Navigator.of(context).push(
-                                          MaterialPageRoute(
-                                            builder: (_) =>
-                                                const FlowRegisterScreen(),
-                                          ),
+                                        MaterialPageRoute(
+                                          builder: (_) =>
+                                              const FlowRegisterScreen(),
                                         ),
-                                icon:
-                                    const Icon(Icons.person_add_alt_1_rounded),
+                                      ),
+                                icon: const Icon(
+                                  Icons.person_add_alt_1_rounded,
+                                ),
                                 label: Text(t('register')),
                                 style: OutlinedButton.styleFrom(
                                   minimumSize: const Size.fromHeight(58),
