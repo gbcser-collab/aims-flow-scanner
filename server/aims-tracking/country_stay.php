@@ -1,6 +1,66 @@
 <?php
 declare(strict_types=1);
 
+/**
+ * Ensure the country transition state can preserve the first fix in a new
+ * country and the distance travelled after that fix. The migration is safe on
+ * already running SQLite databases and is executed once per PHP request.
+ */
+function aims_country_stay_schema(PDO $pdo): void {
+    static $ready = false;
+    if ($ready) return;
+
+    $columns = [];
+    foreach ($pdo->query('PRAGMA table_info(vehicle_country_state)')->fetchAll(PDO::FETCH_ASSOC) as $column) {
+        $columns[(string)$column['name']] = true;
+    }
+    if (!isset($columns['candidate_entry_latitude'])) {
+        $pdo->exec('ALTER TABLE vehicle_country_state ADD COLUMN candidate_entry_latitude REAL');
+    }
+    if (!isset($columns['candidate_entry_longitude'])) {
+        $pdo->exec('ALTER TABLE vehicle_country_state ADD COLUMN candidate_entry_longitude REAL');
+    }
+    if (!isset($columns['candidate_distance_m'])) {
+        $pdo->exec('ALTER TABLE vehicle_country_state ADD COLUMN candidate_distance_m REAL NOT NULL DEFAULT 0');
+    }
+    $ready = true;
+}
+
+function aims_country_transition_segment(
+    array $state,
+    float $lat,
+    float $lng,
+    DateTimeImmutable $captured
+): float {
+    if ($state['last_latitude'] === null || $state['last_longitude'] === null) {
+        return 0.0;
+    }
+
+    $lastLat = (float)$state['last_latitude'];
+    $lastLng = (float)$state['last_longitude'];
+    $segment = aims_distance_m($lastLat, $lastLng, $lat, $lng);
+    if (!is_finite($segment) || $segment < 10.0) return 0.0;
+
+    $lastObserved = trim((string)($state['last_observed_at'] ?? ''));
+    $elapsedSeconds = 0;
+    if ($lastObserved !== '') {
+        try {
+            $elapsedSeconds = max(
+                0,
+                $captured->getTimestamp() - (new DateTimeImmutable($lastObserved))->getTimestamp()
+            );
+        } catch (Throwable) {
+            $elapsedSeconds = 0;
+        }
+    }
+
+    // 65 m/s is roughly 234 km/h. The additional 250 metres absorbs normal
+    // GPS uncertainty and short recording gaps, while still rejecting large
+    // impossible jumps that could falsely confirm a border crossing.
+    $plausibleMaximum = max(500.0, $elapsedSeconds * 65.0 + 250.0);
+    return $segment <= $plausibleMaximum ? $segment : 0.0;
+}
+
 function aims_process_country_stay(
     PDO $pdo,
     array $vehicle,
@@ -11,6 +71,7 @@ function aims_process_country_stay(
     bool $emitNotifications = true
 ): int {
     if ($countryCode === '') return 0;
+    aims_country_stay_schema($pdo);
 
     $vehicleId = (int)$vehicle['id'];
     $stamp = $captured->format(DateTimeInterface::ATOM);
@@ -21,19 +82,24 @@ function aims_process_country_stay(
     );
     $stateStmt->execute([':vehicle' => $vehicleId]);
     $state = $stateStmt->fetch(PDO::FETCH_ASSOC) ?: null;
+
     if ($state === null ||
         trim((string)($state['confirmed_country_code'] ?? '')) === '') {
         $insertState = $pdo->prepare('INSERT INTO vehicle_country_state
             (vehicle_id, confirmed_country_code, candidate_country_code,
-             candidate_since, candidate_hits, last_observed_at,
-             last_latitude, last_longitude, updated_at)
-            VALUES (:vehicle, :country, NULL, NULL, 0, :observed,
-                    :lat, :lng, :updated)
+             candidate_since, candidate_hits, candidate_entry_latitude,
+             candidate_entry_longitude, candidate_distance_m,
+             last_observed_at, last_latitude, last_longitude, updated_at)
+            VALUES (:vehicle, :country, NULL, NULL, 0, NULL, NULL, 0,
+                    :observed, :lat, :lng, :updated)
             ON CONFLICT(vehicle_id) DO UPDATE SET
               confirmed_country_code=excluded.confirmed_country_code,
               candidate_country_code=NULL,
               candidate_since=NULL,
               candidate_hits=0,
+              candidate_entry_latitude=NULL,
+              candidate_entry_longitude=NULL,
+              candidate_distance_m=0,
               last_observed_at=excluded.last_observed_at,
               last_latitude=excluded.last_latitude,
               last_longitude=excluded.last_longitude,
@@ -46,11 +112,11 @@ function aims_process_country_stay(
             ':lng' => $lng,
             ':updated' => $now,
         ]);
+
         $open = $pdo->prepare('SELECT id FROM country_stays
             WHERE vehicle_id = :vehicle AND exited_at IS NULL
             ORDER BY id DESC LIMIT 1');
         $open->execute([':vehicle' => $vehicleId]);
-
         if ($open->fetchColumn() === false) {
             $stay = $pdo->prepare('INSERT INTO country_stays
                 (vehicle_id, country_code, entered_at, exited_at,
@@ -70,6 +136,7 @@ function aims_process_country_stay(
         }
         return 0;
     }
+
     $lastObserved = trim((string)($state['last_observed_at'] ?? ''));
     if ($lastObserved !== '') {
         try {
@@ -78,15 +145,18 @@ function aims_process_country_stay(
         }
     }
 
-    $confirmed = strtoupper(
-        trim((string)$state['confirmed_country_code'])
-    );
-
+    $confirmed = strtoupper(trim((string)$state['confirmed_country_code']));
     if ($countryCode === $confirmed) {
+        // The vehicle returned to the confirmed country before travelling the
+        // required five kilometres. The candidate was border noise or a short
+        // turn-around and must not create a country transition.
         $reset = $pdo->prepare('UPDATE vehicle_country_state SET
             candidate_country_code=NULL,
             candidate_since=NULL,
             candidate_hits=0,
+            candidate_entry_latitude=NULL,
+            candidate_entry_longitude=NULL,
+            candidate_distance_m=0,
             last_observed_at=:observed,
             last_latitude=:lat,
             last_longitude=:lng,
@@ -101,15 +171,16 @@ function aims_process_country_stay(
         ]);
         return 0;
     }
-    $candidate = strtoupper(
-        trim((string)($state['candidate_country_code'] ?? ''))
-    );
 
+    $candidate = strtoupper(trim((string)($state['candidate_country_code'] ?? '')));
     if ($candidate !== $countryCode) {
         $start = $pdo->prepare('UPDATE vehicle_country_state SET
             candidate_country_code=:country,
             candidate_since=:since,
             candidate_hits=1,
+            candidate_entry_latitude=:entry_lat,
+            candidate_entry_longitude=:entry_lng,
+            candidate_distance_m=0,
             last_observed_at=:observed,
             last_latitude=:lat,
             last_longitude=:lng,
@@ -118,6 +189,8 @@ function aims_process_country_stay(
         $start->execute([
             ':country' => $countryCode,
             ':since' => $stamp,
+            ':entry_lat' => $lat,
+            ':entry_lng' => $lng,
             ':observed' => $stamp,
             ':lat' => $lat,
             ':lng' => $lng,
@@ -129,9 +202,7 @@ function aims_process_country_stay(
 
     $hits = (int)($state['candidate_hits'] ?? 0) + 1;
     try {
-        $candidateSince = new DateTimeImmutable(
-            (string)$state['candidate_since']
-        );
+        $candidateSince = new DateTimeImmutable((string)$state['candidate_since']);
     } catch (Throwable) {
         $candidateSince = $captured;
     }
@@ -140,10 +211,17 @@ function aims_process_country_stay(
         0,
         $captured->getTimestamp() - $candidateSince->getTimestamp()
     );
+    $segment = aims_country_transition_segment($state, $lat, $lng, $captured);
+    $travelled = max(0.0, (float)($state['candidate_distance_m'] ?? 0.0)) + $segment;
 
-    if ($hits < 4 || $elapsed < 90) {
+    // A border crossing becomes official only after the vehicle has travelled
+    // at least five kilometres while consecutive observations still place it
+    // in the same new country. The hit/time conditions remain as secondary
+    // protection against geocoder flicker and GPS jitter near the border.
+    if ($travelled < 5000.0 || $hits < 3 || $elapsed < 60) {
         $pending = $pdo->prepare('UPDATE vehicle_country_state SET
             candidate_hits=:hits,
+            candidate_distance_m=:distance,
             last_observed_at=:observed,
             last_latitude=:lat,
             last_longitude=:lng,
@@ -151,6 +229,7 @@ function aims_process_country_stay(
             WHERE vehicle_id=:vehicle');
         $pending->execute([
             ':hits' => $hits,
+            ':distance' => $travelled,
             ':observed' => $stamp,
             ':lat' => $lat,
             ':lng' => $lng,
@@ -159,7 +238,14 @@ function aims_process_country_stay(
         ]);
         return 0;
     }
+
     $transitionAt = $candidateSince->format(DateTimeInterface::ATOM);
+    $entryLat = $state['candidate_entry_latitude'] === null
+        ? $lat
+        : (float)$state['candidate_entry_latitude'];
+    $entryLng = $state['candidate_entry_longitude'] === null
+        ? $lng
+        : (float)$state['candidate_entry_longitude'];
 
     $close = $pdo->prepare('UPDATE country_stays SET
         exited_at=:exited,
@@ -172,8 +258,8 @@ function aims_process_country_stay(
         )');
     $close->execute([
         ':exited' => $transitionAt,
-        ':lat' => $lat,
-        ':lng' => $lng,
+        ':lat' => $entryLat,
+        ':lng' => $entryLng,
         ':vehicle' => $vehicleId,
     ]);
 
@@ -187,8 +273,8 @@ function aims_process_country_stay(
         ':vehicle' => $vehicleId,
         ':country' => $countryCode,
         ':entered' => $transitionAt,
-        ':lat' => $lat,
-        ':lng' => $lng,
+        ':lat' => $entryLat,
+        ':lng' => $entryLng,
         ':from_country' => $confirmed,
         ':confirmed' => $stamp,
         ':created' => $now,
@@ -199,6 +285,9 @@ function aims_process_country_stay(
         candidate_country_code=NULL,
         candidate_since=NULL,
         candidate_hits=0,
+        candidate_entry_latitude=NULL,
+        candidate_entry_longitude=NULL,
+        candidate_distance_m=0,
         last_observed_at=:observed,
         last_latitude=:lat,
         last_longitude=:lng,
@@ -212,10 +301,12 @@ function aims_process_country_stay(
         ':updated' => $now,
         ':vehicle' => $vehicleId,
     ]);
+
     if ($emitNotifications) {
         $plate = $vehicle['label'] !== ''
             ? $vehicle['label']
             : $vehicle['plate'];
+        $distanceKm = number_format($travelled / 1000.0, 1, ',', '');
 
         aims_notify(
             $pdo,
@@ -224,13 +315,14 @@ function aims_process_country_stay(
             'border_crossing',
             'info',
             "$plate határátlépés: $confirmed → $countryCode",
-            "Rögzítve: $transitionAt",
+            "Rögzítve: $transitionAt · megerősítés {$distanceKm} km után",
             "border:$vehicleId:$transitionAt:$confirmed:$countryCode",
             [
                 'fromCountry' => $confirmed,
                 'toCountry' => $countryCode,
                 'enteredAt' => $transitionAt,
                 'confirmedAt' => $stamp,
+                'confirmationDistanceMeters' => round($travelled, 1),
                 'latitude' => $lat,
                 'longitude' => $lng,
             ]
