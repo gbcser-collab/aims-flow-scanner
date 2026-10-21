@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/widgets.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -114,8 +115,15 @@ class FlowSessionStore {
     aOptions: AndroidOptions(),
   );
 
-  static bool get _runningUnderFlutterTest =>
-      Platform.environment['FLUTTER_TEST'] == 'true';
+  static bool get _runningUnderFlutterTest {
+    if (Platform.environment['FLUTTER_TEST'] == 'true') return true;
+    try {
+      final bindingName = WidgetsBinding.instance.runtimeType.toString();
+      return bindingName.contains('TestWidgetsFlutterBinding');
+    } catch (_) {
+      return false;
+    }
+  }
 
   Future<String?> _readRaw() async {
     final prefs = await SharedPreferences.getInstance();
