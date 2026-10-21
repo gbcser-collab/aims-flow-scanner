@@ -2,6 +2,17 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:aims_flow_scanner/services/roaming_resilience.dart';
 
 void main() {
+  test('reconnect does not relabel offline points after vehicle change', () {
+    expect(RoamingResilience.queueBelongsToVehicle(
+      {'plate': 'ABC-123', 'vehicleLabel': 'ABC123'}, 'ABC123'), isTrue);
+    expect(RoamingResilience.queueBelongsToVehicle(
+      {'plate': 'ABC123', 'vehicleLabel': 'ABC123'}, 'XYZ999'), isFalse);
+    expect(RoamingResilience.queueBelongsToVehicle(
+      {'plate': 'ABC123', 'vehicleLabel': 'XYZ999'}, 'ABC123'), isFalse);
+    expect(RoamingResilience.queueBelongsToVehicle(
+      {'vehicleLabel': 'ABC123'}, 'ABC123'), isTrue);
+    expect(RoamingResilience.queueBelongsToVehicle({}, 'ABC123'), isFalse);
+  });
   test('network retry recovers quickly and stays bounded', () {
     expect(RoamingResilience.retryDelay(0), Duration.zero);
     expect(RoamingResilience.retryDelay(1), const Duration(seconds: 1));
@@ -14,3 +25,4 @@ void main() {
     expect(RoamingResilience.retryDelay(100), const Duration(seconds: 30));
   });
 }
+

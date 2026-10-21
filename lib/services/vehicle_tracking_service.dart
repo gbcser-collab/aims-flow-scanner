@@ -809,6 +809,14 @@ class VehicleTrackingService {
         continue;
       }
 
+      if (!RoamingResilience.queueBelongsToVehicle(payload, _vehicleLabel)) {
+        // Preserve the original line for investigation; never relabel another
+        // vehicle's history with the current session's registration number.
+        await _quarantineLine(line, 'vehicle_identity_mismatch');
+        consumed.add(line);
+        continue;
+      }
+
       final captured =
           DateTime.tryParse(payload['timestamp']?.toString() ?? '');
       final now = DateTime.now().toUtc();
@@ -928,3 +936,4 @@ class VehicleTrackingService {
 class _TrackingSessionException implements Exception {
   const _TrackingSessionException();
 }
+

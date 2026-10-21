@@ -15,6 +15,21 @@ class RoamingResilience {
 
   static double finiteOrZero(double value) => value.isFinite ? value : 0;
 
+  /// An offline point keeps the vehicle it belonged to when captured.
+  static bool queueBelongsToVehicle(
+    Map<String, dynamic> point,
+    String activePlate,
+  ) {
+    String normalize(Object? value) => (value?.toString() ?? '')
+        .trim().toUpperCase().replaceAll(RegExp(r'[^A-Z0-9]'), '');
+    final active = normalize(activePlate);
+    final plate = normalize(point['plate']);
+    final label = normalize(point['vehicleLabel']);
+    if (active.isEmpty || (plate.isEmpty && label.isEmpty)) return false;
+    return (plate.isEmpty || plate == active) &&
+        (label.isEmpty || label == active);
+  }
+
   /// Fast, bounded recovery schedule for roaming and temporary data loss.
   ///
   /// The first retries happen after 1, 2, 4 and 8 seconds. A prolonged outage
@@ -61,3 +76,4 @@ class RoamingResilience {
     return 'pt_${hash.toRadixString(16).padLeft(8, '0')}';
   }
 }
+
