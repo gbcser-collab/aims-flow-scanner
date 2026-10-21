@@ -15,12 +15,18 @@ class RoamingResilience {
 
   static double finiteOrZero(double value) => value.isFinite ? value : 0;
 
+  /// Fast, bounded recovery schedule for roaming and temporary data loss.
+  ///
+  /// The first retries happen after 1, 2, 4 and 8 seconds. A prolonged outage
+  /// never pushes the next attempt beyond 30 seconds, so the local GPS queue
+  /// starts draining quickly after the phone regains a usable data path.
   static Duration retryDelay(int failureCount) {
     if (failureCount <= 0) return Duration.zero;
-    final exponent = min(failureCount - 1, 6);
-    final seconds = min(120, 2 * (1 << exponent));
-    return Duration(seconds: seconds);
+    const seconds = <int>[1, 2, 4, 8, 12, 20, 30];
+    final index = min(failureCount - 1, seconds.length - 1);
+    return Duration(seconds: seconds[index]);
   }
+
   static bool isFresh(
     DateTime capturedAt,
     DateTime now, {
