@@ -121,18 +121,49 @@ class _FlowLoginScreenState extends State<FlowLoginScreen> {
     }
   }
 
-  Widget _modeButton(BuildContext context) {
+  Widget _modeButton() {
     final display = AimsDisplayModeController.instance;
     final locale = AimsLocaleController.instance;
-    final icon = switch (display.mode) {
-      AimsDisplayMode.auto => Icons.brightness_auto_rounded,
-      AimsDisplayMode.light => Icons.light_mode_outlined,
-      AimsDisplayMode.dark => Icons.dark_mode_outlined,
-    };
-    return OutlinedButton.icon(
-      onPressed: display.cycleMode,
-      icon: Icon(icon, size: 18),
-      label: Text(display.label(locale.locale.languageCode)),
+
+    return AnimatedBuilder(
+      animation: Listenable.merge([display, locale]),
+      builder: (context, _) {
+        final icon = switch (display.mode) {
+          AimsDisplayMode.auto => Icons.brightness_auto_rounded,
+          AimsDisplayMode.light => Icons.light_mode_outlined,
+          AimsDisplayMode.dark => Icons.dark_mode_outlined,
+        };
+        return OutlinedButton.icon(
+          key: const Key('flow-display-mode'),
+          onPressed: display.cycleMode,
+          icon: Icon(icon, size: 18),
+          label: Text(display.label(locale.locale.languageCode)),
+        );
+      },
+    );
+  }
+
+  Widget _errorBox(ThemeData theme, bool dark) {
+    final message = _error;
+    if (message == null) return const SizedBox.shrink();
+    return Container(
+      margin: const EdgeInsets.only(top: 12),
+      padding: const EdgeInsets.all(11),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.error.withValues(alpha: .10),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: theme.colorScheme.error.withValues(alpha: .35),
+        ),
+      ),
+      child: Text(
+        message,
+        textAlign: TextAlign.center,
+        style: TextStyle(
+          color: dark ? Colors.white : theme.colorScheme.error,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
     );
   }
 
@@ -169,7 +200,7 @@ class _FlowLoginScreenState extends State<FlowLoginScreen> {
                     children: [
                       Align(
                         alignment: Alignment.centerRight,
-                        child: _modeButton(context),
+                        child: _modeButton(),
                       ),
                       const SizedBox(height: 18),
                       Card(
@@ -208,9 +239,7 @@ class _FlowLoginScreenState extends State<FlowLoginScreen> {
                                 keyboardType: TextInputType.number,
                                 textInputAction: TextInputAction.next,
                                 maxLength: 6,
-                                inputFormatters: [
-                                  FilteringTextInputFormatter.digitsOnly,
-                                ],
+                                inputFormatters: const [],
                                 decoration: const InputDecoration(
                                   labelText: '6 jegyű FLOW ID',
                                   hintText: '123456',
@@ -228,9 +257,7 @@ class _FlowLoginScreenState extends State<FlowLoginScreen> {
                                 maxLength: 5,
                                 obscureText: _obscure,
                                 onSubmitted: (_) => _submit(),
-                                inputFormatters: [
-                                  FilteringTextInputFormatter.digitsOnly,
-                                ],
+                                inputFormatters: const [],
                                 decoration: InputDecoration(
                                   labelText: '5 jegyű PIN',
                                   hintText: '•••••',
@@ -249,31 +276,7 @@ class _FlowLoginScreenState extends State<FlowLoginScreen> {
                                   ),
                                 ),
                               ),
-                              if (_error != null) ...[
-                                const SizedBox(height: 12),
-                                Container(
-                                  padding: const EdgeInsets.all(11),
-                                  decoration: BoxDecoration(
-                                    color: theme.colorScheme.error
-                                        .withValues(alpha: .10),
-                                    borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(
-                                      color: theme.colorScheme.error
-                                          .withValues(alpha: .35),
-                                    ),
-                                  ),
-                                  child: Text(
-                                    _error!,
-                                    textAlign: TextAlign.center,
-                                    style: TextStyle(
-                                      color: dark
-                                          ? Colors.white
-                                          : theme.colorScheme.error,
-                                      fontWeight: FontWeight.w800,
-                                    ),
-                                  ),
-                                ),
-                              ],
+                              _errorBox(theme, dark),
                               const SizedBox(height: 18),
                               FilledButton.icon(
                                 key: const Key('flow-login-submit'),
