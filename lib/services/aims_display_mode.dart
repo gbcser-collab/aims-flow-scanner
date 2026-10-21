@@ -47,10 +47,15 @@ class AimsDisplayModeController extends ChangeNotifier {
 
   Future<void> setMode(AimsDisplayMode mode) async {
     if (_mode == mode) return;
+
+    // The visible theme changes immediately. Preference storage and Android
+    // brightness control are secondary operations and must not make the UI
+    // appear unresponsive on a slow device.
     _mode = mode;
+    _recalculate(notify: true);
+
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_prefsKey, mode.name);
-    _recalculate(notify: true);
     await _applyBrightness();
   }
 
