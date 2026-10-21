@@ -1,0 +1,35 @@
+name: AIMS FLOW v1.9 Test Diagnostics
+
+on:
+  push:
+    branches: [aims-flow-r105-next-v190-stabilization]
+    paths:
+      - '.github/workflows/v190-test-diagnostics.yml'
+  workflow_dispatch:
+
+jobs:
+  ui-tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - name: Login, theme and shell tests
+        run: timeout 10m flutter test -r expanded test/app_smoke_test.dart test/v100_smoke_test.dart
+
+  domain-tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - name: FLOW workday and safety tests
+        run: timeout 10m flutter test -r expanded test/flow_workday_service_test.dart test/flow_safety_check_service_test.dart
