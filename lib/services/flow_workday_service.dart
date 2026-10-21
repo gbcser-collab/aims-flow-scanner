@@ -225,10 +225,10 @@ class FlowWorkdayService {
   }) async {
     _validateIdentity(session, plate);
     await _prepare();
-    await FlowLocalJournal.run(() async {
+    final closed = await FlowLocalJournal.run(() async {
       final data = await _read();
       final current = _current(data, session, plate);
-      if (!current.active || current.startedAt == null) return;
+      if (!current.active || current.startedAt == null) return false;
       if (endKm < (current.startKm ?? 0) || endKm > 5000000) {
         throw StateError('A záró kilométer nem lehet kisebb a kezdő értéknél.');
       }
@@ -240,9 +240,10 @@ class FlowWorkdayService {
         ...current.toJson(), 'active': false, 'syncPending': true,
         'finishedAt': now.toIso8601String(), 'endKm': endKm,
       }));
+      return true;
     });
     // Local closure stops GPS even when a previous HTTP request is still pending.
-    unawaited(_endTracking().catchError((Object _) {}));
+    if (closed) unawaited(_endTracking().catchError((Object _) {}));
     return flushPending(session: session, plate: plate);
   }
 

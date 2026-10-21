@@ -192,4 +192,34 @@ void main() {
       startKm: 1000), throwsStateError);
     expect(await workday.pendingCount(session: a), 0);
   });
+
+  test('finishing a different inactive driver cannot stop the active driver GPS', () async {
+    var stops = 0;
+    final workday = service(RecordingOps(), stop: () async { stops++; });
+    final a = driver('123456');
+    final b = driver('654321');
+    await workday.startIfNeeded(session: a, plate: a.plate, startKm: 1000);
+    await workday.finish(session: b, plate: b.plate, endKm: 1100);
+    expect(stops, 0);
+    expect((await workday.load(session: a)).active, isTrue);
+    expect(await workday.pendingCount(session: a), 1);
+  });
+
+  test('retry failure retains every remaining day and a later retry drains it', () async {
+    final ops = RecordingOps();
+    final workday = service(ops);
+    final a = driver('123456');
+    for (var i = 0; i < 2; i++) {
+      await workday.startIfNeeded(session: a, plate: a.plate, startKm: 1000 + i * 100);
+      await workday.finish(session: a, plate: a.plate, endKm: 1100 + i * 100);
+    }
+    await workday.flushPending(session: a, plate: a.plate);
+    expect(await workday.pendingCount(session: a), 2);
+    expect(ops.sent, isEmpty);
+    ops.offline = false;
+    await workday.flushPending(session: a, plate: a.plate);
+    await workday.flushPending(session: a, plate: a.plate);
+    expect(ops.sent.length, 2);
+    expect(await workday.pendingCount(session: a), 0);
+  });
 }

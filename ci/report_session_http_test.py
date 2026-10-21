@@ -41,7 +41,7 @@ print('REST SESSION OWNERSHIP, IDEMPOTENCY AND WORKDAY OWNER HTTP CHECKS OK')
 # A lost HTTP response must be safe to retry, including a whole offline day.
 start = {'action': 'workday_start', 'plate': 'V190001',
          'workdayId': '190001-retry-day', 'startedAt': '2026-10-20T06:00:00Z',
-         'startKm': 100100, 'jobId': 42}
+         'startKm': 100100}
 finish = dict(start, action='workday_finish', finishedAt='2026-10-20T14:00:00Z', endKm=100200)
 count_before = db.execute('SELECT COUNT(*) FROM vehicle_odometer_log').fetchone()[0]
 for payload in [start, start, finish, finish, start]:
