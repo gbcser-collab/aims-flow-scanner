@@ -1,107 +1,83 @@
 import 'package:aims_flow_scanner/main.dart';
 import 'package:aims_flow_scanner/screens/driver_shell_screen.dart';
+import 'package:aims_flow_scanner/services/aims_display_mode.dart';
 import 'package:aims_flow_scanner/widgets/aims_flow_logo.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
+  setUp(() async {
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'aims_display_mode_v1': 'light',
+    });
+    await AimsDisplayModeController.instance.setMode(AimsDisplayMode.light);
+  });
 
-  testWidgets('Flow keeps the operational UI dark with white text everywhere',
+  testWidgets('FLOW supports a readable light theme and neutral dark theme',
       (tester) async {
     await tester.pumpWidget(const AimsFlowApp());
     await tester.pump();
 
-    final app = tester.widget<MaterialApp>(find.byType(MaterialApp));
-    final theme = app.theme!;
+    var app = tester.widget<MaterialApp>(find.byType(MaterialApp));
+    expect(app.themeMode, ThemeMode.light);
+    expect(app.theme?.brightness, Brightness.light);
+    expect(app.theme?.scaffoldBackgroundColor, const Color(0xFFF4F6F8));
+    expect(app.theme?.colorScheme.onSurface, const Color(0xFF17212A));
 
+    await AimsDisplayModeController.instance.setMode(AimsDisplayMode.dark);
+    await tester.pump();
+
+    app = tester.widget<MaterialApp>(find.byType(MaterialApp));
     expect(app.themeMode, ThemeMode.dark);
-    expect(theme.colorScheme.onSurface, Colors.white);
-    expect(theme.colorScheme.onSurfaceVariant, Colors.white);
-    expect(theme.textTheme.bodyLarge?.color, Colors.white);
-    expect(theme.textTheme.bodyMedium?.color, Colors.white);
-    expect(theme.textTheme.bodySmall?.color, Colors.white);
-    expect(theme.textTheme.titleLarge?.color, Colors.white);
-    expect(theme.textTheme.titleMedium?.color, Colors.white);
-    expect(theme.textTheme.labelLarge?.color, Colors.white);
-    expect(theme.listTileTheme.textColor, Colors.white);
-    expect(theme.expansionTileTheme.textColor, Colors.white);
-    expect(theme.expansionTileTheme.collapsedTextColor, Colors.white);
-    expect(theme.dialogTheme.contentTextStyle?.color, Colors.white);
-    expect(theme.snackBarTheme.contentTextStyle?.color, Colors.white);
+    expect(app.darkTheme?.brightness, Brightness.dark);
+    expect(app.darkTheme?.scaffoldBackgroundColor, const Color(0xFF111315));
+    expect(app.darkTheme?.colorScheme.onSurface, Colors.white);
   });
 
-  testWidgets('AIMS Flow starts on plate and short-code login', (tester) async {
+  testWidgets('AIMS Flow starts on FLOW ID and PIN login', (tester) async {
     await tester.pumpWidget(const AimsFlowApp());
-    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
 
     expect(find.text('AIMS FLOW'), findsOneWidget);
-    expect(find.text('DRIVER OPERATIONS'), findsOneWidget);
-    expect(find.text('Belépés'), findsOneWidget);
-    expect(find.byKey(const Key('flow-login-user')), findsOneWidget);
-    expect(find.byKey(const Key('flow-login-password')), findsOneWidget);
-    expect(find.byKey(const Key('flow-admin-toggle')), findsOneWidget);
-    expect(find.byKey(const Key('flow-login-2fa')), findsNothing);
+    expect(find.text('SOFŐR BELÉPÉS'), findsOneWidget);
+    expect(find.byKey(const Key('flow-login-flow-id')), findsOneWidget);
+    expect(find.byKey(const Key('flow-login-pin')), findsOneWidget);
     expect(find.byKey(const Key('flow-login-submit')), findsOneWidget);
-    expect(find.byKey(const Key('flow-register-open')), findsOneWidget);
-    expect(
-      find.textContaining('Sofőr belépés rendszámmal és 6 karakteres kóddal'),
-      findsOneWidget,
-    );
-    expect(find.textContaining('3 betű és 3 szám'), findsOneWidget);
-    expect(find.byKey(const Key('flow-forgot-code-open')), findsOneWidget);
+    expect(find.text('6 jegyű FLOW ID'), findsOneWidget);
+    expect(find.text('5 jegyű PIN'), findsOneWidget);
+    expect(find.textContaining('az iroda küldi e-mailben'), findsOneWidget);
+    expect(find.text('IRODAI AIMS FLOW ADMIN'), findsOneWidget);
+
+    expect(find.byKey(const Key('flow-login-user')), findsNothing);
+    expect(find.byKey(const Key('flow-login-password')), findsNothing);
+    expect(find.byKey(const Key('flow-admin-toggle')), findsNothing);
   });
 
-  testWidgets('admin mode reveals 2FA only when requested', (tester) async {
+  testWidgets('FLOW ID and PIN fields accept digits only', (tester) async {
     await tester.pumpWidget(const AimsFlowApp());
+    await tester.pump(const Duration(milliseconds: 300));
+
+    final flowId = find.byKey(const Key('flow-login-flow-id'));
+    final pin = find.byKey(const Key('flow-login-pin'));
+
+    await tester.enterText(flowId, '12AB3456');
+    await tester.enterText(pin, '1X2345');
     await tester.pump();
 
-    await tester.ensureVisible(find.byKey(const Key('flow-admin-toggle')));
-    await tester.tap(find.byKey(const Key('flow-admin-toggle')));
-    await tester.pump();
-
-    expect(find.byKey(const Key('flow-login-2fa')), findsOneWidget);
+    expect(tester.widget<TextField>(flowId).controller?.text, '123456');
+    expect(tester.widget<TextField>(pin).controller?.text, '12345');
   });
 
-  testWidgets('native registration opens from login', (tester) async {
-    await tester.pumpWidget(const AimsFlowApp());
-    await tester.pump();
-
-    await tester.ensureVisible(find.byKey(const Key('flow-register-open')));
-    await tester.tap(find.byKey(const Key('flow-register-open')));
-    await tester.pumpAndSettle();
-
-    expect(find.text('REGISZTRÁCIÓ'), findsOneWidget);
-    expect(find.byKey(const Key('flow-register-company')), findsOneWidget);
-    expect(find.byKey(const Key('flow-register-plate')), findsOneWidget);
-    expect(find.byKey(const Key('flow-register-country')), findsOneWidget);
-    expect(find.byKey(const Key('flow-country-globe')), findsOneWidget);
-    expect(find.byKey(const Key('flow-register-email')), findsOneWidget);
-  });
-
-  testWidgets('country search starts empty and shows at most five matches',
+  testWidgets('display mode can be changed from the login screen',
       (tester) async {
     await tester.pumpWidget(const AimsFlowApp());
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.text('VILÁGOS'), findsOneWidget);
+    await tester.tap(find.text('VILÁGOS'));
     await tester.pump();
-
-    await tester.ensureVisible(find.byKey(const Key('flow-register-open')));
-    await tester.tap(find.byKey(const Key('flow-register-open')));
-    await tester.pumpAndSettle();
-
-    final countryFinder = find.byKey(const Key('flow-register-country'));
-    final countryField = tester.widget<TextField>(countryFinder);
-    expect(countryField.controller?.text ?? '', isEmpty);
-
-    await tester.enterText(countryFinder, 'ma');
-    await tester.pump();
-
-    final suggestions = find.byKey(const Key('flow-country-suggestions'));
-    expect(suggestions, findsOneWidget);
-    expect(
-      find.descendant(of: suggestions, matching: find.byType(ListTile)).evaluate().length,
-      lessThanOrEqualTo(5),
-    );
-    expect(find.text('Magyarország'), findsOneWidget);
-    expect(find.textContaining('Adószám'), findsNothing);
+    expect(find.text('SÖTÉT'), findsOneWidget);
   });
 
   testWidgets('login has no overflow on a narrow phone', (tester) async {
@@ -111,7 +87,7 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
 
     await tester.pumpWidget(const AimsFlowApp());
-    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump(const Duration(milliseconds: 350));
 
     expect(tester.takeException(), isNull);
     expect(find.byKey(const Key('flow-login-submit')), findsOneWidget);
@@ -132,7 +108,9 @@ void main() {
     expect(find.text('Jelzés'), findsOneWidget);
     expect(find.text('Doksi'), findsOneWidget);
   });
-  testWidgets('driver shell has no overflow on a narrow phone', (tester) async {
+
+  testWidgets('driver shell has no overflow on a narrow phone',
+      (tester) async {
     tester.view.physicalSize = const Size(360, 800);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
@@ -148,5 +126,4 @@ void main() {
     expect(find.byKey(const Key('flow-next-jobs')), findsOneWidget);
     expect(find.byKey(const Key('aims-assistant-talk')), findsNothing);
   });
-
 }
