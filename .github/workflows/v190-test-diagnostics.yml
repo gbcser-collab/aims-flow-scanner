@@ -7,23 +7,18 @@ on:
       - '.github/workflows/v190-test-diagnostics.yml'
   workflow_dispatch:
 
-jobs:
-  ui-tests:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v4
-      - uses: subosito/flutter-action@v2
-        with:
-          channel: stable
-          cache: true
-      - run: flutter pub get
-      - name: Login, theme and shell tests
-        run: timeout 10m flutter test -r expanded test/app_smoke_test.dart test/v100_smoke_test.dart
+concurrency:
+  group: flow-v190-test-diagnostics-${{ github.ref }}
+  cancel-in-progress: true
 
-  domain-tests:
+jobs:
+  test-shards:
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
@@ -31,5 +26,21 @@ jobs:
           channel: stable
           cache: true
       - run: flutter pub get
-      - name: FLOW workday and safety tests
-        run: timeout 10m flutter test -r expanded test/flow_workday_service_test.dart test/flow_safety_check_service_test.dart
+      - name: Run test shard ${{ matrix.shard }}
+        env:
+          SHARD: ${{ matrix.shard }}
+        run: |
+          set -euo pipefail
+          mapfile -t files < <(find test -maxdepth 1 -name '*_test.dart' -type f | sort)
+          selected=0
+          for i in "${!files[@]}"; do
+            if (( i % 4 != SHARD )); then continue; fi
+            file="${files[$i]}"
+            selected=$((selected+1))
+            echo "============================================================"
+            echo "SHARD $SHARD · RUNNING $file"
+            echo "============================================================"
+            timeout --signal=TERM --kill-after=10s 120s flutter test -r expanded "$file"
+          done
+          test "$selected" -gt 0
+          echo "SHARD $SHARD PASSED $selected FILES"
