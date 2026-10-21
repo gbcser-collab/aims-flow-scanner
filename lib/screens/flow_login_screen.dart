@@ -124,7 +124,6 @@ class _FlowLoginScreenState extends State<FlowLoginScreen> {
   Widget _modeButton() {
     final display = AimsDisplayModeController.instance;
     final locale = AimsLocaleController.instance;
-
     return AnimatedBuilder(
       animation: Listenable.merge([display, locale]),
       builder: (context, _) {
@@ -239,7 +238,9 @@ class _FlowLoginScreenState extends State<FlowLoginScreen> {
                                 keyboardType: TextInputType.number,
                                 textInputAction: TextInputAction.next,
                                 maxLength: 6,
-                                inputFormatters: const [],
+                                inputFormatters: [
+                                  FilteringTextInputFormatter.digitsOnly,
+                                ],
                                 decoration: const InputDecoration(
                                   labelText: '6 jegyű FLOW ID',
                                   hintText: '123456',
@@ -257,7 +258,9 @@ class _FlowLoginScreenState extends State<FlowLoginScreen> {
                                 maxLength: 5,
                                 obscureText: _obscure,
                                 onSubmitted: (_) => _submit(),
-                                inputFormatters: const [],
+                                inputFormatters: [
+                                  FilteringTextInputFormatter.digitsOnly,
+                                ],
                                 decoration: InputDecoration(
                                   labelText: '5 jegyű PIN',
                                   hintText: '•••••',
