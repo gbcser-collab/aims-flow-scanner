@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:math';
 
 import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class DeviceIdentity {
   const DeviceIdentity({required this.deviceId, required this.secret});
@@ -21,6 +22,8 @@ class DeviceIdentity {
 class DeviceIdentityService {
   const DeviceIdentityService();
 
+  static const _trackingDeviceKey = 'aims_tracking_device_id';
+
   Future<File> _file() async {
     final root = await getApplicationSupportDirectory();
     final directory = Directory('${root.path}/aims_flow_private');
@@ -31,10 +34,23 @@ class DeviceIdentityService {
   String _randomHex(int byteCount) {
     final random = Random.secure();
     final buffer = StringBuffer();
-    for (var i = 0; i < byteCount; i++) {
-      buffer.write(random.nextInt(256).toRadixString(16).padLeft(2, '0'));
+    for (var index = 0; index < byteCount; index++) {
+      buffer.write(
+        random.nextInt(256).toRadixString(16).padLeft(2, '0'),
+      );
     }
     return buffer.toString();
+  }
+
+  bool _valid(DeviceIdentity identity) =>
+      identity.deviceId.length >= 32 && identity.secret.length >= 32;
+
+  Future<void> _publishDeviceId(DeviceIdentity identity) async {
+    // Tracking, push and login must identify the same physical installation.
+    // The ID is not a credential; the secret and session token remain in the
+    // private file / secure storage.
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_trackingDeviceKey, identity.deviceId);
   }
 
   Future<DeviceIdentity> loadOrCreate() async {
@@ -43,8 +59,13 @@ class DeviceIdentityService {
       try {
         final decoded = jsonDecode(await file.readAsString());
         if (decoded is Map) {
-          final identity = DeviceIdentity.fromJson(Map<String, dynamic>.from(decoded));
-          if (identity.deviceId.length >= 32 && identity.secret.length >= 32) return identity;
+          final identity = DeviceIdentity.fromJson(
+            Map<String, dynamic>.from(decoded),
+          );
+          if (_valid(identity)) {
+            await _publishDeviceId(identity);
+            return identity;
+          }
         }
       } catch (_) {}
     }
@@ -54,6 +75,7 @@ class DeviceIdentityService {
       secret: _randomHex(32),
     );
     await file.writeAsString(jsonEncode(identity.toJson()), flush: true);
+    await _publishDeviceId(identity);
     return identity;
   }
 }
