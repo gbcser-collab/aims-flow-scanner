@@ -18,7 +18,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-24.04
-    timeout-minutes: 40
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
 
@@ -106,15 +106,28 @@ jobs:
       - name: Dependencies
         run: flutter pub get
 
-      - name: Analyze and test
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Tests file by file
         run: |
-          flutter analyze
-          flutter test
+          set -euo pipefail
+          for file in test/*_test.dart; do
+            echo "============================================================"
+            echo "RUNNING $file"
+            echo "============================================================"
+            timeout --signal=TERM --kill-after=15s 150s flutter test -r expanded "$file"
+          done
+
+      - name: Client security guards
+        run: |
           if grep -R "AIMS_TRACKING_TOKEN" lib --include='*.dart'; then
             echo "The Android client still contains a shared tracking token reference."
             exit 20
           fi
           grep -q "flutter_secure_storage" lib/services/flow_account_service.dart
+          grep -q "aims-flow-auth-v2.php" lib/services/flow_account_service.dart
+          grep -q "api/aims-tracking/session" lib/services/driver_api_service.dart
 
       - name: Build APK
         env:
