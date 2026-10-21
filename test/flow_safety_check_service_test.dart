@@ -15,6 +15,8 @@ void main() {
       () async {
     final session = FlowAccountSession(
       flowId: '123456',
+      sessionToken: '',
+      onboardingComplete: true,
       expiresAt: DateTime.utc(2030, 1, 1),
       plate: 'ABC-123',
       currentKm: 188420,
