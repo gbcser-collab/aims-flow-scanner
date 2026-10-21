@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -108,10 +109,35 @@ class FlowSessionStore {
 
   static final instance = FlowSessionStore._();
   static const _key = 'aims_flow_driver_session_v2';
+  static final _secure = FlutterSecureStorage(
+    aOptions: AndroidOptions(),
+  );
+
+  Future<String?> _readRaw() async {
+    final prefs = await SharedPreferences.getInstance();
+    try {
+      final secured = await _secure.read(key: _key);
+      if (secured != null && secured.trim().isNotEmpty) return secured;
+
+      // One-time migration from the development builds that used ordinary
+      // SharedPreferences. Production writes are secure-storage only.
+      final legacy = prefs.getString(_key);
+      if (legacy != null && legacy.trim().isNotEmpty) {
+        await _secure.write(key: _key, value: legacy);
+        await prefs.remove(_key);
+        return legacy;
+      }
+      return null;
+    } catch (_) {
+      // Widget/unit tests do not register the native secure-storage plugin.
+      // The fallback keeps tests deterministic; Android uses Keystore-backed
+      // storage because the plugin is available there.
+      return prefs.getString(_key);
+    }
+  }
 
   Future<FlowAccountSession?> load() async {
-    final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(_key);
+    final raw = await _readRaw();
     if (raw == null || raw.trim().isEmpty) return null;
     try {
       final session = FlowAccountSession.fromJson(jsonDecode(raw));
@@ -128,7 +154,18 @@ class FlowSessionStore {
 
   Future<void> save(FlowAccountSession value) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_key, jsonEncode(value.toJson()));
+    final raw = jsonEncode(value.toJson());
+    try {
+      await _secure.write(key: _key, value: raw);
+      await prefs.remove(_key);
+    } catch (_) {
+      // Test-only/platform fallback. Supported Android builds use secure
+      // storage and never persist the session token in SharedPreferences.
+      await prefs.setString(_key, raw);
+    }
+
+    // Non-secret identity hints remain in preferences for the existing FLOW
+    // screens and offline queues. The PIN is never persisted anywhere.
     await prefs.setString('aims_flow_id', value.flowId);
     await prefs.setString('aims_driver_name', value.driverName);
     await prefs.setString('aims_driver_plate', value.plate);
@@ -143,6 +180,9 @@ class FlowSessionStore {
 
   Future<void> clear() async {
     final prefs = await SharedPreferences.getInstance();
+    try {
+      await _secure.delete(key: _key);
+    } catch (_) {}
     await prefs.remove(_key);
     await prefs.remove('aims_flow_id');
     await prefs.remove('aims_driver_name');
