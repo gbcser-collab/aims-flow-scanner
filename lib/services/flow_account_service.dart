@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
@@ -113,13 +114,18 @@ class FlowSessionStore {
     aOptions: AndroidOptions(),
   );
 
+  static bool get _runningUnderFlutterTest =>
+      Platform.environment['FLUTTER_TEST'] == 'true';
+
   Future<String?> _readRaw() async {
     final prefs = await SharedPreferences.getInstance();
+    if (_runningUnderFlutterTest) return prefs.getString(_key);
+
     try {
       final secured = await _secure.read(key: _key);
       if (secured != null && secured.trim().isNotEmpty) return secured;
 
-      // One-time migration from the development builds that used ordinary
+      // One-time migration from development builds that used ordinary
       // SharedPreferences. Production writes are secure-storage only.
       final legacy = prefs.getString(_key);
       if (legacy != null && legacy.trim().isNotEmpty) {
@@ -129,9 +135,8 @@ class FlowSessionStore {
       }
       return null;
     } catch (_) {
-      // Widget/unit tests do not register the native secure-storage plugin.
-      // The fallback keeps tests deterministic; Android uses Keystore-backed
-      // storage because the plugin is available there.
+      // Unsupported non-Android development targets can still open the app,
+      // while supported Android builds use Keystore-backed secure storage.
       return prefs.getString(_key);
     }
   }
@@ -155,13 +160,18 @@ class FlowSessionStore {
   Future<void> save(FlowAccountSession value) async {
     final prefs = await SharedPreferences.getInstance();
     final raw = jsonEncode(value.toJson());
-    try {
-      await _secure.write(key: _key, value: raw);
-      await prefs.remove(_key);
-    } catch (_) {
-      // Test-only/platform fallback. Supported Android builds use secure
-      // storage and never persist the session token in SharedPreferences.
+
+    if (_runningUnderFlutterTest) {
       await prefs.setString(_key, raw);
+    } else {
+      try {
+        await _secure.write(key: _key, value: raw);
+        await prefs.remove(_key);
+      } catch (_) {
+        // Unsupported development targets use a compatibility fallback.
+        // Production Android builds have the secure-storage plugin available.
+        await prefs.setString(_key, raw);
+      }
     }
 
     // Non-secret identity hints remain in preferences for the existing FLOW
@@ -180,9 +190,11 @@ class FlowSessionStore {
 
   Future<void> clear() async {
     final prefs = await SharedPreferences.getInstance();
-    try {
-      await _secure.delete(key: _key);
-    } catch (_) {}
+    if (!_runningUnderFlutterTest) {
+      try {
+        await _secure.delete(key: _key);
+      } catch (_) {}
+    }
     await prefs.remove(_key);
     await prefs.remove('aims_flow_id');
     await prefs.remove('aims_driver_name');
