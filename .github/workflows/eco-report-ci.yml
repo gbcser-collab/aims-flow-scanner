@@ -1,0 +1,25 @@
+name: AIMS FLOW ECO Report CI
+
+on:
+  push:
+    branches: [aims-flow-r105-next-v190-stabilization]
+    paths:
+      - 'server/aims-tracking/eco_report_lib.php'
+      - 'server/aims-tracking/tests/eco_report_test.php'
+      - 'admin/aims-flow-eco.php'
+      - '.github/workflows/eco-report-ci.yml'
+  workflow_dispatch:
+
+jobs:
+  eco-report:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: PHP syntax
+        run: |
+          php -l server/aims-tracking/eco_report_lib.php
+          php -l server/aims-tracking/tests/eco_report_test.php
+          php -l admin/aims-flow-eco.php
+      - name: ECO A-D scoring test
+        run: php server/aims-tracking/tests/eco_report_test.php
