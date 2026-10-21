@@ -5,8 +5,9 @@ declare(strict_types=1);
  * Session guard for the existing driver endpoints.
  *
  * The public phone sends its revocable driver-session token. After validating
- * and plate-scoping it, this guard replaces the request bearer with the
- * server-only tracking token and executes the existing, tested endpoint.
+ * the session, assigned plate and device identity, this guard replaces the
+ * request bearer with the server-only tracking token and executes the existing
+ * endpoint. The server token never reaches the Android application.
  */
 
 function aims_flow_session_json(array $payload,int $status=200):never{
@@ -48,17 +49,45 @@ function aims_flow_session_bearer():string{
     return trim($match[1]);
 }
 
-function aims_flow_session_plate_from_request():string{
-    $value=(string)($_GET['plate']??$_POST['plate']??'');
-    if(trim($value)===''){
+function aims_flow_session_normalize_plate(string $value):string{
+    $value=mb_strtoupper(trim($value),'UTF-8');
+    return preg_replace('/[^A-Z0-9]/u','',$value)?:'';
+}
+
+function aims_flow_session_request_data():array{
+    static $data=null;
+    if(is_array($data))return $data;
+
+    $data=[];
+    foreach($_GET as $key=>$value){
+        if(is_string($key)&&is_scalar($value))$data[$key]=(string)$value;
+    }
+    foreach($_POST as $key=>$value){
+        if(is_string($key)&&is_scalar($value))$data[$key]=(string)$value;
+    }
+
+    $contentType=strtolower((string)($_SERVER['CONTENT_TYPE']??''));
+    if(!str_contains($contentType,'multipart/form-data')){
         $raw=file_get_contents('php://input')?:'';
         if($raw!==''){
             $json=json_decode($raw,true);
-            if(is_array($json))$value=(string)($json['plate']??'');
+            if(is_array($json)){
+                foreach($json as $key=>$value){
+                    if(is_string($key)&&(is_scalar($value)||$value===null)){
+                        $data[$key]=$value;
+                    }
+                }
+            }
         }
     }
-    $value=mb_strtoupper(trim($value),'UTF-8');
-    return preg_replace('/[^A-Z0-9]/u','',$value)?:'';
+    return $data;
+}
+
+function aims_flow_session_plate_from_request():string{
+    $data=aims_flow_session_request_data();
+    $plate=aims_flow_session_normalize_plate((string)($data['plate']??''));
+    if($plate!=='')return $plate;
+    return aims_flow_session_normalize_plate((string)($data['vehicleLabel']??''));
 }
 
 function aims_flow_session_proxy(string $target):never{
@@ -82,15 +111,26 @@ function aims_flow_session_proxy(string $target):never{
     $session=$query->fetch(PDO::FETCH_ASSOC);
     if(!$session)aims_flow_session_json(['ok'=>false,'error'=>'invalid_session'],401);
 
-    $assigned=mb_strtoupper(trim((string)($session['plate']??'')),'UTF-8');
-    $assigned=preg_replace('/[^A-Z0-9]/u','',$assigned)?:'';
+    $assigned=aims_flow_session_normalize_plate((string)($session['plate']??''));
     if($assigned===''||((int)($session['onboarding_complete']??0))!==1){
         aims_flow_session_json(['ok'=>false,'error'=>'onboarding_required'],409);
     }
 
-    $requested=aims_flow_session_plate_from_request();
+    $request=aims_flow_session_request_data();
+    $requestPlate=aims_flow_session_normalize_plate((string)($request['plate']??''));
+    $requestLabel=aims_flow_session_normalize_plate((string)($request['vehicleLabel']??''));
+    if($requestPlate!==''&&$requestLabel!==''&&!hash_equals($requestPlate,$requestLabel)){
+        aims_flow_session_json(['ok'=>false,'error'=>'vehicle_identity_conflict'],403);
+    }
+    $requested=$requestPlate!==''?$requestPlate:$requestLabel;
     if($requested!==''&&!hash_equals($assigned,$requested)){
         aims_flow_session_json(['ok'=>false,'error'=>'plate_forbidden'],403);
+    }
+
+    $assignedDevice=trim((string)($session['device_id']??''));
+    $requestDevice=trim((string)($request['deviceId']??''));
+    if($requestDevice!==''&&$assignedDevice!==''&&!hash_equals($assignedDevice,$requestDevice)){
+        aims_flow_session_json(['ok'=>false,'error'=>'device_forbidden'],403);
     }
 
     $serverToken=trim((string)(getenv('AIMS_TRACKING_TOKEN')?:''));
@@ -103,6 +143,7 @@ function aims_flow_session_proxy(string $target):never{
     $_SERVER['AIMS_FLOW_DRIVER_ACCOUNT_ID']=(string)$session['account_id'];
     $_SERVER['AIMS_FLOW_DRIVER_FLOW_ID']=(string)$session['flow_id'];
     $_SERVER['AIMS_FLOW_DRIVER_PLATE']=$assigned;
+    $_SERVER['AIMS_FLOW_DRIVER_DEVICE_ID']=$assignedDevice;
 
     require $target;
     exit;
