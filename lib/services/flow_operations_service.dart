@@ -44,24 +44,27 @@ class FlowOperationsService {
   static const driverOpsUrl = String.fromEnvironment(
     'AIMS_FLOW_DRIVER_OPS_URL',
     defaultValue:
-        'https://logistic-aims.hu/api/aims-tracking/driver_ops_v2.php',
+        'https://logistic-aims.hu/api/aims-tracking/session/driver_ops_v2.php',
   );
-  static const _token =
-      String.fromEnvironment('AIMS_TRACKING_TOKEN', defaultValue: '');
 
-  bool get configured =>
-      driverOpsUrl.trim().isNotEmpty && _token.trim().isNotEmpty;
+  bool get configured => driverOpsUrl.trim().isNotEmpty;
 
-  Map<String, String> get _headers => {
+  Map<String, String> _headers(
+    FlowAccountSession session, {
+    bool json = true,
+  }) =>
+      {
         'Accept': 'application/json',
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer $_token',
+        if (json) 'Content-Type': 'application/json',
+        'Authorization': 'Bearer ${session.sessionToken}',
       };
 
-  void _ensureConfigured() {
-    if (!configured) {
+  void _ensureConfigured(FlowAccountSession session) {
+    if (!configured ||
+        session.isExpired ||
+        session.sessionToken.trim().isEmpty) {
       throw StateError(
-        'FLOW Driver műveleti szerver nincs beállítva. Az adat offline mentve marad.',
+        'A FLOW munkamenet nem érvényes. Lépj be újra.',
       );
     }
   }
@@ -77,19 +80,29 @@ class FlowOperationsService {
         body['ok'] == true) {
       return body;
     }
+    final error = body['error']?.toString() ?? '';
+    if (response.statusCode == 401 || error == 'invalid_session') {
+      throw StateError('A FLOW munkamenet lejárt. Lépj be újra.');
+    }
+    if (response.statusCode == 403 || error == 'plate_forbidden') {
+      throw StateError('Ehhez a járműhöz nincs hozzáférésed.');
+    }
     throw StateError(
-      body['error']?.toString() ??
-          body['message']?.toString() ??
-          'A FLOW szerver nem elérhető.',
+      error.isNotEmpty
+          ? error
+          : body['message']?.toString() ?? 'A FLOW szerver nem érhető el.',
     );
   }
 
-  Future<Map<String, dynamic>> _postJson(Map<String, dynamic> payload) async {
-    _ensureConfigured();
+  Future<Map<String, dynamic>> _postJson(
+    FlowAccountSession session,
+    Map<String, dynamic> payload,
+  ) async {
+    _ensureConfigured(session);
     final response = await http
         .post(
           Uri.parse(driverOpsUrl),
-          headers: _headers,
+          headers: _headers(session),
           body: jsonEncode(payload),
         )
         .timeout(const Duration(seconds: 18));
@@ -104,7 +117,7 @@ class FlowOperationsService {
     required int startKm,
     int? jobId,
   }) async {
-    await _postJson({
+    await _postJson(session, {
       'action': 'workday_start',
       'plate': plate,
       'workdayId': workdayId,
@@ -124,7 +137,7 @@ class FlowOperationsService {
     int? startKm,
     int? startJobId,
   }) async {
-    await _postJson({
+    await _postJson(session, {
       'action': 'workday_finish',
       'plate': plate,
       'workdayId': workdayId,
@@ -143,7 +156,7 @@ class FlowOperationsService {
     required int km,
     required String source,
   }) async {
-    await _postJson({
+    await _postJson(session, {
       'action': 'odometer',
       'plate': plate,
       'km': km,
@@ -157,7 +170,7 @@ class FlowOperationsService {
     required String plate,
     int? currentKm,
   }) async {
-    final body = await _postJson({
+    final body = await _postJson(session, {
       'action': 'service_alerts',
       'plate': plate,
       if (currentKm != null) 'currentKm': currentKm,
@@ -166,9 +179,11 @@ class FlowOperationsService {
     if (raw is! List) return const [];
     return raw
         .whereType<Map>()
-        .map((item) => FlowServiceAlert.fromJson(
-              Map<String, dynamic>.from(item),
-            ))
+        .map(
+          (item) => FlowServiceAlert.fromJson(
+            Map<String, dynamic>.from(item),
+          ),
+        )
         .where((item) => item.id.isNotEmpty)
         .toList(growable: false);
   }
@@ -182,12 +197,9 @@ class FlowOperationsService {
     required Map<String, String> photoPaths,
     required DateTime createdAt,
   }) async {
-    _ensureConfigured();
+    _ensureConfigured(session);
     final request = http.MultipartRequest('POST', Uri.parse(driverOpsUrl));
-    request.headers.addAll({
-      'Accept': 'application/json',
-      'Authorization': 'Bearer $_token',
-    });
+    request.headers.addAll(_headers(session, json: false));
     request.fields.addAll({
       'action': 'safety_check',
       'plate': plate,
@@ -199,7 +211,9 @@ class FlowOperationsService {
 
     for (final kind in const ['oil', 'coolant', 'tires', 'odometer']) {
       final path = photoPaths[kind]?.trim() ?? '';
-      if (path.isEmpty) throw StateError('Hiányzó Safety Check fotó: $kind');
+      if (path.isEmpty) {
+        throw StateError('Hiányzó Safety Check fotó: $kind');
+      }
       final file = File(path);
       if (!await file.exists()) {
         throw StateError('A Safety Check fotó nem található: $kind');
