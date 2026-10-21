@@ -15,6 +15,8 @@ void main() {
       () async {
     final session = FlowAccountSession(
       flowId: '123456',
+      sessionToken: '',
+      onboardingComplete: true,
       expiresAt: DateTime.utc(2030, 1, 1),
       plate: 'ABC-123',
       currentKm: 100000,
@@ -54,6 +56,8 @@ void main() {
   test('workday rejects closing odometer below opening value', () async {
     final session = FlowAccountSession(
       flowId: '654321',
+      sessionToken: '',
+      onboardingComplete: true,
       expiresAt: DateTime.utc(2030, 1, 1),
       plate: 'XYZ-987',
       currentKm: 200000,
