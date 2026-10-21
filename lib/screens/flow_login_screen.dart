@@ -1,19 +1,13 @@
-import 'dart:convert';
-import 'dart:typed_data';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../services/aims_display_mode.dart';
 import '../services/aims_locale.dart';
-import '../services/device_unlock_service.dart';
-import '../services/driver_push_service.dart';
-import '../services/native_auth_service.dart';
+import '../services/flow_account_service.dart';
+import '../widgets/aims_flow_logo.dart';
 import 'driver_shell_screen.dart';
-import 'flow_change_code_screen.dart';
-import 'flow_forgot_code_screen.dart';
-import 'flow_register_screen.dart';
+import 'flow_driver_onboarding_screen.dart';
 
 class FlowLoginScreen extends StatefulWidget {
   const FlowLoginScreen({super.key});
@@ -23,647 +17,314 @@ class FlowLoginScreen extends StatefulWidget {
 }
 
 class _FlowLoginScreenState extends State<FlowLoginScreen> {
-  static const _blue = Color(0xFF1CB8FF);
-  static const _auth = NativeAuthService();
-  static const _e2e =
-      bool.fromEnvironment('AIMS_E2E_TEST', defaultValue: false);
-  static final Uint8List _logo = base64Decode('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');
+  final _flowId = TextEditingController();
+  final _pin = TextEditingController();
+  final _account = const FlowAccountService();
 
-  final _login = TextEditingController();
-  final _password = TextEditingController();
-  final _code = TextEditingController();
   bool _busy = false;
+  bool _resumeBusy = true;
   bool _obscure = true;
-  bool _adminMode = false;
-  bool _autoUnlockTried = false;
   String? _error;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _tryDeviceUnlock();
-    });
-  }
-
-  Future<void> _tryDeviceUnlock() async {
-    if (_e2e || _autoUnlockTried || !mounted) return;
-    _autoUnlockTried = true;
-    final prefs = await SharedPreferences.getInstance();
-    final plate = (prefs.getString('aims_driver_plate') ?? '').trim();
-    final enabled = prefs.getBool('aims_driver_local_unlock') ?? false;
-    if (plate.isEmpty || !enabled || !mounted) return;
-
-    final available = await DeviceUnlockService.instance.isAvailable();
-    if (!available || !mounted) return;
-
-    final ok = await DeviceUnlockService.instance.authenticate();
-    if (!ok || !mounted) return;
-
-    await Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (_) => const DriverShellScreen()),
-    );
+    WidgetsBinding.instance.addPostFrameCallback((_) => _resumeSession());
   }
 
   @override
   void dispose() {
-    _login.dispose();
-    _password.dispose();
-    _code.dispose();
+    _flowId.dispose();
+    _pin.dispose();
     super.dispose();
   }
 
-  Future<String?> _askDriverName() async {
-    final t = AimsLocaleController.instance.t;
-    final prefs = await SharedPreferences.getInstance();
-    final controller = TextEditingController(
-      text: prefs.getString('aims_driver_name') ?? '',
-    );
-    final result = await showDialog<String>(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        backgroundColor: Theme.of(context).colorScheme.surface,
-        title: Text(t('driver_name_question')),
-        content: TextField(
-          key: const Key('flow-driver-name'),
-          controller: controller,
-          autofocus: true,
-          textCapitalization: TextCapitalization.words,
-          maxLength: 40,
-          decoration: InputDecoration(
-            labelText: t('driver_name'),
-            hintText: t('driver_name_hint'),
-            counterText: '',
-          ),
-          onSubmitted: (value) {
-            final name = value.trim();
-            if (name.isNotEmpty) Navigator.pop(context, name);
-          },
+  Future<void> _resumeSession() async {
+    try {
+      final saved = await FlowSessionStore.instance.load();
+      if (saved == null) return;
+      final validated = await _account.validateSession(saved);
+      if (!mounted) return;
+      await _openDriver(validated);
+    } catch (_) {
+      await FlowSessionStore.instance.clear();
+    } finally {
+      if (mounted) setState(() => _resumeBusy = false);
+    }
+  }
+
+  Future<void> _openDriver(FlowAccountSession session) async {
+    var current = session;
+    if (!current.onboardingComplete ||
+        current.driverName.isEmpty ||
+        current.plate.isEmpty ||
+        current.currentKm == null) {
+      final updated = await Navigator.of(context).push<FlowAccountSession>(
+        MaterialPageRoute(
+          builder: (_) => FlowDriverOnboardingScreen(session: current),
         ),
-        actions: [
-          FilledButton(
-            onPressed: () {
-              final name = controller.text.trim();
-              if (name.isNotEmpty) Navigator.pop(context, name);
-            },
-            child: Text(t('continue')),
-          ),
-        ],
+      );
+      if (!mounted || updated == null) return;
+      current = updated;
+    }
+
+    await FlowSessionStore.instance.save(current);
+    if (!mounted) return;
+    await Navigator.of(context).pushReplacement(
+      MaterialPageRoute(
+        builder: (_) => DriverShellScreen(
+          initialPlate: current.plate,
+          initialDriverName: current.driverName,
+        ),
       ),
     );
-    controller.dispose();
-    return result?.trim();
   }
 
   Future<void> _submit() async {
-    if (_busy) return;
-    final t = AimsLocaleController.instance.t;
-    if (!_e2e) {
-      if (_adminMode) {
-        if (_password.text.isEmpty) {
-          setState(() => _error = t('admin_password_required'));
-          return;
-        }
-      } else {
-        final plate = _login.text.trim();
-        final accessCode = _password.text.trim().toUpperCase();
-        if (plate.length < 4 || accessCode.length != 6) {
-          setState(
-            () => _error = t('invalid_driver_fields'),
-          );
-          return;
-        }
-      }
+    if (_busy || _resumeBusy) return;
+    final flowId = _flowId.text.trim();
+    final pin = _pin.text.trim();
+
+    if (!RegExp(r'^\d{6}$').hasMatch(flowId)) {
+      setState(() => _error = 'A FLOW ID pontosan 6 számjegyből áll.');
+      return;
     }
+    if (!RegExp(r'^\d{5}$').hasMatch(pin)) {
+      setState(() => _error = 'A PIN pontosan 5 számjegyből áll.');
+      return;
+    }
+
     setState(() {
       _busy = true;
       _error = null;
     });
     try {
-      NativeAuthResult? authResult;
-      Map<String, String> adminPush = const <String, String>{};
-      if (!_e2e && _adminMode) {
-        try {
-          adminPush =
-              await DriverPushService.instance.adminRegistrationPayload();
-        } catch (e) {
-          throw StateError(
-            'Az admin push regisztráció nem készíthető elő: '
-            '${e.toString().replaceFirst('Bad state: ', '')}',
-          );
-        }
-      }
-      if (!_e2e) {
-        authResult = await _auth.login(
-          login: _adminMode ? 'ADMIN' : _login.text,
-          password: _adminMode
-              ? _password.text
-              : _password.text.trim().toUpperCase(),
-          code: _adminMode ? _code.text : '',
-          pushDeviceId: adminPush['deviceId'] ?? '',
-          fcmToken: adminPush['fcmToken'] ?? '',
-          pushPlatform: adminPush['platform'] ?? 'android',
-        );
-      }
+      final session = await _account.login(flowId: flowId, pin: pin);
+      _pin.clear();
       if (!mounted) return;
-
-      if (!_e2e && authResult?.role == 'admin') {
-        if (authResult?.adminPushRegistered != true) {
-          throw StateError(
-            'Az admintelefon belépett, de a push regisztráció nem sikerült.',
-          );
-        }
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('aims_user_role', 'admin');
-        await prefs.remove('aims_driver_plate');
-        await prefs.remove('aims_driver_name');
-        await prefs.setBool('aims_driver_local_unlock', false);
-      }
-
-      if (!_e2e && authResult?.role == 'driver') {
-        final driver = authResult!;
-        if (driver.forceCodeChange) {
-          final changed = await Navigator.of(context).push<bool>(
-            MaterialPageRoute(
-              builder: (_) => FlowChangeCodeScreen(
-                plate: driver.plate,
-                currentCode: _password.text.trim().toUpperCase(),
-              ),
-            ),
-          );
-          if (!mounted || changed != true) return;
-        }
-
-        final name = await _askDriverName();
-        if (!mounted || name == null || name.isEmpty) return;
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString(
-          'aims_driver_plate',
-          driver.plate.trim().toUpperCase(),
-        );
-        await prefs.setString('aims_driver_name', name);
-        await prefs.setBool('aims_driver_local_unlock', true);
-        await prefs.setString('aims_user_role', 'driver');
-      }
-
-      final prefs = await SharedPreferences.getInstance();
-      final initialPlate =
-          (prefs.getString('aims_driver_plate') ?? '').trim().toUpperCase();
-      final initialDriverName =
-          (prefs.getString('aims_driver_name') ?? '').trim();
-
-      await Navigator.of(context).pushReplacement(
-        MaterialPageRoute(
-          builder: (_) => DriverShellScreen(
-            initialPlate: initialPlate,
-            initialDriverName: initialDriverName,
-          ),
-        ),
+      await _openDriver(session);
+    } catch (error) {
+      if (!mounted) return;
+      setState(
+        () => _error = error.toString().replaceFirst('Bad state: ', ''),
       );
-    } catch (e) {
-      if (!mounted) return;
-      final value = e.toString().replaceFirst('Bad state: ', '');
-      setState(() => _error = value);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
   }
 
-  InputDecoration _decoration(
-    BuildContext context,
-    String hint,
-    IconData icon,
-  ) {
-    final dark = Theme.of(context).brightness == Brightness.dark;
-    return InputDecoration(
-      hintText: hint,
-      prefixIcon: Icon(
-        icon,
-        color: dark ? const Color(0xFF9EDBFF) : const Color(0xFF1478FF),
-        size: 25,
-      ),
-      prefixIconConstraints: const BoxConstraints(minWidth: 54, minHeight: 58),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
-      filled: true,
-      fillColor: dark ? const Color(0xFF0A2236) : const Color(0xFFF5F9FC),
-      hintStyle: TextStyle(
-        color: Colors.white,
-      ),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(16),
-        borderSide: BorderSide(
-          color: dark ? const Color(0xFF245A78) : const Color(0xFFD4E1EA),
-        ),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(16),
-        borderSide: const BorderSide(color: _blue, width: 1.5),
-      ),
+  Future<void> _openAdmin() async {
+    final uri = Uri.parse('https://logistic-aims.hu/admin/aims-flow.php');
+    final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!opened && mounted) {
+      setState(() => _error = 'Az AIMS FLOW Admin nem nyitható meg.');
+    }
+  }
+
+  Widget _modeButton(BuildContext context) {
+    final display = AimsDisplayModeController.instance;
+    final locale = AimsLocaleController.instance;
+    final icon = switch (display.mode) {
+      AimsDisplayMode.auto => Icons.brightness_auto_rounded,
+      AimsDisplayMode.light => Icons.light_mode_outlined,
+      AimsDisplayMode.dark => Icons.dark_mode_outlined,
+    };
+    return OutlinedButton.icon(
+      onPressed: display.cycleMode,
+      icon: Icon(icon, size: 18),
+      label: Text(display.label(locale.locale.languageCode)),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final locale = AimsLocaleController.instance;
-    return AnimatedBuilder(
-      animation: locale,
-      builder: (context, _) {
-        final t = locale.t;
-        final dark = Theme.of(context).brightness == Brightness.dark;
-        return Scaffold(
-          backgroundColor:
-              dark ? const Color(0xFF020813) : const Color(0xFFF5F9FC),
-          body: Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: dark
-                    ? const [
-                        Color(0xFF071E3D),
-                        Color(0xFF030A13),
-                        Color(0xFF02070E),
-                      ]
-                    : const [
-                        Color(0xFFFFFFFF),
-                        Color(0xFFF5FAFE),
-                        Color(0xFFEDF5FB),
-                      ],
+    final theme = Theme.of(context);
+    final dark = theme.brightness == Brightness.dark;
+    final muted = theme.colorScheme.onSurfaceVariant;
+
+    return Scaffold(
+      body: SafeArea(
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: dark
+                        ? const [Color(0xFF111315), Color(0xFF1B1E21)]
+                        : const [Color(0xFFF8FAFB), Color(0xFFEAF0F4)],
+                  ),
+                ),
               ),
             ),
-            child: SafeArea(
-              child: Center(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(22, 18, 22, 32),
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 520),
-                    child: Column(
-                      children: [
-                        Align(
-                          alignment: Alignment.centerRight,
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              IconButton(
-                                tooltip:
-                                    'Night Driver Mode: ${AimsDisplayModeController.instance.label(locale.languageCode)}',
-                                onPressed: () => AimsDisplayModeController
-                                    .instance
-                                    .cycleMode(),
-                                icon: Icon(
-                                  switch (AimsDisplayModeController.instance.mode) {
-                                    AimsDisplayMode.auto =>
-                                      Icons.brightness_auto_rounded,
-                                    AimsDisplayMode.light =>
-                                      Icons.light_mode_rounded,
-                                    AimsDisplayMode.dark =>
-                                      Icons.dark_mode_rounded,
-                                  },
-                                  color:
-                                      AimsDisplayModeController.instance.isDark
-                                          ? const Color(0xFF8BD8FF)
-                                          : const Color(0xFFFFC857),
-                                ),
-                              ),
-                              const AimsLanguageSelector(),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        Image.memory(_logo, width: 96, height: 96),
-                        const SizedBox(height: 14),
-                        Text(
-                          'AIMS FLOW',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 30,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: 3,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        const Text(
-                          'DRIVER OPERATIONS',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 10,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: 3.2,
-                          ),
-                        ),
-                        const SizedBox(height: 28),
-                        Container(
-                          padding: const EdgeInsets.all(18),
-                          decoration: BoxDecoration(
-                            color: dark
-                                ? const Color(0xDD071725)
-                                : const Color(0xFFFFFFFF),
-                            borderRadius: BorderRadius.circular(20),
-                            border: Border.all(
-                              color: dark
-                                  ? _blue.withValues(alpha: .5)
-                                  : const Color(0xFFD7E4ED),
-                            ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: const Color(0xFF113A56)
-                                    .withValues(alpha: dark ? .12 : .08),
-                                blurRadius: 30,
-                                offset: const Offset(0, 10),
-                              ),
-                            ],
-                          ),
+            Center(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(20),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 440),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: _modeButton(context),
+                      ),
+                      const SizedBox(height: 18),
+                      Card(
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(22, 26, 22, 22),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
+                              const Center(
+                                child: AimsFlowLogo(width: 86, height: 86),
+                              ),
+                              const SizedBox(height: 16),
                               Text(
-                                t('login'),
-                                style: const TextStyle(
-                                  fontSize: 30,
-                                  fontWeight: FontWeight.w900,
+                                'AIMS FLOW',
+                                textAlign: TextAlign.center,
+                                style: theme.textTheme.headlineSmall?.copyWith(
+                                  fontSize: 31,
+                                  letterSpacing: -.5,
                                 ),
                               ),
-                              const SizedBox(height: 6),
+                              const SizedBox(height: 5),
                               Text(
-                                t(
-                                  _adminMode
-                                      ? 'admin_login_help'
-                                      : 'driver_login_help',
-                                ),
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  height: 1.4,
+                                'SOFŐR BELÉPÉS',
+                                textAlign: TextAlign.center,
+                                style: theme.textTheme.labelLarge?.copyWith(
+                                  color: theme.colorScheme.primary,
+                                  letterSpacing: 1.2,
                                 ),
                               ),
-                              const SizedBox(height: 18),
-                              if (!_adminMode) ...[
-                                TextField(
-                                  key: const Key('flow-login-user'),
-                                  controller: _login,
-                                  textCapitalization:
-                                      TextCapitalization.characters,
-                                  textInputAction: TextInputAction.next,
-                                  inputFormatters: [
-                                    FilteringTextInputFormatter.allow(
-                                      RegExp(r'[A-Za-z0-9 -]'),
-                                    ),
-                                    LengthLimitingTextInputFormatter(12),
-                                  ],
-                                  style: const TextStyle(
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.w800,
-                                    letterSpacing: .8,
-                                  ),
-                                  decoration: _decoration(context, 
-                                    t('plate'),
-                                    Icons.local_shipping_outlined,
-                                  ).copyWith(
-                                    hintText: t('plate_hint'),
-                                  ),
+                              const SizedBox(height: 26),
+                              TextField(
+                                key: const Key('flow-login-flow-id'),
+                                controller: _flowId,
+                                autofocus: !_resumeBusy,
+                                enabled: !_busy && !_resumeBusy,
+                                keyboardType: TextInputType.number,
+                                textInputAction: TextInputAction.next,
+                                maxLength: 6,
+                                inputFormatters: [
+                                  FilteringTextInputFormatter.digitsOnly,
+                                ],
+                                decoration: const InputDecoration(
+                                  labelText: '6 jegyű FLOW ID',
+                                  hintText: '123456',
+                                  prefixIcon: Icon(Icons.badge_outlined),
+                                  counterText: '',
                                 ),
-                                const SizedBox(height: 12),
-                                TextField(
-                                  key: const Key('flow-login-password'),
-                                  controller: _password,
-                                  obscureText: _obscure,
-                                  textCapitalization:
-                                      TextCapitalization.characters,
-                                  textInputAction: TextInputAction.done,
-                                  maxLength: 6,
-                                  inputFormatters: [
-                                    FilteringTextInputFormatter.allow(
-                                      RegExp(r'[A-Za-z0-9]'),
+                              ),
+                              const SizedBox(height: 12),
+                              TextField(
+                                key: const Key('flow-login-pin'),
+                                controller: _pin,
+                                enabled: !_busy && !_resumeBusy,
+                                keyboardType: TextInputType.number,
+                                textInputAction: TextInputAction.done,
+                                maxLength: 5,
+                                obscureText: _obscure,
+                                onSubmitted: (_) => _submit(),
+                                inputFormatters: [
+                                  FilteringTextInputFormatter.digitsOnly,
+                                ],
+                                decoration: InputDecoration(
+                                  labelText: '5 jegyű PIN',
+                                  hintText: '•••••',
+                                  prefixIcon:
+                                      const Icon(Icons.lock_outline_rounded),
+                                  counterText: '',
+                                  suffixIcon: IconButton(
+                                    onPressed: () => setState(
+                                      () => _obscure = !_obscure,
                                     ),
-                                  ],
-                                  onSubmitted: (_) => _submit(),
-                                  style: const TextStyle(
-                                    fontSize: 20,
-                                    fontWeight: FontWeight.w900,
-                                    letterSpacing: 3,
-                                  ),
-                                  decoration: _decoration(context, 
-                                    t('driver_code'),
-                                    Icons.key_rounded,
-                                  ).copyWith(
-                                    counterText: '',
-                                    hintText: t('driver_code_hint'),
-                                    suffixIcon: IconButton(
-                                      onPressed: () => setState(
-                                        () => _obscure = !_obscure,
-                                      ),
-                                      icon: Icon(
-                                        _obscure
-                                            ? Icons.visibility_off_outlined
-                                            : Icons.visibility_outlined,
-                                      ),
+                                    icon: Icon(
+                                      _obscure
+                                          ? Icons.visibility_off_outlined
+                                          : Icons.visibility_outlined,
                                     ),
-                                  ),
-                                ),
-                                Align(
-                                  alignment: Alignment.centerRight,
-                                  child: TextButton.icon(
-                                    key: const Key('flow-forgot-code-open'),
-                                    onPressed: _busy
-                                        ? null
-                                        : () => Navigator.of(context).push(
-                                              MaterialPageRoute(
-                                                builder: (_) =>
-                                                    FlowForgotCodeScreen(
-                                                  initialPlate: _login.text,
-                                                ),
-                                              ),
-                                            ),
-                                    icon: const Icon(
-                                      Icons.help_outline_rounded,
-                                      size: 18,
-                                    ),
-                                    label: Text(t('forgot_code')),
-                                  ),
-                                ),
-                              ] else ...[
-                                TextField(
-                                  key: const Key('flow-login-password'),
-                                  controller: _password,
-                                  obscureText: _obscure,
-                                  textInputAction: TextInputAction.next,
-                                  decoration: _decoration(context, 
-                                    t('admin_password'),
-                                    Icons.lock_outline_rounded,
-                                  ).copyWith(
-                                    suffixIcon: IconButton(
-                                      onPressed: () => setState(
-                                        () => _obscure = !_obscure,
-                                      ),
-                                      icon: Icon(
-                                        _obscure
-                                            ? Icons.visibility_off_outlined
-                                            : Icons.visibility_outlined,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ],
-                              const SizedBox(height: 10),
-                              InkWell(
-                                key: const Key('flow-admin-toggle'),
-                                borderRadius: BorderRadius.circular(12),
-                                onTap: _busy
-                                    ? null
-                                    : () => setState(() {
-                                          _adminMode = !_adminMode;
-                                          _password.clear();
-                                          _code.clear();
-                                        }),
-                                child: Padding(
-                                  padding:
-                                      const EdgeInsets.symmetric(vertical: 4),
-                                  child: Row(
-                                    children: [
-                                      const Icon(
-                                        Icons.admin_panel_settings_outlined,
-                                        color: Color(0xFF9EDBFF),
-                                      ),
-                                      const SizedBox(width: 12),
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              t('admin_login'),
-                                              style: const TextStyle(
-                                                fontWeight: FontWeight.w800,
-                                              ),
-                                            ),
-                                            const SizedBox(height: 2),
-                                            Text(
-                                              t('admin_2fa_note'),
-                                              style: TextStyle(
-                                                color: Colors.white,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                      Switch(
-                                        value: _adminMode,
-                                        onChanged: _busy
-                                            ? null
-                                            : (value) => setState(() {
-                                                  _adminMode = value;
-                                                  _password.clear();
-                                                  _code.clear();
-                                                }),
-                                      ),
-                                    ],
                                   ),
                                 ),
                               ),
-                              if (_adminMode) ...[
-                                const SizedBox(height: 8),
-                                TextField(
-                                  key: const Key('flow-login-2fa'),
-                                  controller: _code,
-                                  keyboardType: TextInputType.number,
-                                  maxLength: 6,
-                                  textInputAction: TextInputAction.done,
-                                  onSubmitted: (_) => _submit(),
-                                  decoration: _decoration(context, 
-                                    t('authenticator_code'),
-                                    Icons.shield_outlined,
-                                  ).copyWith(counterText: ''),
-                                ),
-                              ],
                               if (_error != null) ...[
                                 const SizedBox(height: 12),
-                                Text(
-                                  _error!,
-                                  textAlign: TextAlign.center,
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w700,
+                                Container(
+                                  padding: const EdgeInsets.all(11),
+                                  decoration: BoxDecoration(
+                                    color: theme.colorScheme.error
+                                        .withValues(alpha: .10),
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
+                                      color: theme.colorScheme.error
+                                          .withValues(alpha: .35),
+                                    ),
+                                  ),
+                                  child: Text(
+                                    _error!,
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      color: dark
+                                          ? Colors.white
+                                          : theme.colorScheme.error,
+                                      fontWeight: FontWeight.w800,
+                                    ),
                                   ),
                                 ),
                               ],
                               const SizedBox(height: 18),
                               FilledButton.icon(
                                 key: const Key('flow-login-submit'),
-                                onPressed: _busy ? null : _submit,
-                                icon: _busy
+                                onPressed:
+                                    (_busy || _resumeBusy) ? null : _submit,
+                                icon: (_busy || _resumeBusy)
                                     ? const SizedBox.square(
                                         dimension: 20,
                                         child: CircularProgressIndicator(
                                           strokeWidth: 2,
-                                          color: Color(0xFF00131F),
+                                          color: Colors.white,
                                         ),
                                       )
                                     : const Icon(Icons.login_rounded),
                                 label: Text(
-                                  t(_busy ? 'signing_in' : 'sign_in'),
-                                ),
-                                style: FilledButton.styleFrom(
-                                  minimumSize: const Size.fromHeight(64),
-                                  backgroundColor: _blue,
-                                  foregroundColor: Colors.white,
-                                  textStyle: const TextStyle(
-                                    fontWeight: FontWeight.w900,
-                                    fontSize: 16,
-                                  ),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(17),
-                                  ),
+                                  _resumeBusy
+                                      ? 'MUNKAMENET ELLENŐRZÉSE…'
+                                      : _busy
+                                          ? 'BELÉPÉS…'
+                                          : 'BELÉPÉS',
                                 ),
                               ),
-                              const SizedBox(height: 12),
-                              OutlinedButton.icon(
-                                key: const Key('flow-register-open'),
-                                onPressed: _busy
-                                    ? null
-                                    : () => Navigator.of(context).push(
-                                          MaterialPageRoute(
-                                            builder: (_) =>
-                                                const FlowRegisterScreen(),
-                                          ),
-                                        ),
-                                icon:
-                                    const Icon(Icons.person_add_alt_1_rounded),
-                                label: Text(t('register')),
-                                style: OutlinedButton.styleFrom(
-                                  minimumSize: const Size.fromHeight(58),
-                                  foregroundColor: Colors.white,
-                                  side: const BorderSide(color: _blue),
-                                  textStyle: const TextStyle(
-                                    fontWeight: FontWeight.w900,
-                                    fontSize: 15,
-                                  ),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(17),
-                                  ),
+                              const SizedBox(height: 16),
+                              Text(
+                                'A FLOW ID-t és az első PIN-t az iroda küldi '
+                                'e-mailben. A sikeres belépés után ez a telefon '
+                                'megjegyzi a munkamenetet; a PIN-t nem tárolja.',
+                                textAlign: TextAlign.center,
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: muted,
+                                  height: 1.45,
                                 ),
                               ),
                             ],
                           ),
                         ),
-                        const SizedBox(height: 18),
-                        Text(
-                          t('driver_footer'),
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            color: Colors.white,
-                            height: 1.45,
-                            fontSize: 11,
-                          ),
-                        ),
-                      ],
-                    ),
+                      ),
+                      const SizedBox(height: 14),
+                      TextButton.icon(
+                        onPressed: _openAdmin,
+                        icon: const Icon(Icons.admin_panel_settings_outlined),
+                        label: const Text('IRODAI AIMS FLOW ADMIN'),
+                      ),
+                    ],
                   ),
                 ),
               ),
             ),
-          ),
-        );
-      },
+          ],
+        ),
+      ),
     );
   }
 }
