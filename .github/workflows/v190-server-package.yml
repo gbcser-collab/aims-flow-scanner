@@ -1,0 +1,125 @@
+name: Package AIMS FLOW v1.9 Server
+
+on:
+  push:
+    branches: [aims-flow-r105-next-v190-stabilization]
+    paths:
+      - 'admin/**'
+      - 'api/**'
+      - 'server/aims-tracking/**'
+      - '.github/workflows/v190-server-package.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: flow-v190-server-package-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate PHP
+        run: |
+          find admin api server/aims-tracking -name '*.php' -print0 | xargs -0 -n1 php -l
+
+      - name: Build deployment package
+        run: |
+          set -euo pipefail
+          ROOT="AIMS-FLOW-v1.9-SERVER-DEPLOY"
+          rm -rf "$ROOT"
+          mkdir -p "$ROOT/admin" "$ROOT/api/aims-tracking"
+
+          cp admin/aims-flow*.php "$ROOT/admin/"
+          cp admin/foreign-stay-report.php "$ROOT/admin/"
+
+          rsync -a \
+            --exclude 'data/' \
+            --exclude '*.sqlite' \
+            --exclude '*.sqlite-*' \
+            server/aims-tracking/ "$ROOT/api/aims-tracking/"
+
+          cp api/aims-flow-auth-v2.php "$ROOT/api/aims-flow-auth-v2.php"
+          cp api/aims-flow-login.php "$ROOT/api/aims-flow-login.php"
+
+          cat > "$ROOT/TELEPITES-HU.md" <<'EOF'
+          # AIMS FLOW v1.9 – szerver és admin
+
+          Ez a csomag a FLOW ID + PIN, a visszavonható sofőr-session,
+          az összevont FLOW Admin és a meglévő operatív backend frissítése.
+
+          ## Célútvonalak
+
+          - admin/* → public_html/admin/
+          - api/aims-tracking/* → public_html/api/aims-tracking/
+          - api/aims-flow-auth-v2.php → public_html/api/aims-flow-auth-v2.php
+          - api/aims-flow-login.php → public_html/api/aims-flow-login.php
+
+          ## Adatvédelem
+
+          A csomag nem tartalmazza és nem írja felül:
+
+          - az api/aims-tracking/data/ könyvtárat;
+          - a tracking.sqlite adatbázist;
+          - az aims-flow-config.php titkos szerverbeállításait;
+          - a Safety, CMR, tankolási és Smart Scanner képeket.
+
+          ## Új belépési folyamat
+
+          1. Az iroda megnyitja az admin/aims-flow-driver-access.php oldalt.
+          2. Létrehozza a kollégát e-mail-címmel.
+          3. A rendszer generál egy 6 jegyű FLOW ID-t és egy 5 jegyű PIN-t.
+          4. A rendszer e-mailben megpróbálja kiküldeni az adatokat.
+          5. Az első belépéskor a sofőr megadja a nevét, a rendszámot és a km-t.
+          6. A telefon 90 napos, visszavonható eszköz-sessiont kap.
+
+          ## Biztonság
+
+          - A PIN csak hash formában tárolódik.
+          - Az APK nem tartalmaz közös AIMS_TRACKING_TOKEN értéket.
+          - A fuvar- és műveleti API-k a sofőr sessionjét használják.
+          - A session a hozzárendelt rendszámhoz van kötve.
+          - Az admin külön visszavonhatja egy sofőr összes sessionjét.
+
+          ## Telepítési sorrend
+
+          1. Készíts teljes mentést az admin/, api/aims-tracking/ és data/ könyvtárról.
+          2. Másold fel a csomag fájljait a fenti célútvonalakra.
+          3. Ne töröld a meglévő data/ könyvtárat.
+          4. Nyisd meg az admin/aims-flow.php oldalt.
+          5. Nyisd meg az admin/aims-flow-driver-access.php oldalt.
+          6. Hozz létre egy tesztsofőrt.
+          7. Telepítsd a v1.9 pilot APK-t egy teszttelefonra.
+          8. Teszteld: belépés, onboarding, fuvar, GPS, Safety, Service Guard, HOLD, CMR/POD.
+
+          ## Szerverbeállítások
+
+          A public_html feletti aims-flow-config.php fájlban legalább maradjon beállítva:
+
+          - AIMS_TRACKING_TOKEN – kizárólag szerveroldali belső token;
+          - AIMS_ADMIN_TRACKING_TOKEN;
+          - AIMS_TRACKING_DATA_DIR, ha nem az alap data/ útvonalat használod;
+          - AIMS_FLOW_FROM_EMAIL az e-mailes meghívók feladójához.
+
+          A közös tracking token többé nem kerül az Android APK-ba.
+          EOF
+
+          (
+            cd "$ROOT"
+            find . -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS.txt
+          )
+
+          zip -qr AIMS-FLOW-v1.9-SERVER-DEPLOY.zip "$ROOT"
+          sha256sum AIMS-FLOW-v1.9-SERVER-DEPLOY.zip | tee AIMS-FLOW-v1.9-SERVER-DEPLOY.zip.sha256
+
+      - name: Upload server package
+        uses: actions/upload-artifact@v4
+        with:
+          name: AIMS-FLOW-v1.9-SERVER-DEPLOY
+          path: |
+            AIMS-FLOW-v1.9-SERVER-DEPLOY.zip
+            AIMS-FLOW-v1.9-SERVER-DEPLOY.zip.sha256
+          if-no-files-found: error
+          retention-days: 30
