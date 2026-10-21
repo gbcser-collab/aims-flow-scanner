@@ -68,6 +68,11 @@ jobs:
                 </intent>
             </queries>'''
           text=text.replace('<application',block+'\n'+queries+'\n    <application',1)
+          text=text.replace(
+              '<application',
+              '<application android:allowBackup="false" android:fullBackupContent="false"',
+              1,
+          )
           text=text.replace('android:label="aims_flow_scanner"','android:label="AIMS FLOW v1.9 Pilot"')
           manifest.write_text(text)
 
@@ -109,6 +114,7 @@ jobs:
             echo "The Android client still contains a shared tracking token reference."
             exit 20
           fi
+          grep -q "flutter_secure_storage" lib/services/flow_account_service.dart
 
       - name: Build APK
         env:
