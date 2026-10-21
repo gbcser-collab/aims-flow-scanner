@@ -32,12 +32,7 @@ jobs:
 
       - name: PHP syntax
         run: |
-          php -l api/aims-flow-auth-v2.php
-          php -l admin/aims-flow-driver-access.php
-          php -l server/aims-tracking/driver_auth_v2.php
-          php -l server/aims-tracking/session/_guard.php
-          find server/aims-tracking/session -maxdepth 1 -name '*.php' ! -name '_guard.php' -print0 | xargs -0 -n1 php -l
-          php -l server/aims-tracking/driver_ops_v2.php
+          find admin api server/aims-tracking -name '*.php' -print0 | xargs -0 -n1 php -l
 
       - name: Driver account and session schema
         run: |
@@ -123,6 +118,9 @@ jobs:
           test "$STATUS" = "401"
           grep -q 'invalid_session' "$RUNNER_TEMP/v190-revoked.json"
 
+      - name: Monthly reports and 5 km border guard
+        run: php server/aims-tracking/tests/monthly_report_test.php
+
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
@@ -157,11 +155,14 @@ jobs:
           grep -q "flutter_secure_storage" lib/services/flow_account_service.dart
           grep -q "session/ingest.php" lib/services/vehicle_tracking_service.dart
           grep -q "FlowSessionStore.instance.load" lib/services/vehicle_tracking_service.dart
+          grep -q "5000.0" server/aims-tracking/country_stay.php
+          grep -q "office@logistic-aims.hu" server/aims-tracking/cron/monthly_driver_reports.php
+          grep -q "AIMS-FLOW-jelenleti-iv" server/aims-tracking/monthly_report_lib.php
           grep -q "ThemeMode.light" lib/main.dart
           grep -q "ThemeMode.dark" lib/main.dart
           ! grep -q "themeMode: ThemeMode.dark" lib/main.dart
           grep -q "aims-flow-driver-access.php" admin/aims-flow.php
-          echo "FLOW v1.9 SECURITY AND UX GUARDS OK"
+          echo "FLOW v1.9 SECURITY, BORDER AND MONTHLY REPORT GUARDS OK"
 
       - name: Server log on failure
         if: failure()
