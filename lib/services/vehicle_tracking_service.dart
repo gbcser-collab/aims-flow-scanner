@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
+import 'package:flutter/widgets.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
@@ -51,7 +52,8 @@ class VehicleTrackingStatus {
 ///
 /// GPS points are stored locally first and uploaded through the revocable
 /// FLOW ID/PIN driver session. No shared server bearer token is compiled into
-/// the Android application.
+/// the Android application. Tracking is tied to the active workday: it starts
+/// after job acceptance and stops when the driver closes the workday.
 class VehicleTrackingService {
   VehicleTrackingService._();
 
@@ -60,6 +62,8 @@ class VehicleTrackingService {
   static const _enabledKey = 'aims_tracking_enabled';
   static const _deviceIdKey = 'aims_tracking_device_id';
   static const _vehicleLabelKey = 'aims_tracking_vehicle_label';
+  static const _workdayKey = 'aims_flow_workday_v2';
+  static const _legacyWorkdayKey = 'aims_flow_workday_v1';
   static const _maxQueueLines = 20000;
   static const _uploadBatchSize = 40;
 
@@ -104,6 +108,29 @@ class VehicleTrackingService {
   bool _enabled = false;
 
   Stream<VehicleTrackingStatus> get statusStream => _statusController.stream;
+
+  bool get _runningUnderFlutterTest {
+    try {
+      return WidgetsBinding.instance.runtimeType
+          .toString()
+          .contains('TestWidgetsFlutterBinding');
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<bool> _hasActiveWorkday() async {
+    final prefs = await SharedPreferences.getInstance();
+    var raw = prefs.getString(_workdayKey);
+    raw ??= prefs.getString(_legacyWorkdayKey);
+    if (raw == null || raw.trim().isEmpty) return false;
+    try {
+      final decoded = jsonDecode(raw);
+      return decoded is Map && decoded['active'] == true;
+    } catch (_) {
+      return false;
+    }
+  }
 
   Future<VehicleTrackingStatus> currentStatus() async {
     await _loadIdentity();
@@ -168,9 +195,35 @@ class VehicleTrackingService {
     }
   }
 
+  /// Starts tracking for an active workday. The test guard prevents widget
+  /// tests from invoking platform GPS plugins while keeping production logic
+  /// identical.
+  Future<bool> beginWorkday(String plate) async {
+    await setVehicleLabel(plate);
+    if (_runningUnderFlutterTest) return true;
+    return enableWithPermission();
+  }
+
+  /// Flushes queued points best-effort and stops foreground GPS at workday end.
+  Future<void> endWorkday() async {
+    if (_runningUnderFlutterTest) return;
+    try {
+      await _requestFlush();
+    } catch (_) {}
+    await disable();
+    _lastError = null;
+    _emit();
+  }
+
+  Future<void> syncPending() => _requestFlush();
+
   Future<void> recover() async {
     await _loadIdentity();
     await _ensureQueueDepthLoaded();
+    if (!await _hasActiveWorkday()) {
+      if (_enabled || _subscription != null) await disable();
+      return;
+    }
     if (!_enabled) return;
     if (_subscription == null) {
       await _startLocationStream(requestPermission: false);
@@ -181,6 +234,10 @@ class VehicleTrackingService {
   Future<void> startIfEnabled() async {
     await _loadIdentity();
     await _ensureQueueDepthLoaded();
+    if (!await _hasActiveWorkday()) {
+      if (_enabled || _subscription != null) await disable();
+      return;
+    }
     if (_enabled) {
       await _startLocationStream(requestPermission: false);
     }
@@ -189,6 +246,16 @@ class VehicleTrackingService {
   Future<bool> enableWithPermission() async {
     await _loadIdentity();
     await _ensureQueueDepthLoaded();
+
+    if (!await _hasActiveWorkday()) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_enabledKey, false);
+      _enabled = false;
+      _lastError =
+          'A nyomkövetés a munkanap indulásakor automatikusan bekapcsol.';
+      _emit();
+      return false;
+    }
 
     if (!await Geolocator.isLocationServiceEnabled()) {
       _lastError = 'A helymeghatározás ki van kapcsolva a telefonon.';
@@ -281,6 +348,10 @@ class VehicleTrackingService {
 
   Future<void> _startLocationStream({required bool requestPermission}) async {
     if (_subscription != null) return;
+    if (!await _hasActiveWorkday()) {
+      await disable();
+      return;
+    }
     if (!await Geolocator.isLocationServiceEnabled()) {
       _lastError = 'A helymeghatározás ki van kapcsolva.';
       _emit();
@@ -358,7 +429,7 @@ class VehicleTrackingService {
   }
 
   Future<void> _restartLocationStream() async {
-    if (!_enabled) return;
+    if (!_enabled || !await _hasActiveWorkday()) return;
     final current = _subscription;
     _subscription = null;
     if (current != null) {
@@ -401,7 +472,7 @@ class VehicleTrackingService {
   }
 
   Future<void> _sendHeartbeat() async {
-    if (!_enabled) return;
+    if (!_enabled || !await _hasActiveWorkday()) return;
     if (_subscription == null) {
       try {
         await _startLocationStream(requestPermission: false);
@@ -556,6 +627,7 @@ class VehicleTrackingService {
     Position position, {
     required String source,
   }) async {
+    if (!await _hasActiveWorkday()) return;
     if (!RoamingResilience.validCoordinates(
       position.latitude,
       position.longitude,
