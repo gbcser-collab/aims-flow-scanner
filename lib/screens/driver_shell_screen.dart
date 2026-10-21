@@ -2544,15 +2544,11 @@ class _DriverShellScreenState extends State<DriverShellScreen>
 
   Future<void> _onNetworkRestored() async {
     if (!mounted || _plate.isEmpty) return;
-    try {
-      await _tracking.syncPending();
-    } catch (_) {
-      // Keep independent operational queues eligible for recovery.
-    }
-    if (!mounted || !_appInForeground) return;
+    // A long GPS backlog must not delay workday, Safety or job recovery.
     await Future.wait([
-      _runtimeRecoverySweep(),
-      _refreshAfterResume(),
+      _tracking.syncPending(),
+      if (_appInForeground) _runtimeRecoverySweep(),
+      if (_appInForeground) _refreshAfterResume(),
     ]);
   }
 

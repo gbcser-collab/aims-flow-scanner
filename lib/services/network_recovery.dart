@@ -11,7 +11,7 @@ class NetworkRecovery {
     this.onRestored, {
     this.debounce = const Duration(milliseconds: 350),
   }) {
-    _subscription = events.distinct().listen(
+    _subscription = events.listen(
       _changed,
       onError: (Object error) => _changed(false),
     );
@@ -32,7 +32,7 @@ class NetworkRecovery {
   bool _disposed = false;
 
   void _changed(bool online) {
-    if (_disposed) return;
+    if (_disposed || _online == online) return;
     _online = online;
     _timer?.cancel();
     if (!online) {

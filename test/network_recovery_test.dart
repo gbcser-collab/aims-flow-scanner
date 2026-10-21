@@ -69,7 +69,6 @@ void main() {
     await Future<void>.delayed(Duration.zero);
     await Future<void>.delayed(const Duration(milliseconds: 20));
     events.addError(StateError('native monitor temporarily unavailable'));
-    events.add(false);
     events.add(true);
     await Future<void>.delayed(Duration.zero);
     await Future<void>.delayed(const Duration(milliseconds: 20));
