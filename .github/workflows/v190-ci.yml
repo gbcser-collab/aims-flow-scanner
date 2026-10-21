@@ -97,7 +97,7 @@ jobs:
       - name: Session revocation is enforced
         run: |
           TOKEN="$(cat "$RUNNER_TEMP/flow-session-token")"
-          TOKEN_HASH="$(printf '%s' "$TOKEN" | sha256sum | awk '{print $1}')"
+          export TOKEN_HASH="$(printf '%s' "$TOKEN" | sha256sum | awk '{print $1}')"
           php -r '
             require "server/aims-tracking/bootstrap.php";
             $pdo=aims_db();
@@ -106,8 +106,6 @@ jobs:
           STATUS="$(curl -sS -o "$RUNNER_TEMP/v190-revoked.json" -w '%{http_code}' "http://127.0.0.1:8099/session/driver_jobs.php?plate=V190001" -H "Authorization: Bearer $TOKEN")"
           test "$STATUS" = "401"
           grep -q 'invalid_session' "$RUNNER_TEMP/v190-revoked.json"
-        env:
-          TOKEN_HASH: ${{ env.TOKEN_HASH }}
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
