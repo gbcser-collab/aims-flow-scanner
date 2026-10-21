@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:http/http.dart' as http;
 
+import 'flow_account_service.dart';
 import 'smart_document_classifier.dart';
 import 'smart_document_repository.dart';
 
@@ -38,17 +39,24 @@ class SmartDocumentService {
   static const _endpoint = String.fromEnvironment(
     'AIMS_SMART_DOCUMENT_ENDPOINT',
     defaultValue:
-        'https://logistic-aims.hu/api/aims-tracking/smart_document.php',
+        'https://logistic-aims.hu/api/aims-tracking/session/smart_document.php',
   );
-  static const _token =
-      String.fromEnvironment('AIMS_TRACKING_TOKEN', defaultValue: '');
+
+  Future<Map<String, String>> _headers(String idempotencyKey) async {
+    final session = await FlowSessionStore.instance.load();
+    if (session == null || session.isExpired) {
+      throw const SmartDocumentUploadException('invalid_session');
+    }
+    return {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ${session.sessionToken}',
+      'X-AIMS-Idempotency-Key': idempotencyKey,
+    };
+  }
 
   Future<SmartDocumentUploadResult> send(
     PendingSmartDocument document,
   ) async {
-    if (_token.trim().isEmpty) {
-      throw StateError('Az AIMS Flow szerverkulcs nincs beállítva.');
-    }
     if (document.plate.trim().isEmpty) {
       throw StateError('A dokumentumhoz nincs rendszám rendelve.');
     }
@@ -82,11 +90,7 @@ class SmartDocumentService {
         final response = await http
             .post(
               Uri.parse(_endpoint),
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': 'Bearer $_token',
-                'X-AIMS-Idempotency-Key': document.id,
-              },
+              headers: await _headers(document.id),
               body: payload,
             )
             .timeout(const Duration(seconds: 35));
