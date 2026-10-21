@@ -51,7 +51,7 @@ jobs:
             aims_driver_auth_schema($pdo);
             $admin=aims_ensure_default_admin($pdo);
             $now=gmdate(DateTimeInterface::ATOM);
-            $v=$pdo->prepare("INSERT INTO vehicles (plate,label,admin_user_id,enabled,created_at) VALUES (\"V190001\",\"V190 TEST\",:admin,1,:created)");
+            $v=$pdo->prepare("INSERT INTO vehicles (plate,label,admin_user_id,enabled,created_at) VALUES (\"V190001\",\"V190001\",:admin,1,:created)");
             $v->execute([":admin"=>$admin,":created"=>$now]);
             $vehicle=(int)$pdo->lastInsertId();
             $a=$pdo->prepare("INSERT INTO driver_accounts (flow_id,pin_hash,email,driver_name,vehicle_id,onboarding_complete,enabled,created_at,updated_at) VALUES (\"190001\",:pin,\"driver@example.test\",\"Teszt Sofőr\",:vehicle,1,1,:created,:updated)");
@@ -76,9 +76,11 @@ jobs:
           cat "$RUNNER_TEMP/v190-php.log"
           exit 1
 
-      - name: Session proxy accepts own plate and rejects another
+      - name: Session proxy accepts own vehicle, GPS and rejects another
         run: |
           TOKEN="$(cat "$RUNNER_TEMP/flow-session-token")"
+          DEVICE_ID="$(printf 'd%.0s' {1..64})"
+
           curl -fsS -X POST http://127.0.0.1:8099/session/driver_ops_v2.php \
             -H "Authorization: Bearer $TOKEN" \
             -H 'Content-Type: application/json' \
@@ -86,12 +88,27 @@ jobs:
             | tee "$RUNNER_TEMP/v190-own.json"
           grep -q '"ok":true' "$RUNNER_TEMP/v190-own.json"
 
+          curl -fsS -X POST http://127.0.0.1:8099/session/ingest.php \
+            -H "Authorization: Bearer $TOKEN" \
+            -H 'Content-Type: application/json' \
+            --data "{\"pointId\":\"v190-ci-gps-1\",\"plate\":\"V190001\",\"deviceId\":\"$DEVICE_ID\",\"vehicleLabel\":\"V190001\",\"timestamp\":\"2026-10-21T06:01:00Z\",\"latitude\":47.6875,\"longitude\":17.6504,\"accuracy\":8,\"speedMps\":12,\"source\":\"stream\"}" \
+            | tee "$RUNNER_TEMP/v190-gps.json"
+          grep -q '"ok":true' "$RUNNER_TEMP/v190-gps.json"
+          grep -q '"registeredVehicle":true' "$RUNNER_TEMP/v190-gps.json"
+
           STATUS="$(curl -sS -o "$RUNNER_TEMP/v190-forbidden.json" -w '%{http_code}' -X POST http://127.0.0.1:8099/session/driver_ops_v2.php \
             -H "Authorization: Bearer $TOKEN" \
             -H 'Content-Type: application/json' \
             --data '{"action":"service_alerts","plate":"OTHER999","currentKm":100000}')"
           test "$STATUS" = "403"
           grep -q 'plate_forbidden' "$RUNNER_TEMP/v190-forbidden.json"
+
+          STATUS="$(curl -sS -o "$RUNNER_TEMP/v190-device-forbidden.json" -w '%{http_code}' -X POST http://127.0.0.1:8099/session/ingest.php \
+            -H "Authorization: Bearer $TOKEN" \
+            -H 'Content-Type: application/json' \
+            --data '{"pointId":"v190-ci-gps-2","plate":"V190001","deviceId":"wrong-device-identity","vehicleLabel":"V190001","timestamp":"2026-10-21T06:02:00Z","latitude":47.6875,"longitude":17.6504,"accuracy":8,"speedMps":12,"source":"stream"}')"
+          test "$STATUS" = "403"
+          grep -q 'device_forbidden' "$RUNNER_TEMP/v190-device-forbidden.json"
 
       - name: Session revocation is enforced
         run: |
@@ -138,6 +155,8 @@ jobs:
           grep -q "5 jegyű PIN" lib/screens/flow_login_screen.dart
           grep -q "aims-flow-auth-v2.php" lib/services/flow_account_service.dart
           grep -q "flutter_secure_storage" lib/services/flow_account_service.dart
+          grep -q "session/ingest.php" lib/services/vehicle_tracking_service.dart
+          grep -q "FlowSessionStore.instance.load" lib/services/vehicle_tracking_service.dart
           grep -q "ThemeMode.light" lib/main.dart
           grep -q "ThemeMode.dark" lib/main.dart
           ! grep -q "themeMode: ThemeMode.dark" lib/main.dart
