@@ -1,0 +1,35 @@
+name: AIMS FLOW v1.9 App Smoke Isolation
+
+on:
+  push:
+    branches: [aims-flow-r105-next-v190-stabilization]
+    paths:
+      - '.github/workflows/v190-app-smoke-isolate.yml'
+  workflow_dispatch:
+
+jobs:
+  app-case:
+    strategy:
+      fail-fast: false
+      matrix:
+        test_name:
+          - FLOW supports a readable light theme and neutral dark theme
+          - AIMS Flow starts on FLOW ID and PIN login
+          - FLOW ID and PIN fields accept digits only
+          - display mode can be changed from the login screen
+          - login has no overflow on a narrow phone
+          - driver shell keeps developed core actions
+          - driver shell has no overflow on a narrow phone
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - name: Run isolated widget test
+        env:
+          TEST_NAME: ${{ matrix.test_name }}
+        run: timeout --signal=TERM --kill-after=10s 150s flutter test -r expanded test/app_smoke_test.dart --plain-name "$TEST_NAME"
