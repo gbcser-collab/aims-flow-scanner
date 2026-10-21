@@ -223,15 +223,15 @@ class _DriverShellScreenState extends State<DriverShellScreen>
 
   bool get _isDark => Theme.of(context).brightness == Brightness.dark;
   Color get _pageBackground =>
-      _isDark ? const Color(0xFF020813) : const Color(0xFFF5F9FC);
+      _isDark ? const Color(0xFF111315) : const Color(0xFFF5F9FC);
   Color get _headerColor =>
-      _isDark ? const Color(0xFF06162A) : const Color(0xFFFFFFFF);
+      _isDark ? const Color(0xFF171A1D) : const Color(0xFFFFFFFF);
   Color get _panelColor =>
-      _isDark ? const Color(0xFF071725) : const Color(0xFFFFFFFF);
+      _isDark ? const Color(0xFF1B1F23) : const Color(0xFFFFFFFF);
   Color get _surfaceAlt =>
-      _isDark ? const Color(0xFF06131F) : const Color(0xFFEEF6FB);
+      _isDark ? const Color(0xFF23272B) : const Color(0xFFEEF6FB);
   Color get _lineColor =>
-      _isDark ? const Color(0xFF173B54) : const Color(0xFFD5E2EB);
+      _isDark ? const Color(0xFF3A4046) : const Color(0xFFD5E2EB);
   Color get _textMuted =>
       _isDark ? Colors.white70 : const Color(0xFF536B7A);
   Color get _textFaint =>
@@ -6379,7 +6379,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
     if (_restModeBusy || _plate.isEmpty) return;
     final choice = await showModalBottomSheet<int>(
       context: context,
-      backgroundColor: const Color(0xFF06131F),
+      backgroundColor: _panelColor,
       builder: (context) => SafeArea(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 18, 16, 22),
@@ -6466,7 +6466,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
     final selected = await showModalBottomSheet<String>(
       context: context,
       isScrollControlled: true,
-      backgroundColor: const Color(0xFF06131F),
+      backgroundColor: _panelColor,
       builder: (context) => SafeArea(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 14, 16, 20),

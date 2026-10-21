@@ -2,6 +2,8 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import 'flow_account_service.dart';
+
 class DriverApiException implements Exception {
   const DriverApiException(this.statusCode, this.code);
 
@@ -336,21 +338,25 @@ class DriverApiService {
 
   static const _baseUrl = String.fromEnvironment(
     'AIMS_TRACKING_BASE_URL',
-    defaultValue: 'https://logistic-aims.hu/api/aims-tracking',
+    defaultValue: 'https://logistic-aims.hu/api/aims-tracking/session',
   );
-  static const _token =
-      String.fromEnvironment('AIMS_TRACKING_TOKEN', defaultValue: '');
 
   String _base() => _baseUrl.trim().replaceAll(RegExp(r'/+$'), '');
 
-  Map<String, String> get _headers => {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer $_token',
-      };
+  Future<Map<String, String>> _sessionHeaders() async {
+    final session = await FlowSessionStore.instance.load();
+    if (session == null || session.isExpired) {
+      throw StateError('A FLOW munkamenet lejárt. Lépj be újra.');
+    }
+    return {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ${session.sessionToken}',
+    };
+  }
 
   void _ensureConfigured() {
-    if (_token.trim().isEmpty) {
-      throw StateError('Az AIMS Flow szerverkulcs nincs beállítva.');
+    if (_baseUrl.trim().isEmpty) {
+      throw StateError('Az AIMS FLOW API címe nincs beállítva.');
     }
   }
 
@@ -365,7 +371,7 @@ class DriverApiService {
     for (var attempt = 0; attempt < 3; attempt++) {
       try {
         final response = await http
-            .get(uri, headers: _headers)
+            .get(uri, headers: await _sessionHeaders())
             .timeout(const Duration(seconds: 12));
         final body = _decodeResponse(response);
         final rawJobs = body['jobs'];
@@ -399,7 +405,7 @@ class DriverApiService {
     for (var attempt = 0; attempt < 2; attempt++) {
       try {
         final response = await http
-            .get(uri, headers: _headers)
+            .get(uri, headers: await _sessionHeaders())
             .timeout(const Duration(seconds: 6));
         final body = _decodeResponse(response);
         final raw = body['autopilot'];
@@ -432,7 +438,7 @@ class DriverApiService {
     final response = await http
         .post(
           Uri.parse('${_base()}/driver_job_ack.php'),
-          headers: _headers,
+          headers: await _sessionHeaders(),
           body: jsonEncode({
             'plate': plate.trim().toUpperCase(),
             'jobId': jobId,
@@ -455,7 +461,7 @@ class DriverApiService {
     final response = await http
         .post(
           Uri.parse('${_base()}/registration_point.php'),
-          headers: _headers,
+          headers: await _sessionHeaders(),
           body: jsonEncode({
             'plate': plate.trim().toUpperCase(),
             'jobId': jobId,
@@ -483,7 +489,7 @@ class DriverApiService {
     final response = await http
         .post(
           Uri.parse('${_base()}/driver_stop_action.php'),
-          headers: _headers,
+          headers: await _sessionHeaders(),
           body: jsonEncode({
             'plate': plate.trim().toUpperCase(),
             'stopId': stopId,
@@ -506,7 +512,7 @@ class DriverApiService {
     final response = await http
         .post(
           Uri.parse('${_base()}/driver_job_document.php'),
-          headers: _headers,
+          headers: await _sessionHeaders(),
           body: jsonEncode({
             'plate': plate.trim().toUpperCase(),
             'jobId': jobId,
@@ -526,7 +532,7 @@ class DriverApiService {
           Uri.parse(
             '${_base()}/driver_rest_mode.php?plate=${Uri.encodeQueryComponent(normalized)}',
           ),
-          headers: _headers,
+          headers: await _sessionHeaders(),
         )
         .timeout(const Duration(seconds: 12));
     final body = _decodeResponse(response);
@@ -545,7 +551,7 @@ class DriverApiService {
     final response = await http
         .post(
           Uri.parse('${_base()}/driver_rest_mode.php'),
-          headers: _headers,
+          headers: await _sessionHeaders(),
           body: jsonEncode({
             'plate': plate.trim().toUpperCase(),
             'enabled': enabled,
@@ -569,7 +575,7 @@ class DriverApiService {
     final response = await http
         .post(
           Uri.parse('${_base()}/driver_push_device.php'),
-          headers: _headers,
+          headers: await _sessionHeaders(),
           body: jsonEncode({
             'plate': plate.trim().toUpperCase(),
             'deviceId': deviceId,
@@ -595,7 +601,7 @@ class DriverApiService {
     final response = await http
         .post(
           Uri.parse('${_base()}/driver_event.php'),
-          headers: _headers,
+          headers: await _sessionHeaders(),
           body: jsonEncode({
             'plate': plate.trim().toUpperCase(),
             'type': type,
@@ -626,7 +632,7 @@ class DriverApiService {
     for (var attempt = 0; attempt < 2; attempt++) {
       try {
         final response = await http
-            .get(uri, headers: _headers)
+            .get(uri, headers: await _sessionHeaders())
             .timeout(const Duration(seconds: 10));
         final body = _decodeResponse(response);
         final rawMessages = body['messages'];
@@ -671,7 +677,7 @@ class DriverApiService {
         final response = await http
             .post(
               Uri.parse('${_base()}/driver_messages.php'),
-              headers: _headers,
+              headers: await _sessionHeaders(),
               body: jsonEncode({
                 'plate': plate.trim().toUpperCase(),
                 'message': text,
