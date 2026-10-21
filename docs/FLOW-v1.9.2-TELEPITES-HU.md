@@ -1,4 +1,4 @@
-# AIMS FLOW v1.9.2 – riportok és hálózati helyreállítás
+# AIMS FLOW v1.9.2 – offline munkanapok és riportok
 
 ## Mi változott
 
@@ -75,7 +75,7 @@ Android megvalósítási referencia: https://developer.android.com/develop/conne
 
 ### Frissítés és telefonos próba
 
-Először a szervercsomagot, utána a v1.9.2 build32 PILOT APK-t frissítsd. A támogatott rendszer Android 7 / API 24 vagy újabb. A csomag továbbra is tesztkiadás, nem éles telepítés igazolása.
+Először a szervercsomagot telepítsd; a v1.9.2 build32 PILOT APK-t az alábbi aláírási korlát figyelembevételével próbáld ki. A támogatott rendszer Android 7 / API 24 vagy újabb. A csomag továbbra is tesztkiadás, nem éles telepítés igazolása.
 
 1. Tesztsofőrrel hálózat nélkül indíts és zárj két munkanapot. Az alkalmazás újraindítása után mindkettő maradjon a küldési sorban.
 2. A hálózat visszatérésekor mindkét lezárás egyszer jelenjen meg a szerveren, az eredeti kezdő/záró kilométerrel.
@@ -84,3 +84,17 @@ Először a szervercsomagot, utána a v1.9.2 build32 PILOT APK-t frissítsd. A t
 5. Munkanapzárás után hálózati hiba esetén is álljon le a GPS-követés.
 
 Az automatizált tesztek nem helyettesítik a valódi telefonos próbát. A frissítés nem állítja vissza a korábbi verzió által már felülírt munkanapokat.
+
+
+### Ellenőrzött PILOT-aláírási korlát
+
+A build31 és a build32 azonos alkalmazásazonosítót (`hu.logisticaims.aims_flow_scanner.v190`), de eltérő Android Debug aláíró tanúsítványt használ. Emiatt a build32 nem telepíthető közvetlen frissítésként a build31 fölé.
+
+- build31 tanúsítvány SHA-256: `171d5eeb8c9daf2b1b9fa5c7f9b31c6974137e2b6b2ac62044edaf39bb86ec4d`
+- build32 tanúsítvány SHA-256: `df6c83e45441ba846f82b0623b19b3a6cd25af7b288177ed1ae86a045d019172`
+
+A korábbi alkalmazást ne töröld, ha abban még el nem küldött munkanap, GPS-pont, dokumentum vagy más helyi adat van. Az eltávolítás törölheti az alkalmazás helyi adatait. A build32 APK-t egyelőre olyan külön teszttelefonon próbáld ki, amelyen nincs korábbi PILOT-telepítés.
+
+Adatmegőrző helyben frissítéshez a build31 eredeti aláíró kulcsával kell új APK-t készíteni. Ez a kulcs a jelen munkakörnyezetben nem áll rendelkezésre. A kiadási folyamathoz tartós, védetten tárolt aláíró kulcs beállítása szükséges; a futásonként létrehozott debug kulcs nem biztosít frissítési folytonosságot.
+
+A helyi munkanapnapló migrációja automatizált teszttel ellenőrzött, de a build31-ről közvetlen telefonos frissítés ezzel az APK-val nincs igazolva és az eltérő aláírás miatt blokkolt.
