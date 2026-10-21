@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'flow_account_service.dart';
 import 'flow_operations_service.dart';
+import 'vehicle_tracking_service.dart';
 
 class FlowWorkdayState {
   const FlowWorkdayState({
@@ -66,10 +67,13 @@ class FlowWorkdayState {
 
 class FlowWorkdayService {
   FlowWorkdayService._();
+
   static final instance = FlowWorkdayService._();
   static const _key = 'aims_flow_workday_v2';
   static const _legacyKey = 'aims_flow_workday_v1';
+
   final _ops = const FlowOperationsService();
+  final _tracking = VehicleTrackingService.instance;
 
   Future<FlowWorkdayState> load() async {
     final prefs = await SharedPreferences.getInstance();
@@ -77,11 +81,15 @@ class FlowWorkdayService {
     if (raw == null || raw.isEmpty) {
       raw = prefs.getString(_legacyKey);
     }
-    if (raw == null || raw.isEmpty) return const FlowWorkdayState(active: false);
+    if (raw == null || raw.isEmpty) {
+      return const FlowWorkdayState(active: false);
+    }
     try {
       final decoded = jsonDecode(raw);
       if (decoded is Map) {
-        final state = FlowWorkdayState.fromJson(Map<String, dynamic>.from(decoded));
+        final state = FlowWorkdayState.fromJson(
+          Map<String, dynamic>.from(decoded),
+        );
         if (prefs.getString(_key) == null) await _save(state);
         return state;
       }
@@ -102,9 +110,14 @@ class FlowWorkdayService {
     DateTime? startedAt,
   }) async {
     final current = await load();
-    if (current.active) return current;
+    if (current.active) {
+      unawaited(_tracking.beginWorkday(plate));
+      return current;
+    }
+
     final effectiveStart = (startedAt ?? DateTime.now()).toUtc();
-    final workdayId = '${session.flowId}-${effectiveStart.microsecondsSinceEpoch}-${jobId ?? 0}';
+    final workdayId =
+        '${session.flowId}-${effectiveStart.microsecondsSinceEpoch}-${jobId ?? 0}';
     var state = FlowWorkdayState(
       active: true,
       workdayId: workdayId,
@@ -113,7 +126,12 @@ class FlowWorkdayService {
       startJobId: jobId,
       syncPending: true,
     );
+
+    // Persist active state first. The GPS service deliberately checks this
+    // state before asking for location permission or starting foreground GPS.
     await _save(state);
+    unawaited(_tracking.beginWorkday(plate));
+
     try {
       await _ops.startWorkday(
         session: session,
@@ -145,6 +163,7 @@ class FlowWorkdayService {
     if (current.startKm != null && endKm < current.startKm!) {
       throw StateError('A záró kilométer nem lehet kisebb a kezdő értéknél.');
     }
+
     final finishedAt = DateTime.now().toUtc();
     final workdayId = current.workdayId.isNotEmpty
         ? current.workdayId
@@ -159,7 +178,13 @@ class FlowWorkdayService {
       startJobId: current.startJobId,
       syncPending: true,
     );
+
+    // Local closure is authoritative for the driver's privacy: foreground GPS
+    // stops even if the server is temporarily unreachable. Queued points stay
+    // on the phone and upload on the next authenticated workday.
     await _save(state);
+    unawaited(_tracking.endWorkday());
+
     try {
       await _ops.finishWorkday(
         session: session,
@@ -190,7 +215,9 @@ class FlowWorkdayService {
     required String plate,
   }) async {
     final state = await load();
-    if (!state.syncPending || state.startedAt == null || state.workdayId.isEmpty) {
+    if (!state.syncPending ||
+        state.startedAt == null ||
+        state.workdayId.isEmpty) {
       return state;
     }
     try {
