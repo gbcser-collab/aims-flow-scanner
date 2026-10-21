@@ -73,3 +73,6 @@ Az e-mailhez az összevont országidő, a jelenléti ív és a havi jelenléti �
 ## Fontos
 
 A jelenléti riport az AIMS FLOW-ban rögzített munkanap-adatokból készül. A tachográf, szabadság, betegállomány, rendelkezésre állási idő, szünetek, kollektív szerződés és tényleges munkaidőkeret végleges ellenőrzése továbbra is az iroda feladata.
+
+
+A v1.9.1 külön pihenőnaplót vezet, a riport bruttó/pihenő/nettó bontást mutat. A korábbi, nem rögzített pihenőket hiányos adatként jelzi. A havi művelet zárolása megakadályozza a párhuzamos generálást/küldést; a mail() sikeres visszatérése a küldésre átvételt jelzi, nem bizonyított kézbesítést. Részletes telepítés: a csomag TELEPITES-HU.md fájlja.

@@ -105,6 +105,9 @@ jobs:
           test "$STATUS" = "403"
           grep -q 'device_forbidden' "$RUNNER_TEMP/v190-device-forbidden.json"
 
+      - name: Rest history and workday ownership over HTTP
+        run: python3 ci/report_session_http_test.py
+
       - name: Session revocation is enforced
         run: |
           TOKEN="$(cat "$RUNNER_TEMP/flow-session-token")"

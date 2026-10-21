@@ -32,19 +32,23 @@ if(($_SERVER['REQUEST_METHOD']??'GET')==='POST'){
     http_response_code(403);exit('CSRF');
   }
   $recipient=trim((string)(getenv('AIMS_MONTHLY_REPORT_EMAIL')?:'office@logistic-aims.hu'));
+  $reportLock=null;
   try{
+    $reportLock=aims_monthly_acquire_lock($month);
     $paths=aims_monthly_store_report($report);
     $sent=aims_monthly_send_mail($report,$paths,$recipient);
     if($sent){
       $sentAt=gmdate(DateTimeInterface::ATOM);
-      aims_monthly_record_run($pdo,$month,$recipient,'sent','Kézi admin-küldés sikeres.',$paths,$sentAt);
-      $flash=['ok'=>true,'message'=>'A havi riport elküldve: '.$recipient];
+      aims_monthly_record_run($pdo,$month,$recipient,'sent','A levelezőszerver küldésre átvette a riportot.',$paths,$sentAt);
+      $flash=['ok'=>true,'message'=>'A havi riport átadva a levelezőszervernek, címzett: '.$recipient];
     }else{
-      aims_monthly_record_run($pdo,$month,$recipient,'mail_failed','A PHP mail() nem igazolta a kézbesítést.',$paths);
+      aims_monthly_record_run($pdo,$month,$recipient,'mail_failed','A levelezőszerver nem fogadta el küldésre a riportot.',$paths);
       $flash=['ok'=>false,'message'=>'A riport elkészült, de az e-mail-küldés nem igazolható.'];
     }
   }catch(Throwable $error){
     $flash=['ok'=>false,'message'=>'Riportküldési hiba: '.$error->getMessage()];
+  }finally{
+    if(is_resource($reportLock)){flock($reportLock,LOCK_UN);fclose($reportLock);}
   }
 }
 

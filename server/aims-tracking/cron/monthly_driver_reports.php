@@ -37,8 +37,14 @@ try {
 $recipient = trim((string)(getenv('AIMS_MONTHLY_REPORT_EMAIL') ?: 'office@logistic-aims.hu'));
 $pdo = aims_db();
 aims_monthly_runs_schema($pdo);
+try {
+    $reportLock = aims_monthly_acquire_lock($month);
+} catch (AimsMonthlyReportBusy $error) {
+    echo $error->getMessage()."\n";
+    exit(0);
+}
 $existing = aims_monthly_run_state($pdo, $month);
-if (!$force && $existing && ($existing['status'] ?? '') === 'sent') {
+if (!$dryRun && !$force && $existing && ($existing['status'] ?? '') === 'sent') {
     echo "A {$month} havi riport már elküldve: ".($existing['sent_at'] ?? '')."\n";
     exit(0);
 }
@@ -60,7 +66,7 @@ try {
             $month,
             $recipient,
             'mail_failed',
-            'A PHP mail() nem igazolta a kézbesítést. A következő napi cron újrapróbálja.',
+            'A levelezőszerver nem fogadta el küldésre a riportot. A következő napi cron újrapróbálja.',
             $paths
         );
         fwrite(STDERR, "A havi riport elkészült, de az e-mail-küldés sikertelen.\n");
@@ -73,11 +79,11 @@ try {
         $month,
         $recipient,
         'sent',
-        'Havi ország- és jelenléti riport elküldve.',
+        'A levelezőszerver küldésre átvette a havi riportot; a kézbesítés külön ellenőrizendő.',
         $paths,
         $sentAt
     );
-    echo "A {$month} havi riport elküldve ide: {$recipient}\n";
+    echo "A {$month} havi riport átadva a levelezőszervernek, címzett: {$recipient}\n";
     exit(0);
 } catch (Throwable $error) {
     aims_monthly_record_run(
@@ -91,3 +97,4 @@ try {
     fwrite(STDERR, 'Havi riport hiba: '.$error->getMessage()."\n");
     exit(4);
 }
+

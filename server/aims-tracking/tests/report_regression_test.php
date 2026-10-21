@@ -81,3 +81,24 @@ $summary=aims_monthly_build_report($pdo,'2026-09')['attendanceSummary'][0];
 test_assert($summary['openWorkday'] && str_contains($summary['status'],'IDEIGLENES'),'Open workday must be provisional.');
 test_assert($summary['average4MonthWeeklyHours']===null,'Incomplete reference average must not look verified.');
 echo "REPORT REST, NET TIME, OWNERSHIP, OVERLAP, DST AND MONTH EDGE REGRESSIONS OK\n";
+
+$lock=aims_monthly_acquire_lock('2026-09');
+$busy=false;
+try { aims_monthly_acquire_lock('2026-09'); } catch (AimsMonthlyReportBusy) { $busy=true; }
+test_assert($busy,'Concurrent report generation was not locked.');
+flock($lock,LOCK_UN);fclose($lock);
+$lock=aims_monthly_acquire_lock('2026-09');flock($lock,LOCK_UN);fclose($lock);
+aims_monthly_record_run($pdo,'2026-09','nobody@example.test','sent','test only',$paths,$now);
+$process=proc_open([PHP_BINARY,dirname(__DIR__).'/cron/monthly_driver_reports.php','--month=2026-09','--dry-run'],
+    [0=>['pipe','r'],1=>['pipe','w'],2=>['pipe','w']],$pipes);
+test_assert(is_resource($process),'Could not run dry-run fixture.');
+fclose($pipes[0]);$out=stream_get_contents($pipes[1]);$err=stream_get_contents($pipes[2]);fclose($pipes[1]);fclose($pipes[2]);
+$exit=proc_close($process);
+test_assert($exit===0 && str_contains($out,'Próbagenerálás kész'),'Already-sent dry-run failed: '.$out.$err);
+test_assert(aims_monthly_run_state($pdo,'2026-09')['status']==='sent','Dry-run changed delivery state.');
+putenv("AIMS_FLOW_FROM_EMAIL=invalid");
+$rejected=false;
+try { aims_monthly_send_mail($report,$paths,'nobody@example.test'); } catch (InvalidArgumentException) { $rejected=true; }
+test_assert($rejected,'Invalid mail sender was accepted.');
+putenv('AIMS_FLOW_FROM_EMAIL');
+echo "REPORT LOCK AND NO-MAIL DRY-RUN REGRESSIONS OK\n";

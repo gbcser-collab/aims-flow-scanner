@@ -515,12 +515,32 @@ function aims_monthly_attendance_summary_csv(array $report): string {
     ], $rows);
 }
 
+class AimsMonthlyReportBusy extends RuntimeException {}
+
+/** The resource must stay open through generation, mail submission and logging. */
+function aims_monthly_acquire_lock(string $month) {
+    aims_monthly_period($month);
+    $path = aims_monthly_report_directory().'/'.$month.'.lock';
+    $handle = fopen($path,'c');
+    if ($handle === false) throw new RuntimeException('A riport zárolása nem hozható létre.');
+    @chmod($path,0600);
+    if (!flock($handle,LOCK_EX|LOCK_NB)) {
+        fclose($handle);
+        throw new AimsMonthlyReportBusy('Ehhez a hónaphoz már folyamatban van egy riportművelet.');
+    }
+    return $handle;
+}
+
 function aims_monthly_report_directory(): string {
     $dir = trim((string)(getenv('AIMS_TRACKING_DATA_DIR') ?: ''));
     if ($dir === '') $dir = __DIR__.'/data';
     $dir .= '/monthly-reports';
     if (!is_dir($dir) && !mkdir($dir, 0700, true) && !is_dir($dir)) {
         throw new RuntimeException('A havi riport könyvtár nem hozható létre.');
+    }
+    $deny = $dir.'/.htaccess';
+    if (!is_file($deny) && file_put_contents($deny,"Require all denied\n",LOCK_EX) === false) {
+        throw new RuntimeException('A riportkönyvtár HTTP-védelme nem írható.');
     }
     return $dir;
 }
@@ -571,6 +591,7 @@ function aims_monthly_send_mail(array $report, array $paths, string $recipient):
         throw new InvalidArgumentException('Érvénytelen havi riport e-mail-cím.');
     }
     $from = trim((string)(getenv('AIMS_FLOW_FROM_EMAIL') ?: 'Start@logistic-aims.hu'));
+    if (!filter_var($from,FILTER_VALIDATE_EMAIL)) throw new InvalidArgumentException('Érvénytelen feladó e-mail-cím.');
     $subject = 'AIMS FLOW havi ország- és jelenléti riport – '.$report['month'];
     $boundary = 'aims-flow-'.bin2hex(random_bytes(12));
     $body = "--{$boundary}\r\n"
@@ -578,6 +599,12 @@ function aims_monthly_send_mail(array $report, array $paths, string $recipient):
         ."Content-Transfer-Encoding: 8bit\r\n\r\n"
         .aims_monthly_email_text($report)."\r\n";
 
+    foreach (['orszagido','jelenleti-iv','jelenleti-osszesito'] as $kind) {
+        $required = 'AIMS-FLOW-'.$kind.'-'.$report['month'].'.csv';
+        if (!isset($paths[$required]) || !is_readable($paths[$required])) {
+            throw new RuntimeException('Hiányzó riportcsatolmány: '.$required);
+        }
+    }
     foreach ($paths as $name=>$path) {
         // The combined three reports are attached. Per-plate files remain in
         // the secure monthly report directory for audit and manual download.
@@ -587,7 +614,7 @@ function aims_monthly_send_mail(array $report, array $paths, string $recipient):
             continue;
         }
         $content = file_get_contents($path);
-        if ($content === false) continue;
+        if ($content === false) throw new RuntimeException('Nem olvasható riportcsatolmány: '.$name);
         $body .= "--{$boundary}\r\n"
             ."Content-Type: text/csv; name=\"{$name}\"\r\n"
             ."Content-Disposition: attachment; filename=\"{$name}\"\r\n"

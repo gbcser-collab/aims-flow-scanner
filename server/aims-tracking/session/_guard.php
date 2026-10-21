@@ -127,6 +127,13 @@ function aims_flow_session_proxy(string $target):never{
         aims_flow_session_json(['ok'=>false,'error'=>'plate_forbidden'],403);
     }
 
+    if (basename($target)==='driver_ops_v2.php'
+        && in_array((string)($request['action']??''),['workday_start','workday_finish'],true)
+        && preg_match('/^(\d{6})(?:-|$)/',(string)($request['workdayId']??''),$workdayOwner)
+        && !hash_equals((string)$session['flow_id'],$workdayOwner[1])) {
+        aims_flow_session_json(['ok'=>false,'error'=>'workday_owner_forbidden'],403);
+    }
+
     $assignedDevice=trim((string)($session['device_id']??''));
     $requestDevice=trim((string)($request['deviceId']??''));
     if($requestDevice!==''&&$assignedDevice!==''&&!hash_equals($assignedDevice,$requestDevice)){
@@ -148,3 +155,4 @@ function aims_flow_session_proxy(string $target):never{
     require $target;
     exit;
 }
+
