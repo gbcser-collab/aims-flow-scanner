@@ -1,0 +1,144 @@
+name: AIMS FLOW v1.9 Stabilization CI
+
+on:
+  push:
+    branches: [aims-flow-r105-next-v190-stabilization]
+    paths:
+      - 'lib/**'
+      - 'test/**'
+      - 'api/**'
+      - 'admin/**'
+      - 'server/aims-tracking/**'
+      - 'pubspec.yaml'
+      - '.github/workflows/v190-ci.yml'
+  pull_request:
+    branches: [aims-flow-r104-next-level]
+  workflow_dispatch:
+
+concurrency:
+  group: flow-v190-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      AIMS_TRACKING_TOKEN: v190-internal-server-token
+      AIMS_ADMIN_TRACKING_TOKEN: v190-admin-token
+      AIMS_DEFAULT_ADMIN_NAME: V190 CI
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: PHP syntax
+        run: |
+          php -l api/aims-flow-auth-v2.php
+          php -l admin/aims-flow-driver-access.php
+          php -l server/aims-tracking/driver_auth_v2.php
+          php -l server/aims-tracking/session/_guard.php
+          find server/aims-tracking/session -maxdepth 1 -name '*.php' ! -name '_guard.php' -print0 | xargs -0 -n1 php -l
+          php -l server/aims-tracking/driver_ops_v2.php
+
+      - name: Driver account and session schema
+        run: |
+          export AIMS_TRACKING_DATA_DIR="$RUNNER_TEMP/flow-v190-data"
+          mkdir -p "$AIMS_TRACKING_DATA_DIR"
+          echo "AIMS_TRACKING_DATA_DIR=$AIMS_TRACKING_DATA_DIR" >> "$GITHUB_ENV"
+          php -r '
+            require "server/aims-tracking/bootstrap.php";
+            require "server/aims-tracking/driver_auth_v2.php";
+            $pdo=aims_db();
+            aims_driver_auth_schema($pdo);
+            $admin=aims_ensure_default_admin($pdo);
+            $now=gmdate(DateTimeInterface::ATOM);
+            $v=$pdo->prepare("INSERT INTO vehicles (plate,label,admin_user_id,enabled,created_at) VALUES (\"V190001\",\"V190 TEST\",:admin,1,:created)");
+            $v->execute([":admin"=>$admin,":created"=>$now]);
+            $vehicle=(int)$pdo->lastInsertId();
+            $a=$pdo->prepare("INSERT INTO driver_accounts (flow_id,pin_hash,email,driver_name,vehicle_id,onboarding_complete,enabled,created_at,updated_at) VALUES (\"190001\",:pin,\"driver@example.test\",\"Teszt Sofőr\",:vehicle,1,1,:created,:updated)");
+            $a->execute([":pin"=>password_hash("12345",PASSWORD_DEFAULT),":vehicle"=>$vehicle,":created"=>$now,":updated"=>$now]);
+            $session=aims_driver_issue_session($pdo,(int)$pdo->lastInsertId(),str_repeat("d",64),1);
+            file_put_contents(getenv("RUNNER_TEMP")."/flow-session-token",$session["token"]);
+            $tables=["driver_accounts","driver_sessions"];
+            foreach($tables as $table){
+              $exists=$pdo->query("SELECT name FROM sqlite_master WHERE type=\"table\" AND name=".$pdo->quote($table))->fetchColumn();
+              if(!$exists)exit(10);
+            }
+            echo "FLOW ID/PIN SESSION SCHEMA OK\n";
+          '
+
+      - name: Start operational backend
+        run: |
+          nohup php -S 127.0.0.1:8099 -t server/aims-tracking > "$RUNNER_TEMP/v190-php.log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/v190-php.pid"
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:8099/README.md >/dev/null; then exit 0; fi
+            sleep 1
+          done
+          cat "$RUNNER_TEMP/v190-php.log"
+          exit 1
+
+      - name: Session proxy accepts own plate and rejects another
+        run: |
+          TOKEN="$(cat "$RUNNER_TEMP/flow-session-token")"
+          curl -fsS -X POST http://127.0.0.1:8099/session/driver_ops_v2.php \
+            -H "Authorization: Bearer $TOKEN" \
+            -H 'Content-Type: application/json' \
+            --data '{"action":"workday_start","plate":"V190001","workdayId":"v190-ci-day","startedAt":"2026-10-21T06:00:00Z","startKm":100000}' \
+            | tee "$RUNNER_TEMP/v190-own.json"
+          grep -q '"ok":true' "$RUNNER_TEMP/v190-own.json"
+
+          STATUS="$(curl -sS -o "$RUNNER_TEMP/v190-forbidden.json" -w '%{http_code}' -X POST http://127.0.0.1:8099/session/driver_ops_v2.php \
+            -H "Authorization: Bearer $TOKEN" \
+            -H 'Content-Type: application/json' \
+            --data '{"action":"service_alerts","plate":"OTHER999","currentKm":100000}')"
+          test "$STATUS" = "403"
+          grep -q 'plate_forbidden' "$RUNNER_TEMP/v190-forbidden.json"
+
+      - name: Session revocation is enforced
+        run: |
+          TOKEN="$(cat "$RUNNER_TEMP/flow-session-token")"
+          TOKEN_HASH="$(printf '%s' "$TOKEN" | sha256sum | awk '{print $1}')"
+          php -r '
+            require "server/aims-tracking/bootstrap.php";
+            $pdo=aims_db();
+            $pdo->prepare("UPDATE driver_sessions SET revoked_at=:now WHERE token_hash=:hash")->execute([":now"=>gmdate(DateTimeInterface::ATOM),":hash"=>getenv("TOKEN_HASH")]);
+          '
+          STATUS="$(curl -sS -o "$RUNNER_TEMP/v190-revoked.json" -w '%{http_code}' "http://127.0.0.1:8099/session/driver_jobs.php?plate=V190001" -H "Authorization: Bearer $TOKEN")"
+          test "$STATUS" = "401"
+          grep -q 'invalid_session' "$RUNNER_TEMP/v190-revoked.json"
+        env:
+          TOKEN_HASH: ${{ env.TOKEN_HASH }}
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Flutter dependencies
+        run: flutter pub get
+
+      - name: Static analysis
+        run: flutter analyze
+
+      - name: Unit and widget tests
+        run: flutter test
+
+      - name: Security and UX guards
+        run: |
+          if grep -R "AIMS_TRACKING_TOKEN" lib --include='*.dart'; then
+            echo "Static tracking token reference found in the Android client."
+            exit 20
+          fi
+          grep -q "6 jegyű FLOW ID" lib/screens/flow_login_screen.dart
+          grep -q "5 jegyű PIN" lib/screens/flow_login_screen.dart
+          grep -q "aims-flow-auth-v2.php" lib/services/flow_account_service.dart
+          grep -q "ThemeMode.light" lib/main.dart
+          grep -q "ThemeMode.dark" lib/main.dart
+          ! grep -q "themeMode: ThemeMode.dark" lib/main.dart
+          grep -q "aims-flow-driver-access.php" admin/aims-flow.php
+          echo "FLOW v1.9 SECURITY AND UX GUARDS OK"
+
+      - name: Server log on failure
+        if: failure()
+        run: cat "$RUNNER_TEMP/v190-php.log" || true
