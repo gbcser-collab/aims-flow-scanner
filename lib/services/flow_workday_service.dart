@@ -5,12 +5,15 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'flow_account_service.dart';
 import 'flow_operations_service.dart';
+import 'flow_local_journal.dart';
 import 'vehicle_tracking_service.dart';
 
 class FlowWorkdayState {
   const FlowWorkdayState({
     required this.active,
     this.workdayId = '',
+    this.flowId = '',
+    this.plate = '',
     this.startedAt,
     this.finishedAt,
     this.startKm,
@@ -21,6 +24,8 @@ class FlowWorkdayState {
 
   final bool active;
   final String workdayId;
+  final String flowId;
+  final String plate;
   final DateTime? startedAt;
   final DateTime? finishedAt;
   final int? startKm;
@@ -37,6 +42,8 @@ class FlowWorkdayState {
   Map<String, dynamic> toJson() => {
         'active': active,
         'workdayId': workdayId,
+        'flowId': flowId,
+        'plate': plate,
         'startedAt': startedAt?.toUtc().toIso8601String(),
         'finishedAt': finishedAt?.toUtc().toIso8601String(),
         'startKm': startKm,
@@ -50,6 +57,8 @@ class FlowWorkdayState {
     final storedId = json['workdayId']?.toString().trim() ?? '';
     return FlowWorkdayState(
       active: json['active'] == true,
+      flowId: json['flowId']?.toString() ?? '',
+      plate: json['plate']?.toString() ?? '',
       workdayId: storedId.isNotEmpty
           ? storedId
           : startedAt == null
@@ -66,40 +75,110 @@ class FlowWorkdayState {
 }
 
 class FlowWorkdayService {
-  FlowWorkdayService._();
+  FlowWorkdayService({
+    FlowOperationsService operations = const FlowOperationsService(),
+    Future<void> Function(String)? beginTracking,
+    Future<void> Function()? endTracking,
+  })  : _ops = operations,
+        _beginTracking = beginTracking ?? _beginDefault,
+        _endTracking = endTracking ?? VehicleTrackingService.instance.endWorkday;
 
-  static final instance = FlowWorkdayService._();
+  static final instance = FlowWorkdayService();
   static const _key = 'aims_flow_workday_v2';
-  static const _legacyKey = 'aims_flow_workday_v1';
+  final FlowOperationsService _ops;
+  final Future<void> Function(String) _beginTracking;
+  final Future<void> Function() _endTracking;
+  Future<void> _syncTail = Future<void>.value();
 
-  final _ops = const FlowOperationsService();
-  final _tracking = VehicleTrackingService.instance;
-
-  Future<FlowWorkdayState> load() async {
-    final prefs = await SharedPreferences.getInstance();
-    var raw = prefs.getString(_key);
-    if (raw == null || raw.isEmpty) {
-      raw = prefs.getString(_legacyKey);
-    }
-    if (raw == null || raw.isEmpty) {
-      return const FlowWorkdayState(active: false);
-    }
-    try {
-      final decoded = jsonDecode(raw);
-      if (decoded is Map) {
-        final state = FlowWorkdayState.fromJson(
-          Map<String, dynamic>.from(decoded),
-        );
-        if (prefs.getString(_key) == null) await _save(state);
-        return state;
-      }
-    } catch (_) {}
-    return const FlowWorkdayState(active: false);
+  static Future<void> _beginDefault(String plate) async {
+    await VehicleTrackingService.instance.beginWorkday(plate);
   }
 
-  Future<void> _save(FlowWorkdayState state) async {
+  static String _ownerKey(String flowId, String plate) =>
+      '$flowId:${flowJournalPlate(plate)}';
+
+  Future<void> _prepare() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_key, jsonEncode(state.toJson()));
+    await FlowLocalJournal.preserveWorkdayIdentity(prefs);
+  }
+
+  Future<Map<String, dynamic>> _read() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_key) ?? prefs.getString('aims_flow_workday_v1');
+    if (raw == null || raw.isEmpty) {
+      return {'active': false, 'journalVersion': 3, 'states': <String, dynamic>{},
+        'pending': <dynamic>[]};
+    }
+    try {
+      final data = Map<String, dynamic>.from(jsonDecode(raw) as Map);
+      if (data['journalVersion'] == 3) {
+        if (data['states'] is! Map || data['pending'] is! List) {
+          throw const FormatException('Invalid workday journal');
+        }
+        return data;
+      }
+      final state = FlowWorkdayState.fromJson(data);
+      return {...state.toJson(), 'journalVersion': 3,
+        'states': <String, dynamic>{
+          if (state.startedAt != null)
+            _ownerKey(state.flowId, state.plate): state.toJson(),
+        },
+        'pending': <dynamic>[
+          if (state.syncPending && state.startedAt != null) state.toJson(),
+        ],
+      };
+    } catch (_) {
+      throw StateError('A helyi munkanapnapló nem olvasható. Az adatokat megőriztük.');
+    }
+  }
+
+  Future<void> _write(Map<String, dynamic> data) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!await prefs.setString(_key, jsonEncode(data))) {
+      throw StateError('A munkanap helyi mentése nem sikerült.');
+    }
+  }
+
+  FlowWorkdayState _current(Map<String, dynamic> data,
+      FlowAccountSession? session, String? plate) {
+    if (session == null) return FlowWorkdayState.fromJson(data);
+    final states = data['states'] as Map;
+    final state = states[_ownerKey(session.flowId, plate ?? session.plate)];
+    return state is Map
+        ? FlowWorkdayState.fromJson(Map<String, dynamic>.from(state))
+        : const FlowWorkdayState(active: false);
+  }
+
+  Future<FlowWorkdayState> load({FlowAccountSession? session, String? plate}) async {
+    await _prepare();
+    return FlowLocalJournal.run(() async => _current(await _read(), session, plate));
+  }
+
+  Future<int> pendingCount({required FlowAccountSession session}) async {
+    await _prepare();
+    return FlowLocalJournal.run(() async {
+      final data = await _read();
+      return (data['pending'] as List).where((item) =>
+          item is Map && item['flowId'] == session.flowId).length;
+    });
+  }
+
+  void _validateIdentity(FlowAccountSession session, String plate) {
+    if (!RegExp(r'^\d{6}$').hasMatch(session.flowId) ||
+        flowJournalPlate(plate).isEmpty ||
+        flowJournalPlate(plate) != flowJournalPlate(session.plate)) {
+      throw StateError('A munkanaphoz a bejelentkezett sofőr járműve szükséges.');
+    }
+  }
+
+  Future<void> _record(Map<String, dynamic> data, FlowWorkdayState state) async {
+    final value = state.toJson();
+    (data['states'] as Map)[_ownerKey(state.flowId, state.plate)] = value;
+    final pending = data['pending'] as List;
+    pending.removeWhere((item) => (item as Map)['workdayId'] == state.workdayId);
+    pending.add(value);
+    data.addAll(value); // Compatibility mirror used by the GPS workday gate.
+    await _write(data); // Current state and retry queue are one durable write.
   }
 
   Future<FlowWorkdayState> startIfNeeded({
@@ -109,48 +188,34 @@ class FlowWorkdayService {
     int? jobId,
     DateTime? startedAt,
   }) async {
-    final current = await load();
-    if (current.active) {
-      unawaited(_tracking.beginWorkday(plate));
-      return current;
+    _validateIdentity(session, plate);
+    if (startKm < 0 || startKm > 5000000) {
+      throw StateError('Ellenőrizd a kezdő kilométerértéket.');
     }
-
-    final effectiveStart = (startedAt ?? DateTime.now()).toUtc();
-    final workdayId =
-        '${session.flowId}-${effectiveStart.microsecondsSinceEpoch}-${jobId ?? 0}';
-    var state = FlowWorkdayState(
-      active: true,
-      workdayId: workdayId,
-      startedAt: effectiveStart,
-      startKm: startKm,
-      startJobId: jobId,
-      syncPending: true,
-    );
-
-    // Persist active state first. The GPS service deliberately checks this
-    // state before asking for location permission or starting foreground GPS.
-    await _save(state);
-    unawaited(_tracking.beginWorkday(plate));
-
-    try {
-      await _ops.startWorkday(
-        session: session,
-        workdayId: workdayId,
-        plate: plate,
-        startedAt: effectiveStart,
-        startKm: startKm,
-        jobId: jobId,
-      );
-      state = FlowWorkdayState(
+    await _prepare();
+    await FlowLocalJournal.run(() async {
+      final data = await _read();
+      final current = _current(data, session, plate);
+      if (current.active) {
+        data.addAll(current.toJson());
+        await _write(data);
+        return;
+      }
+      final effectiveStart = (startedAt ?? DateTime.now()).toUtc();
+      await _record(data, FlowWorkdayState(
         active: true,
-        workdayId: workdayId,
+        flowId: session.flowId,
+        plate: plate.trim().toUpperCase(),
+        workdayId: '${session.flowId}-${DateTime.now().toUtc().microsecondsSinceEpoch}-${jobId ?? 0}',
         startedAt: effectiveStart,
         startKm: startKm,
         startJobId: jobId,
-      );
-      await _save(state);
-    } catch (_) {}
-    return state;
+        syncPending: true,
+      ));
+    });
+    // Tracking starts only after the durable local write succeeds.
+    unawaited(_beginTracking(plate).catchError((Object _) {}));
+    return flushPending(session: session, plate: plate);
   }
 
   Future<FlowWorkdayState> finish({
@@ -158,105 +223,83 @@ class FlowWorkdayService {
     required String plate,
     required int endKm,
   }) async {
-    final current = await load();
-    if (!current.active || current.startedAt == null) return current;
-    if (current.startKm != null && endKm < current.startKm!) {
-      throw StateError('A záró kilométer nem lehet kisebb a kezdő értéknél.');
-    }
-
-    final finishedAt = DateTime.now().toUtc();
-    final workdayId = current.workdayId.isNotEmpty
-        ? current.workdayId
-        : '${session.flowId}-${current.startedAt!.toUtc().microsecondsSinceEpoch}-${current.startJobId ?? 0}';
-    var state = FlowWorkdayState(
-      active: false,
-      workdayId: workdayId,
-      startedAt: current.startedAt,
-      finishedAt: finishedAt,
-      startKm: current.startKm,
-      endKm: endKm,
-      startJobId: current.startJobId,
-      syncPending: true,
-    );
-
-    // Local closure is authoritative for the driver's privacy: foreground GPS
-    // stops even if the server is temporarily unreachable. Queued points stay
-    // on the phone and upload on the next authenticated workday.
-    await _save(state);
-    unawaited(_tracking.endWorkday());
-
-    try {
-      await _ops.finishWorkday(
-        session: session,
-        workdayId: workdayId,
-        plate: plate,
-        finishedAt: finishedAt,
-        endKm: endKm,
-        startedAt: current.startedAt,
-        startKm: current.startKm,
-        startJobId: current.startJobId,
-      );
-      state = FlowWorkdayState(
-        active: false,
-        workdayId: workdayId,
-        startedAt: current.startedAt,
-        finishedAt: finishedAt,
-        startKm: current.startKm,
-        endKm: endKm,
-        startJobId: current.startJobId,
-      );
-      await _save(state);
-    } catch (_) {}
-    return state;
+    _validateIdentity(session, plate);
+    await _prepare();
+    await FlowLocalJournal.run(() async {
+      final data = await _read();
+      final current = _current(data, session, plate);
+      if (!current.active || current.startedAt == null) return;
+      if (endKm < (current.startKm ?? 0) || endKm > 5000000) {
+        throw StateError('A záró kilométer nem lehet kisebb a kezdő értéknél.');
+      }
+      final now = DateTime.now().toUtc();
+      if (now.isBefore(current.startedAt!)) {
+        throw StateError('A zárás ideje megelőzi a kezdést. Ellenőrizd a telefon óráját.');
+      }
+      await _record(data, FlowWorkdayState.fromJson({
+        ...current.toJson(), 'active': false, 'syncPending': true,
+        'finishedAt': now.toIso8601String(), 'endKm': endKm,
+      }));
+    });
+    // Local closure stops GPS even when a previous HTTP request is still pending.
+    unawaited(_endTracking().catchError((Object _) {}));
+    return flushPending(session: session, plate: plate);
   }
 
   Future<FlowWorkdayState> flushPending({
     required FlowAccountSession session,
     required String plate,
   }) async {
-    final state = await load();
-    if (!state.syncPending ||
-        state.startedAt == null ||
-        state.workdayId.isEmpty) {
-      return state;
-    }
-    try {
-      if (state.active) {
-        if (state.startKm == null) return state;
-        await _ops.startWorkday(
-          session: session,
-          workdayId: state.workdayId,
-          plate: plate,
-          startedAt: state.startedAt!,
-          startKm: state.startKm!,
-          jobId: state.startJobId,
-        );
-      } else {
-        if (state.finishedAt == null || state.endKm == null) return state;
-        await _ops.finishWorkday(
-          session: session,
-          workdayId: state.workdayId,
-          plate: plate,
-          finishedAt: state.finishedAt!,
-          endKm: state.endKm!,
-          startedAt: state.startedAt,
-          startKm: state.startKm,
-          startJobId: state.startJobId,
-        );
+    _validateIdentity(session, plate);
+    await _prepare();
+    final result = _syncTail.then((_) => _flush(session, plate));
+    _syncTail = result.then<void>((_) {}, onError: (Object _, StackTrace __) {});
+    await result;
+    return load(session: session, plate: plate);
+  }
+
+  Future<void> _flush(FlowAccountSession session, String plate) async {
+    final pending = await FlowLocalJournal.run(() async {
+      final data = await _read();
+      return (data['pending'] as List)
+          .map((item) => FlowWorkdayState.fromJson(Map<String, dynamic>.from(item as Map)))
+          .where((state) => state.flowId == session.flowId &&
+              flowJournalPlate(state.plate).isNotEmpty &&
+              flowJournalPlate(state.plate) == flowJournalPlate(plate))
+          .toList();
+    });
+    for (final state in pending) {
+      if (state.startedAt == null || state.startKm == null ||
+          state.workdayId.isEmpty) continue;
+      try {
+        if (state.active) {
+          await _ops.startWorkday(session: session, workdayId: state.workdayId,
+            plate: state.plate, startedAt: state.startedAt!,
+            startKm: state.startKm!, jobId: state.startJobId);
+        } else {
+          if (state.finishedAt == null || state.endKm == null) continue;
+          await _ops.finishWorkday(session: session, workdayId: state.workdayId,
+            plate: state.plate, finishedAt: state.finishedAt!, endKm: state.endKm!,
+            startedAt: state.startedAt, startKm: state.startKm,
+            startJobId: state.startJobId);
+        }
+      } catch (_) {
+        break; // Preserve order and retry the original snapshot on reconnection.
       }
-      final synced = FlowWorkdayState(
-        active: state.active,
-        workdayId: state.workdayId,
-        startedAt: state.startedAt,
-        finishedAt: state.finishedAt,
-        startKm: state.startKm,
-        endKm: state.endKm,
-        startJobId: state.startJobId,
-      );
-      await _save(synced);
-      return synced;
-    } catch (_) {
-      return state;
+      await FlowLocalJournal.run(() async {
+        final data = await _read();
+        final fingerprint = jsonEncode(state.toJson());
+        bool unchanged(dynamic value) => value is Map &&
+            jsonEncode(FlowWorkdayState.fromJson(Map<String, dynamic>.from(value)).toJson()) == fingerprint;
+        final queue = data['pending'] as List;
+        queue.removeWhere(unchanged);
+        final states = data['states'] as Map;
+        final key = _ownerKey(state.flowId, state.plate);
+        final synced = {...state.toJson(), 'syncPending': false};
+        if (unchanged(states[key])) states[key] = synced;
+        if (unchanged(data)) data.addAll(synced);
+        await _write(data);
+      });
     }
   }
 }

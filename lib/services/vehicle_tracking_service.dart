@@ -11,6 +11,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'country_code_service.dart';
 import 'flow_account_service.dart';
+import 'flow_local_journal.dart';
 import 'gps_point_quality.dart';
 import 'roaming_resilience.dart';
 
@@ -126,7 +127,20 @@ class VehicleTrackingService {
     if (raw == null || raw.trim().isEmpty) return false;
     try {
       final decoded = jsonDecode(raw);
-      return decoded is Map && decoded['active'] == true;
+      if (decoded is! Map) return false;
+      final session = await FlowSessionStore.instance.load();
+      if (session == null) return false;
+      final key = '${session.flowId}:${flowJournalPlate(session.plate)}';
+      final states = decoded['states'];
+      final state = decoded['journalVersion'] == 3 && states is Map
+          ? states[key] : decoded;
+      if (state is! Map || state['active'] != true) return false;
+      final owner = state['flowId']?.toString() ??
+          RegExp(r'^(\d{6})-').firstMatch(state['workdayId']?.toString() ?? '')?.group(1);
+      final plate = state['plate']?.toString() ?? '';
+      return owner == session.flowId &&
+          flowJournalPlate(plate).isNotEmpty &&
+          flowJournalPlate(plate) == flowJournalPlate(session.plate);
     } catch (_) {
       return false;
     }

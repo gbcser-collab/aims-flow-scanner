@@ -4,7 +4,7 @@ on:
   push:
     branches: [aims-flow-r105-next-v190-stabilization]
     paths:
-      - 'docs/FLOW-v1.9.1-TELEPITES-HU.md'
+      - 'docs/FLOW-v1.9.2-TELEPITES-HU.md'
       - 'admin/**'
       - 'api/**'
       - 'server/aims-tracking/**'
@@ -34,7 +34,7 @@ jobs:
       - name: Build deployment package
         run: |
           set -euo pipefail
-          ROOT="AIMS-FLOW-v1.9.1-SERVER-DEPLOY"
+          ROOT="AIMS-FLOW-v1.9.2-SERVER-DEPLOY"
           rm -rf "$ROOT"
           mkdir -p "$ROOT/admin" "$ROOT/api/aims-tracking"
 
@@ -114,7 +114,7 @@ jobs:
           A közös tracking token többé nem kerül az Android APK-ba.
           EOF
 
-          cp docs/FLOW-v1.9.1-TELEPITES-HU.md "$ROOT/TELEPITES-HU.md"
+          cp docs/FLOW-v1.9.2-TELEPITES-HU.md "$ROOT/TELEPITES-HU.md"
           printf '%s\n' "$GITHUB_SHA" > "$ROOT/SOURCE_COMMIT.txt"
 
           (
@@ -122,16 +122,16 @@ jobs:
             find . -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS.txt
           )
 
-          zip -qr AIMS-FLOW-v1.9.1-SERVER-DEPLOY.zip "$ROOT"
-          sha256sum AIMS-FLOW-v1.9.1-SERVER-DEPLOY.zip | tee AIMS-FLOW-v1.9.1-SERVER-DEPLOY.zip.sha256
+          zip -qr AIMS-FLOW-v1.9.2-SERVER-DEPLOY.zip "$ROOT"
+          sha256sum AIMS-FLOW-v1.9.2-SERVER-DEPLOY.zip | tee AIMS-FLOW-v1.9.2-SERVER-DEPLOY.zip.sha256
 
       - name: Upload server package
         uses: actions/upload-artifact@v4
         with:
-          name: AIMS-FLOW-v1.9.1-SERVER-DEPLOY
+          name: AIMS-FLOW-v1.9.2-SERVER-DEPLOY
           path: |
-            AIMS-FLOW-v1.9.1-SERVER-DEPLOY.zip
-            AIMS-FLOW-v1.9.1-SERVER-DEPLOY.zip.sha256
+            AIMS-FLOW-v1.9.2-SERVER-DEPLOY.zip
+            AIMS-FLOW-v1.9.2-SERVER-DEPLOY.zip.sha256
           if-no-files-found: error
           retention-days: 30
 

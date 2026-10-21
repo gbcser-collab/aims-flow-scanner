@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'device_identity_service.dart';
+import 'flow_local_journal.dart';
 
 class FlowAccountSession {
   const FlowAccountSession({
@@ -167,6 +168,7 @@ class FlowSessionStore {
 
   Future<void> save(FlowAccountSession value) async {
     final prefs = await SharedPreferences.getInstance();
+    await FlowLocalJournal.preserveWorkdayIdentity(prefs);
     final raw = jsonEncode(value.toJson());
 
     if (_runningUnderFlutterTest) {
@@ -198,6 +200,7 @@ class FlowSessionStore {
 
   Future<void> clear() async {
     final prefs = await SharedPreferences.getInstance();
+    await FlowLocalJournal.preserveWorkdayIdentity(prefs);
     if (!_runningUnderFlutterTest) {
       try {
         await _secure.delete(key: _key);
@@ -375,3 +378,4 @@ class FlowAccountService {
     await FlowSessionStore.instance.clear();
   }
 }
+

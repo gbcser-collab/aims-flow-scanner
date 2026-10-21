@@ -145,91 +145,82 @@ $vehicleId=(int)$vehicle['id'];
 $adminId=(int)$vehicle['admin_user_id'];
 $now=gmdate(DateTimeInterface::ATOM);
 
-if ($action==='workday_start') {
+if ($action==='workday_start' || $action==='workday_finish') {
+    $closing=$action==='workday_finish';
     $key=trim((string)($data['workdayId']??''));
     if ($key==='' || strlen($key)>180) aims_json(['ok'=>false,'error'=>'invalid_workday_id'],422);
-    $started=flow_ops_iso((string)($data['startedAt']??''),'invalid_started_at');
-    $startKm=flow_ops_int($data['startKm']??null,0,5000000,'invalid_start_km');
+    $started=isset($data['startedAt']) ? flow_ops_iso((string)$data['startedAt'],'invalid_started_at') : null;
+    $startKm=isset($data['startKm']) ? flow_ops_int($data['startKm'],0,5000000,'invalid_start_km') : null;
     $jobId=isset($data['jobId']) && is_numeric($data['jobId']) ? max(0,(int)$data['jobId']) : 0;
+    $finished=$closing ? flow_ops_iso((string)($data['finishedAt']??''),'invalid_finished_at') : null;
+    $endKm=$closing ? flow_ops_int($data['endKm']??null,0,5000000,'invalid_end_km') : null;
+    if (!$closing && ($started===null || $startKm===null)) {
+        aims_json(['ok'=>false,'error'=>'workday_start_snapshot_required'],422);
+    }
 
     $pdo->beginTransaction();
     try {
-        $existing=$pdo->prepare('SELECT * FROM driver_workdays WHERE workday_key=:key LIMIT 1');
-        $existing->execute([':key'=>$key]);
-        $row=$existing->fetch(PDO::FETCH_ASSOC);
-        if ($row && (int)$row['vehicle_id']!==$vehicleId) {
+        $reject=static function(string $error) use ($pdo): never {
             $pdo->rollBack();
-            aims_json(['ok'=>false,'error'=>'workday_id_conflict'],409);
-        }
-        if (!$row) {
-            $insert=$pdo->prepare('INSERT INTO driver_workdays
-                (workday_key,vehicle_id,start_job_id,started_at,start_km,created_at,updated_at)
-                VALUES (:key,:vehicle,:job,:started,:km,:created,:updated)');
-            $insert->execute([
-                ':key'=>$key,':vehicle'=>$vehicleId,':job'=>$jobId>0?$jobId:null,
-                ':started'=>$started,':km'=>$startKm,':created'=>$now,':updated'=>$now,
-            ]);
-        }
-        $odo=$pdo->prepare('INSERT INTO vehicle_odometer_log (vehicle_id,km,source,captured_at,created_at)
-            VALUES (:vehicle,:km,"workday_start",:captured,:created)');
-        $odo->execute([':vehicle'=>$vehicleId,':km'=>$startKm,':captured'=>$started,':created'=>$now]);
-        $pdo->commit();
-    } catch(Throwable $e) {
-        if ($pdo->inTransaction()) $pdo->rollBack();
-        throw $e;
-    }
-    aims_json(['ok'=>true,'workdayId'=>$key,'startedAt'=>$started]);
-}
-
-if ($action==='workday_finish') {
-    $key=trim((string)($data['workdayId']??''));
-    if ($key==='' || strlen($key)>180) aims_json(['ok'=>false,'error'=>'invalid_workday_id'],422);
-    $finished=flow_ops_iso((string)($data['finishedAt']??''),'invalid_finished_at');
-    $endKm=flow_ops_int($data['endKm']??null,0,5000000,'invalid_end_km');
-
-    $stmt=$pdo->prepare('SELECT * FROM driver_workdays WHERE workday_key=:key AND vehicle_id=:vehicle LIMIT 1');
-    $stmt->execute([':key'=>$key,':vehicle'=>$vehicleId]);
-    $row=$stmt->fetch(PDO::FETCH_ASSOC);
-
-    // A full day can be completed while the phone is offline. If the start
-    // never reached the server, reconstruct it from the immutable local
-    // snapshot attached to the finish retry.
-    if (!$row) {
-        $startKm=isset($data['startKm']) ? flow_ops_int($data['startKm'],0,5000000,'invalid_start_km') : null;
-        $startedAt=trim((string)($data['startedAt']??''));
-        if ($startKm===null || $startedAt==='') {
-            aims_json(['ok'=>false,'error'=>'workday_start_snapshot_required'],409);
-        }
-        $startedAt=flow_ops_iso($startedAt,'invalid_started_at');
-        $jobId=isset($data['jobId']) && is_numeric($data['jobId']) ? max(0,(int)$data['jobId']) : 0;
-        $insert=$pdo->prepare('INSERT INTO driver_workdays
-            (workday_key,vehicle_id,start_job_id,started_at,start_km,created_at,updated_at)
-            VALUES (:key,:vehicle,:job,:started,:km,:created,:updated)');
-        $insert->execute([
-            ':key'=>$key,':vehicle'=>$vehicleId,':job'=>$jobId>0?$jobId:null,
-            ':started'=>$startedAt,':km'=>$startKm,':created'=>$now,':updated'=>$now,
-        ]);
-        $stmt->execute([':key'=>$key,':vehicle'=>$vehicleId]);
+            aims_json(['ok'=>false,'error'=>$error],409);
+        };
+        $stmt=$pdo->prepare('SELECT * FROM driver_workdays WHERE workday_key=:key LIMIT 1');
+        $stmt->execute([':key'=>$key]);
         $row=$stmt->fetch(PDO::FETCH_ASSOC);
-    }
-    if (!$row) aims_json(['ok'=>false,'error'=>'workday_not_found'],404);
-    if ($endKm < (int)$row['start_km']) aims_json(['ok'=>false,'error'=>'end_km_before_start'],409);
-
-    $pdo->beginTransaction();
-    try {
-        $update=$pdo->prepare('UPDATE driver_workdays
-            SET finished_at=:finished,end_km=:km,updated_at=:updated
-            WHERE id=:id');
-        $update->execute([':finished'=>$finished,':km'=>$endKm,':updated'=>$now,':id'=>(int)$row['id']]);
-        $odo=$pdo->prepare('INSERT INTO vehicle_odometer_log (vehicle_id,km,source,captured_at,created_at)
-            VALUES (:vehicle,:km,"workday_finish",:captured,:created)');
-        $odo->execute([':vehicle'=>$vehicleId,':km'=>$endKm,':captured'=>$finished,':created'=>$now]);
+        if ($row && (int)$row['vehicle_id']!==$vehicleId) $reject('workday_id_conflict');
+        if (!$row && ($started===null || $startKm===null)) $reject('workday_start_snapshot_required');
+        if ($row) {
+            if (($started!==null && strtotime($started)!==strtotime((string)$row['started_at'])) ||
+                ($startKm!==null && $startKm!==(int)$row['start_km']) ||
+                (isset($data['jobId']) && $jobId!==(int)($row['start_job_id']??0))) {
+                $reject('workday_start_conflict');
+            }
+        }
+        $effectiveStart=$row ? (string)$row['started_at'] : (string)$started;
+        $effectiveKm=$row ? (int)$row['start_km'] : (int)$startKm;
+        if ($closing) {
+            if ($endKm<$effectiveKm) $reject('end_km_before_start');
+            if (strtotime((string)$finished)<strtotime($effectiveStart)) $reject('finish_before_start');
+            if ($row && $row['finished_at']!==null &&
+                (strtotime((string)$row['finished_at'])!==strtotime((string)$finished) ||
+                 (int)$row['end_km']!==$endKm)) $reject('workday_finish_conflict');
+        }
+        // Reconstruct a completely offline day in the same transaction as its
+        // closure. Invalid closure data must not leave an orphaned open day.
+        if (!$row) {
+            $pdo->prepare('INSERT INTO driver_workdays
+                (workday_key,vehicle_id,start_job_id,started_at,start_km,created_at,updated_at)
+                VALUES (:key,:vehicle,:job,:started,:km,:created,:updated)')->execute([
+                    ':key'=>$key,':vehicle'=>$vehicleId,':job'=>$jobId>0?$jobId:null,
+                    ':started'=>$effectiveStart,':km'=>$effectiveKm,':created'=>$now,':updated'=>$now,
+                ]);
+            $stmt->execute([':key'=>$key]);
+            $row=$stmt->fetch(PDO::FETCH_ASSOC);
+            $pdo->prepare('INSERT INTO vehicle_odometer_log (vehicle_id,km,source,captured_at,created_at)
+                VALUES (:vehicle,:km,"workday_start",:captured,:created)')->execute([
+                    ':vehicle'=>$vehicleId,':km'=>$effectiveKm,':captured'=>$effectiveStart,':created'=>$now,
+                ]);
+        }
+        // Exact replays are successful without adding another odometer event.
+        // A delayed start never reopens a day that has already been closed.
+        if ($closing && $row['finished_at']===null) {
+            $pdo->prepare('UPDATE driver_workdays SET finished_at=:finished,end_km=:km,updated_at=:updated
+                WHERE id=:id')->execute([
+                    ':finished'=>$finished,':km'=>$endKm,':updated'=>$now,':id'=>(int)$row['id'],
+                ]);
+            $pdo->prepare('INSERT INTO vehicle_odometer_log (vehicle_id,km,source,captured_at,created_at)
+                VALUES (:vehicle,:km,"workday_finish",:captured,:created)')->execute([
+                    ':vehicle'=>$vehicleId,':km'=>$endKm,':captured'=>$finished,':created'=>$now,
+                ]);
+        }
         $pdo->commit();
     } catch(Throwable $e) {
         if ($pdo->inTransaction()) $pdo->rollBack();
         throw $e;
     }
-    aims_json(['ok'=>true,'workdayId'=>$key,'finishedAt'=>$finished,'distanceKm'=>$endKm-(int)$row['start_km']]);
+    aims_json($closing
+        ? ['ok'=>true,'workdayId'=>$key,'finishedAt'=>$finished,'distanceKm'=>$endKm-$effectiveKm]
+        : ['ok'=>true,'workdayId'=>$key,'startedAt'=>$effectiveStart]);
 }
 
 if ($action==='odometer') {
@@ -367,3 +358,4 @@ if ($action==='safety_check') {
 }
 
 aims_json(['ok'=>false,'error'=>'unsupported_action'],422);
+

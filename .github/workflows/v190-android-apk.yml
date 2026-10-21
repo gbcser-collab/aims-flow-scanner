@@ -85,7 +85,7 @@ jobs:
           gradle=Path('android/app/build.gradle.kts')
           g=gradle.read_text()
           g=g.replace('applicationId = "hu.logisticaims.aims_flow_scanner"','applicationId = "hu.logisticaims.aims_flow_scanner.v190"')
-          g=g.replace('minSdk = flutter.minSdkVersion','minSdk = 23')
+          g=g.replace('minSdk = flutter.minSdkVersion','minSdk = 24')
           if 'isCoreLibraryDesugaringEnabled = true' not in g:
               g=g.replace('compileOptions {','compileOptions {\n        isCoreLibraryDesugaringEnabled = true',1)
           if 'coreLibraryDesugaring(' not in g:
@@ -145,16 +145,16 @@ jobs:
             --dart-define=AIMS_FIREBASE_ANDROID_APP_ID="$AIMS_FIREBASE_ANDROID_APP_ID" \
             --dart-define=AIMS_FIREBASE_STORAGE_BUCKET="$AIMS_FIREBASE_STORAGE_BUCKET"
           test -s build/app/outputs/flutter-apk/app-debug.apk
-          cp build/app/outputs/flutter-apk/app-debug.apk AIMS-FLOW-v1.9.1-PILOT-build31.apk
-          sha256sum AIMS-FLOW-v1.9.1-PILOT-build31.apk | tee AIMS-FLOW-v1.9.1-PILOT-build31.apk.sha256
+          cp build/app/outputs/flutter-apk/app-debug.apk AIMS-FLOW-v1.9.2-PILOT-build32.apk
+          sha256sum AIMS-FLOW-v1.9.2-PILOT-build32.apk | tee AIMS-FLOW-v1.9.2-PILOT-build32.apk.sha256
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: AIMS-FLOW-v1.9.1-PILOT-build31
+          name: AIMS-FLOW-v1.9.2-PILOT-build32
           path: |
-            AIMS-FLOW-v1.9.1-PILOT-build31.apk
-            AIMS-FLOW-v1.9.1-PILOT-build31.apk.sha256
+            AIMS-FLOW-v1.9.2-PILOT-build32.apk
+            AIMS-FLOW-v1.9.2-PILOT-build32.apk.sha256
           if-no-files-found: error
           retention-days: 30
 

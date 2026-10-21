@@ -270,6 +270,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
   List<FlowServiceAlert> _serviceAlerts = const [];
   FlowSafetyCheckRecord? _lastSafetyCheck;
   int _pendingSafetyCheckCount = 0;
+  int _pendingWorkdayCount = 0;
   DateTime? _lastServiceGuardRefresh;
   bool _safetyPromptOpen = false;
   bool _vehicleQuickCheckOpen = false;
@@ -1545,7 +1546,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
   }) async {
     final session = _flowSession;
     if (session == null || _plate.isEmpty) return;
-    final existing = await _workday.load();
+    final existing = await _workday.load(session: session, plate: _plate);
     if (existing.active) {
       if (mounted) setState(() => _workdayState = existing);
       await _runDailyVehicleQuickCheck();
@@ -1564,6 +1565,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
       jobId: jobId,
       startedAt: acceptedAt,
     );
+    _pendingWorkdayCount = await _workday.pendingCount(session: session);
     await _rememberOdometer(km, source: 'workday_start');
     if (mounted) setState(() => _workdayState = state);
     await _runDailyVehicleQuickCheck();
@@ -1612,6 +1614,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
         plate: _plate,
         endKm: km,
       );
+      _pendingWorkdayCount = await _workday.pendingCount(session: session);
       await _rememberOdometer(km, source: 'workday_finish');
       if (mounted) setState(() => _workdayState = state);
       unawaited(
@@ -1714,12 +1717,12 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                                 : 'A következő elfogadott munkával automatikusan indul.',
                             style: const TextStyle(color: Colors.white),
                           ),
-                          if (active && _workdayState.syncPending)
-                            const Padding(
+                          if (_pendingWorkdayCount > 0 || _workdayState.syncPending)
+                            Padding(
                               padding: EdgeInsets.only(top: 3),
                               child: Text(
-                                'Offline mentve · szinkronra vár',
-                                style: TextStyle(
+                                '${_pendingWorkdayCount > 0 ? _pendingWorkdayCount : 1} munkanap helyben mentve · küldésre vár',
+                                style: const TextStyle(
                                   color: Colors.white,
                                   fontSize: 11,
                                   fontWeight: FontWeight.w800,
@@ -1777,7 +1780,9 @@ class _DriverShellScreenState extends State<DriverShellScreen>
 
   Future<void> _refreshFlowExtensions() async {
     _flowSession ??= await FlowSessionStore.instance.load();
-    _workdayState = await _workday.load();
+    _workdayState = _flowSession == null
+        ? const FlowWorkdayState(active: false)
+        : await _workday.load(session: _flowSession);
     final session = _flowSession;
     if (session != null && _plate.isNotEmpty) {
       _workdayState = await _workday.flushPending(
@@ -1785,6 +1790,8 @@ class _DriverShellScreenState extends State<DriverShellScreen>
         plate: _plate,
       );
     }
+    _pendingWorkdayCount = session == null
+        ? 0 : await _workday.pendingCount(session: session);
     await _refreshServiceGuard();
     if (session != null) {
       try {
@@ -2370,7 +2377,9 @@ class _DriverShellScreenState extends State<DriverShellScreen>
     final prefs = await SharedPreferences.getInstance();
     final role = (prefs.getString('aims_user_role') ?? 'driver').trim();
     _flowSession = await FlowSessionStore.instance.load();
-    _workdayState = await _workday.load();
+    _workdayState = _flowSession == null
+        ? const FlowWorkdayState(active: false)
+        : await _workday.load(session: _flowSession);
     var plate = widget.initialPlate.trim().isNotEmpty
         ? widget.initialPlate.trim().toUpperCase()
         : (prefs.getString(_prefsPlate) ?? '').trim().toUpperCase();
