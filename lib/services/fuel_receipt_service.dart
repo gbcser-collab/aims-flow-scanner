@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:http/http.dart' as http;
 
+import 'flow_account_service.dart';
 import 'fuel_receipt_parser.dart';
 
 class FuelReceiptService {
@@ -10,9 +11,20 @@ class FuelReceiptService {
 
   static const _endpoint = String.fromEnvironment(
     'AIMS_FUEL_RECEIPT_ENDPOINT',
-    defaultValue: 'https://logistic-aims.hu/api/aims-tracking/fuel_receipt.php',
+    defaultValue:
+        'https://logistic-aims.hu/api/aims-tracking/session/fuel_receipt.php',
   );
-  static const _token = String.fromEnvironment('AIMS_TRACKING_TOKEN', defaultValue: '');
+
+  Future<Map<String, String>> _headers() async {
+    final session = await FlowSessionStore.instance.load();
+    if (session == null || session.isExpired) {
+      throw StateError('A FLOW munkamenet lejárt. Lépj be újra.');
+    }
+    return {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ${session.sessionToken}',
+    };
+  }
 
   Future<int> send({
     required String imagePath,
@@ -20,23 +32,19 @@ class FuelReceiptService {
     required String plate,
     required FuelReceiptData data,
   }) async {
-    if (_token.trim().isEmpty) {
-      throw StateError('A céges feltöltési kulcs nincs beállítva.');
-    }
     final file = File(imagePath);
-    if (!await file.exists()) throw StateError('A bizonylat képe nem található.');
+    if (!await file.exists()) {
+      throw StateError('A bizonylat képe nem található.');
+    }
 
     final bytes = await file.readAsBytes();
     final response = await http
         .post(
           Uri.parse(_endpoint),
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer $_token',
-          },
+          headers: await _headers(),
           body: jsonEncode({
             'deviceId': deviceId,
-            'plate': plate,
+            'plate': plate.trim().toUpperCase(),
             'capturedAt': DateTime.now().toUtc().toIso8601String(),
             'station': data.station,
             'totalAmount': data.totalAmount,
@@ -53,13 +61,15 @@ class FuelReceiptService {
         )
         .timeout(const Duration(seconds: 25));
 
-    Map<String, dynamic> body = {};
+    Map<String, dynamic> body = const {};
     try {
       final decoded = jsonDecode(response.body);
       if (decoded is Map) body = Map<String, dynamic>.from(decoded);
     } catch (_) {}
 
-    if (response.statusCode < 200 || response.statusCode >= 300) {
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        body['ok'] != true) {
       final code = body['error']?.toString() ?? 'HTTP ${response.statusCode}';
       throw StateError('Tankolási bizonylat feltöltési hiba: $code');
     }
