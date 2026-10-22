@@ -140,7 +140,7 @@ class SmartDocumentRepository {
     final prefs = await SharedPreferences.getInstance();
     final primaryRaw = prefs.getString(_prefsKey);
     final backupRaw = prefs.getString(_backupPrefsKey);
-    if (primaryRaw == null && backupRaw == null) return const [];
+    if (primaryRaw == null && backupRaw == null) return <PendingSmartDocument>[];
     final primary = await _decodeIndex(primaryRaw);
     if (primary != null) return primary;
 

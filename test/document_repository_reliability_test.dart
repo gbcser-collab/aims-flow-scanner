@@ -57,6 +57,15 @@ void main() {
     expect(await File(doc.imagePath).exists(), isTrue);
     expect((await scans.loadAll()).single.id, doc.id);
   });
+  test('first scanned smart document can be saved into a fresh installation', () async {
+    final source = File('${root.path}/source.jpg');
+    await source.writeAsString('retained-image-bytes');
+    final repo = SmartDocumentRepository(directory: () async => root);
+    final doc = await repo.savePending(sourceImagePath: source.path,
+      type: SmartDocumentType.values.first, rawText: 'first', confidence: 1, plate: 'ABC123');
+    expect((await repo.pendingForSync()).single.id, doc.id);
+    expect(await File(doc.imagePath).readAsString(), 'retained-image-bytes');
+  });
   test('parallel smart document updates keep all pending records, even without images', () async {
     const repo = SmartDocumentRepository();
     await Future.wait(List.generate(20, (i) => repo.update(smart('$i'))));
