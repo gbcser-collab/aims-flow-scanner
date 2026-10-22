@@ -1,5 +1,5 @@
 name: aims_flow_scanner
-version: 1.9.4+34
+version: 1.9.5+35
 publish_to: 'none'
 
 # Stabilization target: FLOW ID + PIN, revocable device sessions,

@@ -7,9 +7,18 @@ on:
       - 'lib/**'
       - 'native/**'
       - 'test/**'
+      - 'ci/*android_signing.py'
       - 'pubspec.yaml'
       - '.github/workflows/v190-android-apk.yml'
   workflow_dispatch:
+    inputs:
+      require_stable_signing:
+        description: Require the configured permanent signing key
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
 
 concurrency:
   group: flow-v190-apk-${{ github.ref }}
@@ -130,8 +139,25 @@ jobs:
           grep -q "aims-flow-auth-v2.php" lib/services/flow_account_service.dart
           grep -q "api/aims-tracking/session" lib/services/driver_api_service.dart
 
+      - name: Signing preflight regression tests
+        run: python3 ci/test_android_signing.py
+
+      - name: Prepare and verify pilot signing key
+        id: signing
+        env:
+          AIMS_ANDROID_KEYSTORE_BASE64: ${{ secrets.AIMS_ANDROID_KEYSTORE_BASE64 }}
+          AIMS_ANDROID_STORE_PASSWORD: ${{ secrets.AIMS_ANDROID_STORE_PASSWORD }}
+          AIMS_ANDROID_KEY_ALIAS: ${{ secrets.AIMS_ANDROID_KEY_ALIAS }}
+          AIMS_ANDROID_KEY_PASSWORD: ${{ secrets.AIMS_ANDROID_KEY_PASSWORD }}
+          AIMS_ANDROID_CERT_SHA256: ${{ secrets.AIMS_ANDROID_CERT_SHA256 }}
+          AIMS_REQUIRE_STABLE_SIGNING: ${{ (vars.AIMS_REQUIRE_STABLE_SIGNING == 'true' || inputs.require_stable_signing == true) && 'true' || 'false' }}
+        run: python3 ci/prepare_android_signing.py
+
       - name: Build APK
         env:
+          AIMS_ANDROID_STORE_PASSWORD: ${{ secrets.AIMS_ANDROID_STORE_PASSWORD }}
+          AIMS_ANDROID_KEY_ALIAS: ${{ secrets.AIMS_ANDROID_KEY_ALIAS }}
+          AIMS_ANDROID_KEY_PASSWORD: ${{ secrets.AIMS_ANDROID_KEY_PASSWORD }}
           AIMS_FIREBASE_API_KEY: ${{ secrets.AIMS_FIREBASE_API_KEY }}
           AIMS_FIREBASE_PROJECT_ID: ${{ secrets.AIMS_FIREBASE_PROJECT_ID }}
           AIMS_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.AIMS_FIREBASE_MESSAGING_SENDER_ID }}
@@ -145,16 +171,32 @@ jobs:
             --dart-define=AIMS_FIREBASE_ANDROID_APP_ID="$AIMS_FIREBASE_ANDROID_APP_ID" \
             --dart-define=AIMS_FIREBASE_STORAGE_BUCKET="$AIMS_FIREBASE_STORAGE_BUCKET"
           test -s build/app/outputs/flutter-apk/app-debug.apk
-          cp build/app/outputs/flutter-apk/app-debug.apk AIMS-FLOW-v1.9.4-PILOT-build34.apk
-          sha256sum AIMS-FLOW-v1.9.4-PILOT-build34.apk | tee AIMS-FLOW-v1.9.4-PILOT-build34.apk.sha256
+          cp build/app/outputs/flutter-apk/app-debug.apk AIMS-FLOW-v1.9.5-PILOT-build35.apk
+          sha256sum AIMS-FLOW-v1.9.5-PILOT-build35.apk | tee AIMS-FLOW-v1.9.5-PILOT-build35.apk.sha256
+
+      - name: Verify APK signing and write public receipt
+        env:
+          AIMS_SIGNING_MODE: ${{ steps.signing.outputs.mode }}
+          AIMS_ANDROID_CERT_SHA256: ${{ secrets.AIMS_ANDROID_CERT_SHA256 }}
+        run: python3 ci/verify_android_signing.py AIMS-FLOW-v1.9.5-PILOT-build35.apk AIMS-FLOW-v1.9.5-PILOT-build35.signing.json
+
+      - name: Remove private signing key
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          (Path(os.environ['RUNNER_TEMP']) / 'aims-flow-signing.keystore').unlink(missing_ok=True)
+          PY
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: AIMS-FLOW-v1.9.4-PILOT-build34
+          name: AIMS-FLOW-v1.9.5-PILOT-build35
           path: |
-            AIMS-FLOW-v1.9.4-PILOT-build34.apk
-            AIMS-FLOW-v1.9.4-PILOT-build34.apk.sha256
+            AIMS-FLOW-v1.9.5-PILOT-build35.apk
+            AIMS-FLOW-v1.9.5-PILOT-build35.apk.sha256
+            AIMS-FLOW-v1.9.5-PILOT-build35.signing.json
           if-no-files-found: error
           retention-days: 30
 

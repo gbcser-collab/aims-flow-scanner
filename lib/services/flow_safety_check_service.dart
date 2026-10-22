@@ -6,6 +6,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'flow_account_service.dart';
+import 'flow_queue_summary.dart';
 import 'flow_operations_service.dart';
 import 'flow_local_journal.dart';
 import 'flow_workday_service.dart';
@@ -163,6 +164,11 @@ class FlowSafetyCheckService {
     return records.where((r) => !r.synced &&
       (session == null || _belongs(r, session, vehicle: false))).length;
   });
+
+  Future<FlowQueueSummary> queueSummary(FlowAccountSession session) =>
+      FlowLocalJournal.run(() async => FlowQueueSummary.fromRecords(
+        (await _loadRecords()).where((r) => !r.synced).map((r) => r.toJson()),
+        session, timeKey: 'createdAt'));
 
   Future<int> unidentifiedPendingCount() => FlowLocalJournal.run(() async {
     final records = await _loadRecords();

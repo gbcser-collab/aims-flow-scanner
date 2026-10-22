@@ -10,7 +10,10 @@ import 'driver_shell_screen.dart';
 import 'flow_driver_onboarding_screen.dart';
 
 class FlowLoginScreen extends StatefulWidget {
-  const FlowLoginScreen({super.key});
+  const FlowLoginScreen({super.key, this.account = const FlowAccountService(), this.sessionStore});
+
+  final FlowAccountService account;
+  final FlowSessionStore? sessionStore;
 
   @override
   State<FlowLoginScreen> createState() => _FlowLoginScreenState();
@@ -19,10 +22,12 @@ class FlowLoginScreen extends StatefulWidget {
 class _FlowLoginScreenState extends State<FlowLoginScreen> {
   final _flowId = TextEditingController();
   final _pin = TextEditingController();
-  final _account = const FlowAccountService();
+  FlowAccountService get _account => widget.account;
+  FlowSessionStore get _store => widget.sessionStore ?? FlowSessionStore.instance;
 
   bool _busy = false;
   bool _resumeBusy = true;
+  bool _canRetryResume = false;
   bool _obscure = true;
   String? _error;
 
@@ -40,20 +45,34 @@ class _FlowLoginScreenState extends State<FlowLoginScreen> {
   }
 
   Future<void> _resumeSession() async {
+    if (!mounted) return;
+    setState(() { _resumeBusy = true; _canRetryResume = false; _error = null; });
+    FlowAccountSession? saved;
     try {
-      final saved = await FlowSessionStore.instance.load();
+      saved = await _store.load();
       if (saved == null) return;
       final validated = await _account.validateSession(saved);
       if (!mounted) return;
       await _openDriver(validated);
+    } on FlowSessionRejected catch (error) {
+      await _store.clearIfCurrent(saved);
+      if (mounted) setState(() => _error = error.message.toString());
+    } on FlowSessionChanged {
+      if (mounted) setState(() => _error = const FlowSessionChanged().toString());
     } catch (_) {
-      await FlowSessionStore.instance.clear();
+      // Network/storage failure is not proof that a valid session was revoked.
+      if (mounted) setState(() {
+        _canRetryResume = true;
+        _error = 'A mentett belépés most nem ellenőrizhető. Ellenőrizd a kapcsolatot, majd próbáld újra.';
+      });
     } finally {
       if (mounted) setState(() => _resumeBusy = false);
     }
   }
 
   Future<void> _openDriver(FlowAccountSession session) async {
+    await _store.revisionFor(session);
+    if (!mounted) return;
     var current = session;
     if (!current.onboardingComplete ||
         current.driverName.isEmpty ||
@@ -68,7 +87,9 @@ class _FlowLoginScreenState extends State<FlowLoginScreen> {
       current = updated;
     }
 
-    await FlowSessionStore.instance.save(current);
+    // Login/onboarding already saved through the compare-and-replace store.
+    // Never re-save a stale navigation result after logout or account switch.
+    await _store.revisionFor(current);
     if (!mounted) return;
     await Navigator.of(context).pushReplacement(
       MaterialPageRoute(
@@ -280,6 +301,9 @@ class _FlowLoginScreenState extends State<FlowLoginScreen> {
                                 ),
                               ),
                               _errorBox(theme, dark),
+                              if (_canRetryResume)
+                                TextButton(onPressed: _resumeBusy || _busy ? null : _resumeSession,
+                                  child: const Text('Mentett belépés újraellenőrzése')),
                               const SizedBox(height: 18),
                               FilledButton.icon(
                                 key: const Key('flow-login-submit'),
@@ -334,3 +358,4 @@ class _FlowLoginScreenState extends State<FlowLoginScreen> {
     );
   }
 }
+

@@ -17,6 +17,8 @@ import '../services/aims_voice_announcer_service.dart';
 import '../services/driver_api_service.dart';
 import '../services/driver_push_service.dart';
 import '../services/flow_account_service.dart';
+import '../services/flow_queue_summary.dart';
+import '../services/smart_document_repository.dart';
 import '../services/flow_operations_service.dart';
 import '../services/flow_safety_check_service.dart';
 import '../services/flow_workday_service.dart';
@@ -27,6 +29,7 @@ import '../services/sync_coordinator.dart';
 import '../services/vehicle_tracking_service.dart';
 import '../widgets/aims_flow_logo.dart';
 import 'flow_login_screen.dart';
+import 'flow_sync_details_screen.dart';
 import 'flow_safety_check_screen.dart';
 import 'invoice_scanner_screen.dart';
 import 'scanner_screen.dart';
@@ -4302,7 +4305,8 @@ class _DriverShellScreenState extends State<DriverShellScreen>
         0,
         (sum, items) => sum + items.length,
       ) +
-      _sync.pendingCount;
+      _sync.pendingCount + _pendingWorkdayCount +
+      _pendingSafetyCheckCount + _unidentifiedSafetyCount;
 
   String _ageLabel(DateTime? value) {
     if (value == null) return '—';
@@ -4314,21 +4318,122 @@ class _DriverShellScreenState extends State<DriverShellScreen>
   }
 
   Future<void> _refreshDriverHealth() async {
-    if (_healthRefreshBusy || _plate.isEmpty) return;
+    if (_healthRefreshBusy || _plate.isEmpty || !mounted) return;
+    final session = await FlowSessionStore.instance.load();
+    if (session == null || session.sessionToken != _flowSession?.sessionToken) {
+      throw const FlowSessionChanged();
+    }
+    if (!mounted || _healthRefreshBusy) return;
     setState(() => _healthRefreshBusy = true);
+    var failed = false;
+    Future<void> attempt(Future<void> Function() action) async {
+      try {
+        final current = await FlowSessionStore.instance.load();
+        if (!mounted || current?.sessionToken != session.sessionToken) {
+          throw const FlowSessionChanged();
+        }
+        await action();
+      } catch (_) { failed = true; }
+    }
     try {
-      await _tracking.recover();
-      final tracking = await _tracking.currentStatus();
-      if (mounted) setState(() => _trackingStatus = tracking);
-      await _refreshJobs(showLoading: false);
-      await _refreshOfficeMessages(silent: true);
-      await _refreshRestMode(silent: true);
-      await _sync.syncNow();
-    } catch (_) {
-      // Every subsystem has its own offline queue/retry path.
+      // A GPS or job failure must not block the independent upload journals.
+      await attempt(() async { await _tracking.recover(); await _tracking.syncPending(); });
+      await attempt(() => _flushPendingStopActions(refreshAfter: false));
+      await attempt(_flushPendingSignals);
+      await attempt(_flushPendingRegistrationPoints);
+      await attempt(_flushPendingOfficeMessages);
+      await attempt(() async {
+        _workdayState = await _workday.flushPending(session: session, plate: session.plate);
+        _pendingWorkdayCount = await _workday.pendingCount(session: session);
+      });
+      await attempt(() => _safetyCheck.flushPending(session: session));
+      await attempt(_refreshSafetyStatus);
+      await attempt(_sync.syncNow);
+      await attempt(() => _refreshJobs(showLoading: false));
+      await attempt(() => _refreshOfficeMessages(silent: true));
+      await attempt(() => _refreshRestMode(silent: true));
+      await attempt(() async {
+        final status = await _tracking.currentStatus();
+        if (mounted) setState(() => _trackingStatus = status);
+      });
     } finally {
       if (mounted) setState(() => _healthRefreshBusy = false);
     }
+    if (failed) throw StateError('Nem minden kapcsolat állt helyre.');
+  }
+
+  Future<List<FlowSyncRow>> _loadSyncDetails() async {
+    final session = await FlowSessionStore.instance.load();
+    if (session == null || session.sessionToken != _flowSession?.sessionToken) {
+      throw const FlowSessionChanged();
+    }
+    final rows = <FlowSyncRow>[];
+    Future<void> queue(String title, Future<FlowQueueSummary> Function() read) async {
+      try {
+        final summary = await read();
+        rows.add(FlowSyncRow(title: title, pending: summary.pending, detail: [
+          _l('Küldésre vár a jelenlegi sofőrhöz és járműhöz.',
+            'Pending for the current driver and vehicle.',
+            'Ausstehend für den aktuellen Fahrer und das aktuelle Fahrzeug.'),
+          if (summary.oldest != null)
+            '${_l('Legrégebbi', 'Oldest', 'Ältester Eintrag')}: ${_ageLabel(summary.oldest)}',
+          if (summary.unidentified > 0)
+            '${_l('Azonosításra vár', 'Unidentified', 'Nicht zugeordnet')}: ${summary.unidentified}',
+          if (summary.other > 0)
+            '${_l('Másik sofőr vagy jármű', 'Other driver or vehicle', 'Anderer Fahrer oder anderes Fahrzeug')}: ${summary.other}',
+          if (summary.damaged > 0)
+            '${_l('Hibásként megőrizve', 'Retained for review', 'Zur Prüfung aufbewahrt')}: ${summary.damaged}',
+        ].join('\n')));
+      } catch (_) {
+        rows.add(FlowSyncRow(title: title, detail: _l(
+          'A helyi napló nem olvasható. Irodai segítség szükséges.',
+          'Local journal unavailable. Contact the office.',
+          'Lokales Protokoll nicht lesbar. Bitte das Büro kontaktieren.')));
+      }
+    }
+    await queue('GPS', () => _tracking.queueSummary(session));
+    await queue(_l('Munkanapok', 'Workdays', 'Arbeitstage'), () => _workday.queueSummary(session));
+    await queue('Safety Check', () => _safetyCheck.queueSummary(session));
+    final vehicleDetail = _l('A jelenlegi jármű helyi küldési sora.',
+      'Local send queue for the current vehicle.', 'Lokale Sendeliste des aktuellen Fahrzeugs.');
+    rows.addAll([
+      FlowSyncRow(title: _l('Fuvarműveletek', 'Job actions', 'Auftragsaktionen'),
+        pending: _pendingStopActions.values.fold<int>(0, (n, items) => n + items.length), detail: vehicleDetail),
+      FlowSyncRow(title: _l('Sofőrjelzések', 'Driver signals', 'Fahrermeldungen'),
+        pending: _pendingSignals.length, detail: vehicleDetail),
+      FlowSyncRow(title: _l('Regisztrációs pontok', 'Registration points', 'Registrierungspunkte'),
+        pending: _pendingRegistrationPoints.length, detail: vehicleDetail),
+      FlowSyncRow(title: _l('Irodai üzenetek', 'Office messages', 'Büronachrichten'),
+        pending: _pendingOfficeMessages.length, detail: vehicleDetail),
+    ]);
+    final documentsTitle = _l('Dokumentumok a telefonon', 'Documents on this phone', 'Dokumente auf diesem Telefon');
+    try {
+      final cmr = await _scanRepository.pendingForSync();
+      final smart = await const SmartDocumentRepository().pendingForSync();
+      final approval = cmr.where((d) => d.syncState == CmrSyncState.uploaded).length;
+      rows.add(FlowSyncRow(title: documentsTitle,
+        pending: cmr.length - approval + smart.length, detail: [
+          _l('Helyben elérhető, feltöltésre váró dokumentumok.',
+            'Locally available documents waiting for upload.',
+            'Lokal verfügbare Dokumente zum Hochladen.'),
+          '${_l('CMR jóváhagyásra vár', 'CMR awaiting approval', 'CMR wartet auf Freigabe')}: $approval',
+          if (_sync.lastError != null)
+            _l('Az utolsó dokumentumszinkron hibát jelzett. Ellenőrizd a kapcsolatot és a dokumentumot.',
+              'The last document sync reported an error. Check the connection and document.',
+              'Letzte Dokumentsynchronisierung mit Fehler. Verbindung und Dokument prüfen.'),
+        ].join('\n')));
+    } catch (_) {
+      rows.add(FlowSyncRow(title: documentsTitle, detail: _l('Az állapot nem olvasható.',
+        'Status unavailable.', 'Status nicht verfügbar.')));
+    }
+    final current = await FlowSessionStore.instance.load();
+    if (current?.sessionToken != session.sessionToken) throw const FlowSessionChanged();
+    return rows;
+  }
+
+  Future<void> _openSyncDetails() async {
+    await Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) =>
+      FlowSyncDetailsScreen(load: _loadSyncDetails, retry: _refreshDriverHealth, translate: _l)));
   }
 
   Widget _healthPill({
@@ -4352,7 +4457,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
             Text(
               '$label ',
               style: TextStyle(
-                color: Colors.white,
+                color: Theme.of(context).colorScheme.onSurface,
                 fontSize: 9,
                 fontWeight: FontWeight.w800,
                 letterSpacing: .35,
@@ -4361,7 +4466,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
             Text(
               value,
               style: TextStyle(
-                color: Colors.white,
+                color: Theme.of(context).colorScheme.onSurface,
                 fontSize: 10,
                 fontWeight: FontWeight.w900,
               ),
@@ -4400,9 +4505,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
           return Material(
             color: _isDark ? const Color(0xFF171A1D) : const Color(0xFFF8FBFD),
             child: InkWell(
-              onTap: _healthRefreshBusy
-                  ? null
-                  : () => unawaited(_refreshDriverHealth()),
+              onTap: () => unawaited(_openSyncDetails()),
               child: Container(
                 width: double.infinity,
                 padding: const EdgeInsets.fromLTRB(12, 7, 12, 8),
@@ -4451,7 +4554,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
                       const SizedBox(width: 7),
                       _healthPill(
                         icon: Icons.sync_rounded,
-                        label: _l('UTOLSÓ', 'LAST', 'LETZTE'),
+                        label: _l('FUVAR', 'JOBS', 'AUFTRAG'),
                         value: _ageLabel(_lastJobSyncAt),
                         color: Theme.of(context).colorScheme.onSurfaceVariant,
                       ),

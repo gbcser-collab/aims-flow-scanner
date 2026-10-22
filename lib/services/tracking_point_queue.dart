@@ -46,6 +46,9 @@ class TrackingPointQueue {
   Future<List<String>> snapshot() => _locked(() async =>
       _read(await _file('aims_tracking_queue.jsonl')));
 
+  Future<int> quarantinedCount() => _locked(() async =>
+      (await _read(await _file('aims_tracking_queue_corrupt.jsonl'))).length);
+
   Future<void> append(String line) => _locked(() async {
     if (line.contains('\n') || line.contains('\r')) {
       throw const FormatException('A GPS-bejegyzés csak egy sor lehet.');

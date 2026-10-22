@@ -12,6 +12,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'country_code_service.dart';
 import 'device_identity_service.dart';
 import 'flow_account_service.dart';
+import 'flow_queue_summary.dart';
 import 'flow_local_journal.dart';
 import 'flow_multipart_transport.dart';
 import 'tracking_point_queue.dart';
@@ -157,6 +158,10 @@ class VehicleTrackingService {
     await _ensureQueueDepthLoaded();
     return _status;
   }
+
+  Future<FlowQueueSummary> queueSummary(FlowAccountSession session) async =>
+      FlowQueueSummary.fromRecords((await _queue.snapshot()).map(TrackingQueueSync.decode),
+        session, timeKey: 'timestamp', archived: await _queue.quarantinedCount());
 
   Future<Position?> currentPositionForAction() async {
     await _loadIdentity();

@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'flow_account_service.dart';
+import 'flow_queue_summary.dart';
 import 'flow_operations_service.dart';
 import 'flow_local_journal.dart';
 import 'vehicle_tracking_service.dart';
@@ -160,6 +161,15 @@ class FlowWorkdayService {
       final data = await _read();
       return (data['pending'] as List).where((item) =>
           item is Map && item['flowId'] == session.flowId).length;
+    });
+  }
+
+  Future<FlowQueueSummary> queueSummary(FlowAccountSession session) async {
+    await _prepare();
+    return FlowLocalJournal.run(() async {
+      final data = await _read();
+      return FlowQueueSummary.fromRecords((data['pending'] as List)
+        .map((item) => item is Map ? item : null), session, timeKey: 'startedAt');
     });
   }
 
