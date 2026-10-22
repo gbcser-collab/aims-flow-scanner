@@ -5,6 +5,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'smart_document_classifier.dart';
+import 'local_serial_executor.dart';
 
 enum SmartDocumentSyncState { pending, uploaded, failed }
 
@@ -108,48 +109,55 @@ class PendingSmartDocument {
 }
 
 class SmartDocumentRepository {
-  const SmartDocumentRepository();
+  const SmartDocumentRepository({this.directory});
+  final Future<Directory> Function()? directory;
+  static final _serial = LocalSerialExecutor();
 
   static const _prefsKey = 'aims_pending_smart_documents_v1';
   static const _backupPrefsKey = 'aims_pending_smart_documents_v1_backup';
 
   Future<List<PendingSmartDocument>?> _decodeIndex(String? raw) async {
-    if (raw == null || raw.trim().isEmpty) return const [];
+    if (raw == null || raw.trim().isEmpty) return null;
     try {
       final decoded = jsonDecode(raw);
       if (decoded is! List) return null;
-      final documents = decoded
-          .map(PendingSmartDocument.fromJson)
-          .whereType<PendingSmartDocument>()
-          .toList();
-      final existing = <PendingSmartDocument>[];
-      for (final document in documents) {
-        if (await File(document.imagePath).exists()) {
-          existing.add(document);
-        }
+      final documents = <PendingSmartDocument>[];
+      for (final value in decoded) {
+        final document = PendingSmartDocument.fromJson(value);
+        if (document == null) return null;
+        documents.add(document);
       }
-      existing.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-      return existing;
+      documents.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      return documents;
     } catch (_) {
       return null;
     }
   }
 
-  Future<List<PendingSmartDocument>> loadAll() async {
+  Future<List<PendingSmartDocument>> loadAll() => _serial.run(_loadAll);
+
+  Future<List<PendingSmartDocument>> _loadAll() async {
     final prefs = await SharedPreferences.getInstance();
     final primaryRaw = prefs.getString(_prefsKey);
+    final backupRaw = prefs.getString(_backupPrefsKey);
+    if (primaryRaw == null && backupRaw == null) return const [];
     final primary = await _decodeIndex(primaryRaw);
     if (primary != null) return primary;
 
-    final backupRaw = prefs.getString(_backupPrefsKey);
     final backup = await _decodeIndex(backupRaw);
     if (backup != null) {
       if (backupRaw != null && backupRaw.trim().isNotEmpty) {
-        await prefs.setString(_prefsKey, backupRaw);
+        // Preserve the damaged primary before recovery for manual inspection.
+        if (primaryRaw != null && !await prefs.setString('${_prefsKey}_damaged', primaryRaw)) {
+          throw const FileSystemException('A hibás dokumentumnapló mentése nem sikerült.');
+        }
+        if (!await prefs.setString(_prefsKey, backupRaw)) {
+          throw const FileSystemException('A dokumentumnapló helyreállítása nem sikerült.');
+        }
       }
       return backup;
     }
-    return const [];
+    throw const FileSystemException('A dokumentumnapló sérült. Az eredeti adat megmaradt; kérj irodai segítséget.');
   }
 
   Future<List<PendingSmartDocument>> pendingForSync() async {
@@ -165,10 +173,10 @@ class SmartDocumentRepository {
     required String rawText,
     required double confidence,
     required String plate,
-  }) async {
+  }) => _serial.run(() async {
     final now = DateTime.now().toUtc();
     final id = 'smart_${now.microsecondsSinceEpoch}';
-    final root = await getApplicationDocumentsDirectory();
+    final root = await (directory ?? getApplicationDocumentsDirectory)();
     final dir = Directory('${root.path}/aims_smart_documents');
     if (!await dir.exists()) await dir.create(recursive: true);
     final target = '${dir.path}/$id.jpg';
@@ -187,14 +195,14 @@ class SmartDocumentRepository {
       createdAt: now,
       plate: plate.trim().toUpperCase(),
     );
-    final all = await loadAll();
+    final all = await _loadAll();
     all.insert(0, item);
     await _writeAll(all);
     return item;
-  }
+  });
 
-  Future<void> update(PendingSmartDocument document) async {
-    final all = await loadAll();
+  Future<void> update(PendingSmartDocument document) => _serial.run(() async {
+    final all = await _loadAll();
     final index = all.indexWhere((item) => item.id == document.id);
     if (index >= 0) {
       all[index] = document;
@@ -203,7 +211,7 @@ class SmartDocumentRepository {
     }
     all.sort((a, b) => b.createdAt.compareTo(a.createdAt));
     await _writeAll(all);
-  }
+  });
 
   Future<void> _writeAll(List<PendingSmartDocument> documents) async {
     final prefs = await SharedPreferences.getInstance();
@@ -211,7 +219,9 @@ class SmartDocumentRepository {
         jsonEncode([for (final document in documents) document.toJson()]);
     final current = prefs.getString(_prefsKey);
     if (current != null && current.trim().isNotEmpty) {
-      await prefs.setString(_backupPrefsKey, current);
+      if (!await prefs.setString(_backupPrefsKey, current)) {
+        throw const FileSystemException('A dokumentumnapló biztonsági mentése nem sikerült.');
+      }
     }
     final saved = await prefs.setString(_prefsKey, payload);
     if (!saved) {

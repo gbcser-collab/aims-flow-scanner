@@ -168,6 +168,32 @@ void main() {
     expect(await queue.snapshot(), isEmpty);
   });
 
+  test('interrupted append replays its durable journal without losing older points', () async {
+    await queue.append(point('old'));
+    await File('${root.path}/aims_tracking_queue.jsonl').writeAsString('partial', mode: FileMode.append);
+    await File('${root.path}/aims_tracking_append.pending').writeAsString(point('recovered'));
+    final restarted = TrackingPointQueue(directory: () async => root);
+    expect(await restarted.snapshot(), [point('old'), 'partial', point('recovered')]);
+    expect(await File('${root.path}/aims_tracking_append.pending').exists(), isFalse);
+    await TrackingQueueSync(queue: restarted, loadSession: () async => account('123456'),
+      send: (_, __) async => accepted()).run();
+    expect(await restarted.snapshot(), isEmpty);
+    expect(await restarted.quarantinedCount(), 1);
+  });
+
+  test('append writes only the new record regardless of offline backlog size', () async {
+    await File('${root.path}/aims_tracking_queue.jsonl').writeAsString(
+      List.generate(20000, (i) => point('$i')).join('\n'));
+    final bytes = <int>[];
+    final measured = TrackingPointQueue(directory: () async => root,
+      beforeReplace: (file) async { bytes.add(await file.length()); });
+    await measured.append(point('new'));
+    expect(bytes.single, utf8.encode(point('new')).length);
+    expect(await measured.count(), 20001);
+    await measured.append(point('next'));
+    expect(await measured.count(), 20002);
+  });
+
   test('known 32 bit collision now produces distinct stable point IDs', () {
     String idFor(int i) => RoamingResilience.pointId(deviceId: 'SIP-115-device',
       timestamp: DateTime.utc(2026, 9, 20, 8).add(Duration(seconds: i * 15)),

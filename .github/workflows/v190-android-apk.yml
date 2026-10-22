@@ -86,10 +86,10 @@ jobs:
           text=text.replace('android:label="aims_flow_scanner"','android:label="AIMS FLOW v1.9 Pilot"')
           manifest.write_text(text)
 
-          native=Path('native/android/MainActivity.kt')
-          target=Path('android/app/src/main/kotlin/hu/logisticaims/aims_flow_scanner/MainActivity.kt')
-          target.parent.mkdir(parents=True,exist_ok=True)
-          shutil.copy2(native,target)
+          target=Path('android/app/src/main/kotlin/hu/logisticaims/aims_flow_scanner')
+          target.mkdir(parents=True,exist_ok=True)
+          for native in Path('native/android').glob('*.kt'):
+              shutil.copy2(native,target / native.name)
 
           gradle=Path('android/app/build.gradle.kts')
           g=gradle.read_text()
@@ -166,21 +166,21 @@ jobs:
           AIMS_FIREBASE_ANDROID_APP_ID: ${{ secrets.AIMS_FIREBASE_ANDROID_APP_ID }}
           AIMS_FIREBASE_STORAGE_BUCKET: ${{ secrets.AIMS_FIREBASE_STORAGE_BUCKET }}
         run: |
-          flutter build apk --debug \
+          flutter build apk --release \
             --dart-define=AIMS_FIREBASE_API_KEY="$AIMS_FIREBASE_API_KEY" \
             --dart-define=AIMS_FIREBASE_PROJECT_ID="$AIMS_FIREBASE_PROJECT_ID" \
             --dart-define=AIMS_FIREBASE_MESSAGING_SENDER_ID="$AIMS_FIREBASE_MESSAGING_SENDER_ID" \
             --dart-define=AIMS_FIREBASE_ANDROID_APP_ID="$AIMS_FIREBASE_ANDROID_APP_ID" \
             --dart-define=AIMS_FIREBASE_STORAGE_BUCKET="$AIMS_FIREBASE_STORAGE_BUCKET"
-          test -s build/app/outputs/flutter-apk/app-debug.apk
-          cp build/app/outputs/flutter-apk/app-debug.apk AIMS-FLOW-v1.9.5-PILOT-build35.apk
-          sha256sum AIMS-FLOW-v1.9.5-PILOT-build35.apk | tee AIMS-FLOW-v1.9.5-PILOT-build35.apk.sha256
+          test -s build/app/outputs/flutter-apk/app-release.apk
+          cp build/app/outputs/flutter-apk/app-release.apk AIMS-FLOW-v1.9.6-PILOT-build36.apk
+          sha256sum AIMS-FLOW-v1.9.6-PILOT-build36.apk | tee AIMS-FLOW-v1.9.6-PILOT-build36.apk.sha256
 
       - name: Verify APK signing and write public receipt
         env:
           AIMS_SIGNING_MODE: ${{ steps.signing.outputs.mode }}
           AIMS_ANDROID_CERT_SHA256: ${{ secrets.AIMS_ANDROID_CERT_SHA256 }}
-        run: python3 ci/verify_android_signing.py AIMS-FLOW-v1.9.5-PILOT-build35.apk AIMS-FLOW-v1.9.5-PILOT-build35.signing.json
+        run: python3 ci/verify_android_signing.py AIMS-FLOW-v1.9.6-PILOT-build36.apk AIMS-FLOW-v1.9.6-PILOT-build36.signing.json
 
       - name: Remove private signing key
         if: always()
@@ -194,11 +194,11 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: AIMS-FLOW-v1.9.5-PILOT-build35
+          name: AIMS-FLOW-v1.9.6-PILOT-build36
           path: |
-            AIMS-FLOW-v1.9.5-PILOT-build35.apk
-            AIMS-FLOW-v1.9.5-PILOT-build35.apk.sha256
-            AIMS-FLOW-v1.9.5-PILOT-build35.signing.json
+            AIMS-FLOW-v1.9.6-PILOT-build36.apk
+            AIMS-FLOW-v1.9.6-PILOT-build36.apk.sha256
+            AIMS-FLOW-v1.9.6-PILOT-build36.signing.json
           if-no-files-found: error
           retention-days: 30
 

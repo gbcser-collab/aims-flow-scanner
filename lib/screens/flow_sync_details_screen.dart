@@ -12,10 +12,11 @@ class FlowSyncRow {
 
 class FlowSyncDetailsScreen extends StatefulWidget {
   const FlowSyncDetailsScreen({super.key, required this.load,
-    required this.retry, required this.translate});
+    required this.retry, required this.translate, this.trackingSettings});
   final Future<List<FlowSyncRow>> Function() load;
   final Future<void> Function() retry;
   final FlowSyncTranslate translate;
+  final VoidCallback? trackingSettings;
 
   @override
   State<FlowSyncDetailsScreen> createState() => _FlowSyncDetailsScreenState();
@@ -65,7 +66,9 @@ class _FlowSyncDetailsScreenState extends State<FlowSyncDetailsScreen> {
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(title: Text(_l('Szinkronállapot', 'Sync status', 'Synchronisierung')),
-      actions: [IconButton(onPressed: _busy ? null : () => _refresh(),
+      actions: [if (widget.trackingSettings != null) IconButton(
+        onPressed: widget.trackingSettings, icon: const Icon(Icons.gps_fixed),
+        tooltip: _l('Követés beállításai', 'Tracking settings', 'Ortungseinstellungen')), IconButton(onPressed: _busy ? null : () => _refresh(),
         tooltip: _l('Állapot frissítése', 'Refresh status', 'Status aktualisieren'),
         icon: const Icon(Icons.refresh))]),
     body: SafeArea(child: Column(children: [

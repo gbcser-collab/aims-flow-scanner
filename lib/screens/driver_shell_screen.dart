@@ -1,3 +1,4 @@
+import 'flow_tracking_settings_screen.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
@@ -4437,7 +4438,9 @@ class _DriverShellScreenState extends State<DriverShellScreen>
 
   Future<void> _openSyncDetails() async {
     await Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) =>
-      FlowSyncDetailsScreen(load: _loadSyncDetails, retry: _refreshDriverHealth, translate: _l)));
+      FlowSyncDetailsScreen(load: _loadSyncDetails, retry: _refreshDriverHealth, translate: _l,
+        trackingSettings: () => Navigator.of(context).push(MaterialPageRoute<void>(
+          builder: (_) => FlowTrackingSettingsScreen(translate: _l))))));
   }
 
   Widget _healthPill({

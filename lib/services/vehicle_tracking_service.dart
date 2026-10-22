@@ -18,6 +18,8 @@ import 'flow_multipart_transport.dart';
 import 'tracking_point_queue.dart';
 import 'tracking_queue_sync.dart';
 import 'tracking_shutdown.dart';
+import 'tracking_policy.dart';
+import 'tracking_platform.dart';
 import 'gps_point_quality.dart';
 import 'roaming_resilience.dart';
 
@@ -37,6 +39,9 @@ class VehicleTrackingStatus {
     this.rejectedFixes = 0,
     this.stableLatitude,
     this.stableLongitude,
+    this.stationary = false,
+    this.sampleSeconds = 15,
+    this.nextRetryAt,
   });
 
   final bool enabled;
@@ -53,6 +58,9 @@ class VehicleTrackingStatus {
   final int rejectedFixes;
   final double? stableLatitude;
   final double? stableLongitude;
+  final bool stationary;
+  final int sampleSeconds;
+  final DateTime? nextRetryAt;
 }
 
 /// Driver-friendly, offline-first vehicle tracking.
@@ -82,7 +90,7 @@ class VehicleTrackingService {
       StreamController<VehicleTrackingStatus>.broadcast();
 
   StreamSubscription<Position>? _subscription;
-  Timer? _heartbeatTimer;
+  StreamSubscription<ServiceStatus>? _serviceStatusSubscription;
   Timer? _healthTimer;
   Timer? _retryTimer;
   Timer? _streamRecoveryTimer;
@@ -93,7 +101,14 @@ class VehicleTrackingService {
   bool _flushRunning = false;
   bool _flushAgain = false;
   bool _queueDepthLoaded = false;
-  int _flushFailures = 0;
+  final _retryGate = TrackingRetryGate();
+  final _policy = TrackingPolicy();
+  bool _starting = false;
+  bool _restarting = false;
+  bool _healthBusy = false;
+  Duration _activeInterval = const Duration(seconds: 15);
+  Position? _motionAnchor;
+  DateTime? _lastReceivedAt;
   int _streamFailures = 0;
   int _queueDepth = 0;
   int _rejectedFixes = 0;
@@ -236,7 +251,7 @@ class VehicleTrackingService {
     await stopTrackingBeforeSync(stop: disable, sync: _requestFlush);
   }
 
-  Future<void> syncPending() => _requestFlush();
+  Future<void> syncPending() => _requestFlush(force: true);
 
   Future<void> recover() async {
     await _loadIdentity();
@@ -246,29 +261,22 @@ class VehicleTrackingService {
       unawaited(_requestFlush());
       return;
     }
+    // The durable workday is the source of truth, including a start that was
+    // interrupted before the old enabled preference was written.
     if (!_enabled) {
-      unawaited(_requestFlush());
-      return;
+      _enabled = true;
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_enabledKey, true);
     }
-    if (_subscription == null) {
+    if (_subscription == null && _streamRecoveryTimer == null) {
       await _startLocationStream(requestPermission: false);
+    } else {
+      await _applyProfile();
     }
     unawaited(_requestFlush());
   }
 
-  Future<void> startIfEnabled() async {
-    await _loadIdentity();
-    await _ensureQueueDepthLoaded();
-    if (!await _hasActiveWorkday()) {
-      if (_enabled || _subscription != null) await disable();
-      unawaited(_requestFlush());
-      return;
-    }
-    unawaited(_requestFlush());
-    if (_enabled) {
-      await _startLocationStream(requestPermission: false);
-    }
-  }
+  Future<void> startIfEnabled() => recover();
 
   Future<bool> enableWithPermission() async {
     await _loadIdentity();
@@ -306,7 +314,7 @@ class VehicleTrackingService {
     _enabled = true;
     _lastError = null;
     await _startLocationStream(requestPermission: false);
-    return true;
+    return _subscription != null;
   }
 
   Future<void> disable() async {
@@ -314,8 +322,11 @@ class VehicleTrackingService {
     _enabled = false;
     final subscription = _subscription;
     _subscription = null;
-    _heartbeatTimer?.cancel();
-    _heartbeatTimer = null;
+    await _serviceStatusSubscription?.cancel();
+    _serviceStatusSubscription = null;
+    _policy.reset();
+    _motionAnchor = null;
+    _lastReceivedAt = null;
     _healthTimer?.cancel();
     _healthTimer = null;
     _retryTimer?.cancel();
@@ -329,6 +340,9 @@ class VehicleTrackingService {
     } finally {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool(_enabledKey, false);
+      if (Platform.isAndroid && !_runningUnderFlutterTest) {
+        await TrackingPlatform.setActive(false);
+      }
       _emit();
     }
   }
@@ -369,124 +383,153 @@ class VehicleTrackingService {
   }
 
   Future<void> _startLocationStream({required bool requestPermission}) async {
-    if (_subscription != null) return;
-    final generation = _locationGeneration;
-    if (!await _hasActiveWorkday()) {
-      await disable();
-      return;
-    }
-    if (!await Geolocator.isLocationServiceEnabled()) {
-      _lastError = 'A helymeghatározás ki van kapcsolva.';
-      _emit();
-      return;
-    }
-
-    var permission = await Geolocator.checkPermission();
-    if (requestPermission && permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
-    }
-    if (permission == LocationPermission.denied ||
-        permission == LocationPermission.deniedForever) {
-      _lastError = 'A helyhozzáférés nincs engedélyezve.';
-      _emit();
-      return;
-    }
-
-    final LocationSettings settings = Platform.isAndroid
-        ? AndroidSettings(
-            accuracy: LocationAccuracy.bestForNavigation,
-            distanceFilter: 3,
-            intervalDuration: const Duration(seconds: 8),
-            foregroundNotificationConfig:
-                const ForegroundNotificationConfig(
-              notificationTitle: 'AIMS FLOW nyomkövetés aktív',
-              notificationText:
-                  'A jármű helyzete a munkavégzés alatt frissül.',
-              enableWakeLock: true,
-              setOngoing: true,
-            ),
-          )
-        : const LocationSettings(
-            accuracy: LocationAccuracy.bestForNavigation,
-            distanceFilter: 3,
-          );
-
-    if (!await _hasActiveWorkday() || !_enabled ||
-        generation != _locationGeneration || _subscription != null) return;
-    final streamSession = await FlowSessionStore.instance.load();
-    if (streamSession == null || !_enabled || generation != _locationGeneration ||
-        _subscription != null) return;
-    _subscription = Geolocator.getPositionStream(
-      locationSettings: settings,
-    ).listen(
-      (position) => _enqueuePosition(position, streamSession, generation),
-      onError: (Object error) {
-        _lastError = 'GPS stream hiba: $error';
-        _emit();
-        _scheduleStreamRecovery();
-      },
-      onDone: _scheduleStreamRecovery,
-      cancelOnError: false,
-    );
-    _streamFailures = 0;
-    _streamStartedAt = DateTime.now();
-
-    _heartbeatTimer?.cancel();
-    _heartbeatTimer = Timer.periodic(const Duration(seconds: 30), (_) {
-      unawaited(_sendHeartbeat());
-    });
-
-    _healthTimer?.cancel();
-    _healthTimer = Timer.periodic(const Duration(seconds: 45), (_) {
-      if (!_enabled) return;
-      final now = DateTime.now();
-      final noFixTooLong = _lastFixAt == null &&
-          _streamStartedAt != null &&
-          now.difference(_streamStartedAt!) > const Duration(seconds: 75);
-      final staleFix = _lastFixAt != null &&
-          now.difference(_lastFixAt!) > const Duration(seconds: 120);
-      if (_subscription == null || noFixTooLong || staleFix) {
-        unawaited(_restartLocationStream());
-      } else {
-        unawaited(_requestFlush());
+    if (_subscription != null || _starting || !_enabled) return;
+    _starting = true;
+    final generation = ++_locationGeneration;
+    try {
+      if (!await _hasActiveWorkday()) {
+        await disable();
+        return;
       }
-    });
+      _ensureSupervisor();
+      if (!await Geolocator.isLocationServiceEnabled()) {
+        _lastError = 'A helymeghatározás ki van kapcsolva. Kapcsold vissza a telefonon.';
+        _emit();
+        return;
+      }
+      var permission = await Geolocator.checkPermission();
+      if (requestPermission && permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) {
+        _lastError = 'A helyhozzáférés nincs engedélyezve. Ellenőrizd a követés beállításait.';
+        _emit();
+        return;
+      }
+      final foreground = WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
+      if (Platform.isAndroid && !foreground && permission != LocationPermission.always) {
+        _lastError = 'A GPS újraindításához nyisd meg az appot, vagy engedélyezd a helyhozzáférést mindig.';
+        _emit();
+        return;
+      }
+      final streamSession = await FlowSessionStore.instance.load();
+      if (streamSession == null || !_enabled || generation != _locationGeneration ||
+          !await _hasActiveWorkday(session: streamSession)) return;
+      _activeInterval = _policy.sampleInterval;
+      final LocationSettings settings = Platform.isAndroid
+          ? AndroidSettings(
+              accuracy: LocationAccuracy.high,
+              // Timed stationary fixes avoid extra getCurrentPosition requests.
+              distanceFilter: 0,
+              intervalDuration: _activeInterval,
+              foregroundNotificationConfig: const ForegroundNotificationConfig(
+                notificationTitle: 'AIMS FLOW – munkanapkövetés',
+                notificationText: 'A helyzet a munkanap lezárásáig frissül. Megnyitás: részletek.',
+                enableWakeLock: false,
+                enableWifiLock: false,
+                setOngoing: true,
+              ),
+            )
+          : const LocationSettings(accuracy: LocationAccuracy.high, distanceFilter: 0);
+      if (Platform.isAndroid && !_runningUnderFlutterTest) await TrackingPlatform.setActive(true);
+      if (!_enabled || generation != _locationGeneration) return;
+      _streamStartedAt = DateTime.now();
+      _lastReceivedAt = null;
+      _subscription = Geolocator.getPositionStream(locationSettings: settings).listen(
+        (position) {
+          if (generation != _locationGeneration) return;
+          _lastReceivedAt = DateTime.now();
+          _streamFailures = 0;
+          _enqueuePosition(position, streamSession, generation);
+        },
+        onError: (Object error) {
+          if (generation != _locationGeneration) return;
+          _lastError = 'A GPS-kapcsolat megszakadt. Automatikus újrapróbálás.';
+          _emit();
+          _scheduleStreamRecovery(generation);
+        },
+        onDone: () => _scheduleStreamRecovery(generation),
+        cancelOnError: false,
+      );
+      _emit();
+    } catch (_) {
+      if (_enabled && generation == _locationGeneration) {
+        _lastError = 'A GPS indítása nem sikerült. Automatikus újrapróbálás.';
+        _scheduleStreamRecovery(generation);
+        _emit();
+      }
+    } finally {
+      _starting = false;
+    }
+  }
 
-    unawaited(_requestFlush());
-    _emit();
+  void _ensureSupervisor() {
+    _healthTimer ??= Timer.periodic(const Duration(seconds: 60), (_) => unawaited(_checkHealth()));
+    _serviceStatusSubscription ??= Geolocator.getServiceStatusStream().listen((status) {
+      if (_enabled && status == ServiceStatus.enabled) unawaited(recover());
+    }, onError: (Object _) {});
+  }
+
+  Future<void> _checkHealth() async {
+    if (_healthBusy || !_enabled) return;
+    _healthBusy = true;
+    try {
+      if (!await _hasActiveWorkday()) { await disable(); return; }
+      final since = _lastReceivedAt ?? _streamStartedAt;
+      if (_streamRecoveryTimer == null && (_subscription == null ||
+          (since != null && DateTime.now().difference(since) > _policy.staleAfter))) {
+        await _restartLocationStream();
+      } else {
+        await _applyProfile();
+      }
+      await _requestFlush();
+    } catch (_) {
+      _lastError = 'A követés ellenőrzése nem sikerült. Az állapotot újra ellenőrizzük.';
+    } finally {
+      _healthBusy = false;
+      _emit();
+    }
+  }
+
+  Future<void> _applyProfile() async {
+    if (_subscription == null || _activeInterval == _policy.sampleInterval) return;
+    // Keep an already running foreground service intact if Android would
+    // forbid restarting it from the background with while-in-use permission.
+    if (Platform.isAndroid && WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed &&
+        await Geolocator.checkPermission() != LocationPermission.always) return;
+    await _restartLocationStream();
   }
 
   Future<void> _restartLocationStream() async {
-    if (!_enabled || !await _hasActiveWorkday()) return;
-    final current = _subscription;
-    _subscription = null;
-    if (current != null) {
-      try {
-        await current.cancel();
-      } catch (_) {}
-    }
-    _streamStartedAt = null;
-    _lastError = 'GPS kapcsolat újraindítása…';
-    _emit();
+    if (_restarting || _starting || !_enabled) return;
+    _restarting = true;
     try {
+      if (!await _hasActiveWorkday()) { await disable(); return; }
+      if (Platform.isAndroid && WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed &&
+          await Geolocator.checkPermission() != LocationPermission.always) return;
+      _locationGeneration++;
+      final current = _subscription;
+      _subscription = null;
+      await current?.cancel();
+      _streamStartedAt = null;
       await _startLocationStream(requestPermission: false);
-    } catch (error) {
-      _lastError = 'GPS újraindítási hiba: $error';
-      _emit();
-      _scheduleStreamRecovery();
+    } finally {
+      _restarting = false;
     }
   }
 
-  void _scheduleStreamRecovery() {
-    if (!_enabled) return;
+  void _scheduleStreamRecovery(int generation) {
+    if (!_enabled || generation != _locationGeneration) return;
+    _locationGeneration++;
     _streamFailures++;
     final current = _subscription;
     _subscription = null;
-    if (current != null) unawaited(current.cancel());
+    if (current != null) unawaited(current.cancel().catchError((Object _) {}));
     _streamRecoveryTimer?.cancel();
-    final delay = RoamingResilience.retryDelay(_streamFailures);
+    final delay = Duration(seconds: [2, 5, 15, 30, 60, 120][(_streamFailures - 1).clamp(0, 5)]);
     _streamRecoveryTimer = Timer(delay, () {
-      if (_enabled && _subscription == null) unawaited(recover());
+      _streamRecoveryTimer = null;
+      if (_enabled && _subscription == null) unawaited(recover().catchError((Object _) {}));
     });
   }
 
@@ -502,41 +545,9 @@ class VehicleTrackingService {
     });
   }
 
-  Future<void> _sendHeartbeat() async {
-    if (!_enabled || !await _hasActiveWorkday()) return;
-    if (_subscription == null) {
-      try {
-        await _startLocationStream(requestPermission: false);
-      } catch (_) {}
-    }
-    if (_lastSentAt != null &&
-        DateTime.now().difference(_lastSentAt!) <
-            const Duration(seconds: 25)) {
-      return;
-    }
-
-    final capturedSession = await FlowSessionStore.instance.load();
-    Position? position;
-    try {
-      position = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.bestForNavigation,
-          timeLimit: Duration(seconds: 8),
-        ),
-      );
-    } on TimeoutException {
-      position = await Geolocator.getLastKnownPosition();
-    } catch (_) {
-      position = await Geolocator.getLastKnownPosition();
-    }
-    if (position != null && capturedSession != null) {
-      await _queueAndFlush(position, source: 'heartbeat', capturedSession: capturedSession);
-    }
-  }
-
   Future<void> _ensureQueueDepthLoaded() async {
     if (_queueDepthLoaded) return;
-    _queueDepth = (await _queue.snapshot()).length;
+    _queueDepth = await _queue.count();
     _queueDepthLoaded = true;
   }
 
@@ -565,6 +576,7 @@ class VehicleTrackingService {
     }
 
     final previous = _lastAcceptedPosition;
+    if (previous != null && !position.timestamp.isAfter(previous.timestamp)) return;
     final speed = max(
       0.0,
       RoamingResilience.finiteOrZero(position.speed),
@@ -616,17 +628,19 @@ class VehicleTrackingService {
     _stableLatitude = stable.latitude;
     _stableLongitude = stable.longitude;
 
-    if (source == 'stream' && assessment.stationaryJitter) {
-      _lastPosition = previous ?? position;
-      _lastError = null;
-      _emit();
-      return;
-    }
-
     _lastAcceptedPosition = position;
     _lastPosition = position;
-    _lastError = null;
+    final anchor = _motionAnchor;
+    final distance = anchor == null ? 0.0 : GpsPointQuality.distanceMeters(
+      anchor.latitude, anchor.longitude, position.latitude, position.longitude);
+    final changed = _policy.observe(at: position.timestamp, speedMps: speed,
+      distanceM: distance, accuracyM: accuracy);
+    if (anchor == null || speed >= 1.5 || distance > 35) _motionAnchor = position;
     _emit();
+    if (!_policy.shouldSave(position.timestamp)) {
+      if (changed) unawaited(_applyProfile().catchError((Object _) {}));
+      return;
+    }
 
     // Freeze identity and coordinates before asynchronous country lookup.
     final latitude = stable.latitude;
@@ -667,12 +681,16 @@ class VehicleTrackingService {
     };
 
     await _queue.append(jsonEncode(point));
-    _queueDepth = (await _queue.snapshot()).length;
+    _policy.saved(position.timestamp);
+    _queueDepth = await _queue.count();
     _emit();
     unawaited(_requestFlush());
+    if (changed) unawaited(_applyProfile().catchError((Object _) {}));
   }
 
-  Future<void> _requestFlush() async {
+  Future<void> _requestFlush({bool force = false}) async {
+    if (force) _retryGate.retryNow();
+    if (!_retryGate.ready(DateTime.now())) return;
     if (_flushRunning) {
       _flushAgain = true;
       return;
@@ -682,7 +700,7 @@ class VehicleTrackingService {
       do {
         _flushAgain = false;
         await _flushQueuePass();
-      } while (_flushAgain);
+      } while (_flushAgain && _retryGate.ready(DateTime.now()));
     } catch (_) {
       _scheduleRetry('A GPS-adatok helyi mentése nem sikerült. A korábbi sor megmaradt.');
     } finally {
@@ -691,13 +709,9 @@ class VehicleTrackingService {
   }
 
   void _scheduleRetry(String message, {Duration? minimumDelay}) {
-    _flushFailures++;
     _lastError = message;
     _retryTimer?.cancel();
-    final calculated = RoamingResilience.retryDelay(_flushFailures);
-    final delay = minimumDelay != null && calculated < minimumDelay
-        ? minimumDelay
-        : calculated;
+    final delay = _retryGate.fail(DateTime.now(), minimum: minimumDelay ?? Duration.zero);
     _retryTimer = Timer(delay, () => unawaited(_requestFlush()));
     _emit();
   }
@@ -723,7 +737,7 @@ class VehicleTrackingService {
         return sendFlowMultipart(request, timeout: const Duration(seconds: 10));
       },
     ).run();
-    _queueDepth = (await _queue.snapshot()).length;
+    _queueDepth = await _queue.count();
     _queueDepthLoaded = true;
     if (result.sent > 0) _lastSentAt = DateTime.now();
     if (result.retryAfter != null) {
@@ -731,7 +745,7 @@ class VehicleTrackingService {
       _scheduleRetry(result.error!, minimumDelay: result.retryAfter);
       return;
     }
-    _flushFailures = 0;
+    _retryGate.succeeded();
     _retryTimer?.cancel();
     _retryTimer = null;
     _lastError = result.error;
@@ -754,6 +768,9 @@ class VehicleTrackingService {
         rejectedFixes: _rejectedFixes,
         stableLatitude: _stableLatitude,
         stableLongitude: _stableLongitude,
+        stationary: _policy.stationary,
+        sampleSeconds: _activeInterval.inSeconds,
+        nextRetryAt: _retryGate.retryAt,
       );
 
   void _emit() {

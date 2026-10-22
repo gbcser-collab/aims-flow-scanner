@@ -1,6 +1,6 @@
-import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'local_serial_executor.dart';
 
 /// One writer per installation. A failed write never truncates the live queue.
 class TrackingPointQueue {
@@ -9,19 +9,9 @@ class TrackingPointQueue {
   final Future<Directory> Function() directory;
   // Fault injection at the durable-write boundary for regression tests.
   final Future<void> Function(File temporary)? beforeReplace;
-  Future<void> _tail = Future<void>.value();
-
-  Future<T> _locked<T>(Future<T> Function() action) {
-    final result = Completer<T>();
-    _tail = _tail.then((_) async {
-      try {
-        result.complete(await action());
-      } catch (error, stack) {
-        result.completeError(error, stack);
-      }
-    });
-    return result.future;
-  }
+  static final _serial = LocalSerialExecutor();
+  int? _knownCount;
+  Future<T> _locked<T>(Future<T> Function() action) => _serial.run(action);
 
   Future<File> _file(String name) async {
     final root = await directory();
@@ -43,25 +33,52 @@ class TrackingPointQueue {
     await temporary.rename(file.path);
   }
 
-  Future<List<String>> snapshot() => _locked(() async =>
-      _read(await _file('aims_tracking_queue.jsonl')));
+  Future<void> _recoverAppend({bool freshlyStaged = false}) async {
+    final pending = await _file('aims_tracking_append.pending');
+    if (!await pending.exists()) return;
+    final line = await pending.readAsString();
+    if (line.trim().isEmpty || line.contains('\n') || line.contains('\r')) {
+      throw const FormatException('A GPS mentési napló sérült; az eredeti adat megmaradt.');
+    }
+    final file = await _file('aims_tracking_queue.jsonl');
+    // Prefixing a newline isolates a partial last line after sudden power loss.
+    // Replay can duplicate a point, but its stable server ID makes that safe.
+    await file.writeAsString('\n$line\n', mode: FileMode.append, flush: true);
+    await pending.delete();
+    _knownCount = freshlyStaged && _knownCount != null ? _knownCount! + 1 : null;
+  }
+
+  Future<List<String>> snapshot() => _locked(() async {
+    await _recoverAppend();
+    final lines = await _read(await _file('aims_tracking_queue.jsonl'));
+    _knownCount = lines.length;
+    return lines;
+  });
+
+  Future<int> count() => _locked(() async {
+    await _recoverAppend();
+    return _knownCount ??= (await _read(await _file('aims_tracking_queue.jsonl'))).length;
+  });
 
   Future<int> quarantinedCount() => _locked(() async =>
       (await _read(await _file('aims_tracking_queue_corrupt.jsonl'))).length);
 
   Future<void> append(String line) => _locked(() async {
-    if (line.contains('\n') || line.contains('\r')) {
-      throw const FormatException('A GPS-bejegyzés csak egy sor lehet.');
+    if (line.trim().isEmpty || line.contains('\n') || line.contains('\r')) {
+      throw const FormatException('A GPS-bejegyzés csak egy nem üres sor lehet.');
     }
-    final file = await _file('aims_tracking_queue.jsonl');
-    final lines = await _read(file);
-    lines.add(line);
-    // Unacknowledged data is never removed to enforce a count limit.
-    await _replace(file, lines);
+    await _recoverAppend();
+    final pending = await _file('aims_tracking_append.pending');
+    final temporary = File('${pending.path}.tmp');
+    await temporary.writeAsString(line, flush: true);
+    await beforeReplace?.call(temporary);
+    await temporary.rename(pending.path);
+    await _recoverAppend(freshlyStaged: true);
   });
 
   Future<void> acknowledge(List<String> consumed) => _locked(() async {
     if (consumed.isEmpty) return;
+    await _recoverAppend();
     final file = await _file('aims_tracking_queue.jsonl');
     final lines = await _read(file);
     final counts = <String, int>{};
@@ -78,6 +95,7 @@ class TrackingPointQueue {
       }
     }
     await _replace(file, remaining);
+    _knownCount = remaining.length;
   });
 
   Future<void> quarantine(String line, String reason) => _locked(() async {

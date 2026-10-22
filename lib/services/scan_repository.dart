@@ -7,12 +7,16 @@ import 'package:pdf/widgets.dart' as pw;
 
 import '../models/scan_models.dart';
 import '../models/tracking_models.dart';
+import 'local_serial_executor.dart';
 
 class ScanRepository {
-  const ScanRepository();
+  const ScanRepository({this.directory, this.beforeReplace});
+  final Future<Directory> Function()? directory;
+  final Future<void> Function(File temporary)? beforeReplace;
+  static final _serial = LocalSerialExecutor();
 
   Future<Directory> _scanDirectory() async {
-    final root = await getApplicationDocumentsDirectory();
+    final root = await (directory ?? getApplicationDocumentsDirectory)();
     final directory = Directory('${root.path}/aims_scans');
     if (!await directory.exists()) {
       await directory.create(recursive: true);
@@ -25,32 +29,24 @@ class ScanRepository {
     return File('${directory.path}/index.json');
   }
 
-  Future<List<ScannedDocument>> loadAll() async {
+  Future<List<ScannedDocument>> loadAll() => _serial.run(_loadAll);
+
+  Future<List<ScannedDocument>> _loadAll() async {
+    final file = await _indexFile();
+    if (!await file.exists()) return <ScannedDocument>[];
     try {
-      final file = await _indexFile();
-      if (!await file.exists()) return <ScannedDocument>[];
-
-      final raw = await file.readAsString();
-      if (raw.trim().isEmpty) return <ScannedDocument>[];
-      final decoded = jsonDecode(raw);
-      if (decoded is! List) return <ScannedDocument>[];
-
+      final decoded = jsonDecode(await file.readAsString());
+      if (decoded is! List) throw const FormatException('Invalid CMR index');
       final documents = <ScannedDocument>[];
       for (final item in decoded) {
-        if (item is! Map) continue;
-        try {
-          final document = ScannedDocument.fromJson(Map<String, dynamic>.from(item));
-          if (await File(document.imagePath).exists()) {
-            documents.add(document);
-          }
-        } catch (_) {
-          // One damaged history entry should never make the whole scanner unusable.
-        }
+        if (item is! Map) throw const FormatException('Invalid CMR record');
+        // Missing image files remain visible and pending, never silently erased.
+        documents.add(ScannedDocument.fromJson(Map<String, dynamic>.from(item)));
       }
       documents.sort((a, b) => b.createdAt.compareTo(a.createdAt));
       return documents;
     } catch (_) {
-      return <ScannedDocument>[];
+      throw const FileSystemException('A CMR-napló nem olvasható. Az eredeti adat megmaradt; kérj irodai segítséget.');
     }
   }
 
@@ -66,7 +62,7 @@ class ScanRepository {
     required CmrData cmr,
     required ScanQuality quality,
     LocationStamp? location,
-  }) async {
+  }) => _serial.run(() async {
     final directory = await _scanDirectory();
     final createdAt = DateTime.now();
     final id = createdAt.microsecondsSinceEpoch.toString();
@@ -120,14 +116,14 @@ class ScanRepository {
       quality: quality,
       location: location,
     );
-    final all = await loadAll();
+    final all = await _loadAll();
     all.insert(0, document);
     await _writeAll(all);
     return document;
-  }
+  });
 
-  Future<void> update(ScannedDocument document) async {
-    final all = await loadAll();
+  Future<void> update(ScannedDocument document) => _serial.run(() async {
+    final all = await _loadAll();
     final index = all.indexWhere((item) => item.id == document.id);
     if (index >= 0) {
       all[index] = document;
@@ -136,10 +132,10 @@ class ScanRepository {
     }
     all.sort((a, b) => b.createdAt.compareTo(a.createdAt));
     await _writeAll(all);
-  }
+  });
 
-  Future<void> delete(ScannedDocument document) async {
-    final all = await loadAll();
+  Future<void> delete(ScannedDocument document) => _serial.run(() async {
+    final all = await _loadAll();
     all.removeWhere((item) => item.id == document.id);
     await _writeAll(all);
     try {
@@ -158,17 +154,19 @@ class ScanRepository {
     } catch (_) {
       // The index is already clean even if the old image cannot be deleted.
     }
-  }
+  });
 
-  Future<int> pruneExpiredApproved() async {
+  Future<int> pruneExpiredApproved() => _serial.run(() async {
     final now = DateTime.now().toUtc();
-    final all = await loadAll();
+    final all = await _loadAll();
     final expired = all.where((item) {
       final deadline = item.deleteAfter?.toUtc();
       return item.syncState == CmrSyncState.approved && deadline != null && !deadline.isAfter(now);
     }).toList();
     if (expired.isEmpty) return 0;
 
+    all.removeWhere((item) => expired.any((expiredItem) => expiredItem.id == item.id));
+    await _writeAll(all); // Commit removal before deleting any retained image.
     for (final document in expired) {
       try {
         final image = File(document.imagePath);
@@ -185,17 +183,15 @@ class ScanRepository {
         }
       } catch (_) {}
     }
-    all.removeWhere((item) => expired.any((expiredItem) => expiredItem.id == item.id));
-    await _writeAll(all);
     return expired.length;
-  }
+  });
 
   Future<void> _writeAll(List<ScannedDocument> documents) async {
     final file = await _indexFile();
     final temp = File('${file.path}.tmp');
     final payload = jsonEncode(documents.map((item) => item.toJson()).toList());
     await temp.writeAsString(payload, flush: true);
-    if (await file.exists()) await file.delete();
+    await beforeReplace?.call(temp);
     await temp.rename(file.path);
   }
 }
