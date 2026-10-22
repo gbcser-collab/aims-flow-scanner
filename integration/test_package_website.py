@@ -36,6 +36,7 @@ class WebrootArchiveTest(unittest.TestCase):
         (document_root / '.htaccess').write_text('existing rewrites')
         with zipfile.ZipFile(archive) as z:
             self.assertIn('index.html', z.namelist())
+            self.assertGreater(z.getinfo('index.html').date_time[0], 1980)
             self.assertNotIn('.leftover.apk', z.namelist())
             self.assertTrue(all((i.external_attr >> 16) & 0o777 == 0o644 for i in z.infolist()))
             z.extractall(document_root)

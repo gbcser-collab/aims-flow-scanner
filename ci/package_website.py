@@ -8,6 +8,7 @@ import hashlib
 import json
 from pathlib import Path, PurePosixPath
 import stat
+import time
 import zipfile
 
 
@@ -38,7 +39,10 @@ def package(assembled_dir, output):
     # Exclusive creation preserves previous deliverables if the path is reused.
     with zipfile.ZipFile(output, 'x', compression=zipfile.ZIP_DEFLATED, compresslevel=6) as archive:
         for name, source in sorted(entries.items()):
-            info = zipfile.ZipInfo(name)
+            # Keep current source dates so extraction cannot backdate HTML to
+            # ZIP's 1980 default and confuse conditional browser cache requests.
+            modified = time.localtime(source.stat().st_mtime)
+            info = zipfile.ZipInfo(name, modified[:6] if modified.tm_year >= 1980 else (1980, 1, 1, 0, 0, 0))
             info.create_system = 3
             info.external_attr = (stat.S_IFREG | 0o644) << 16
             info.compress_type = zipfile.ZIP_DEFLATED

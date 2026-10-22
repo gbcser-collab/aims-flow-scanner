@@ -26,6 +26,8 @@ def assemble(website, admin, backend, apk, destination):
     shutil.copytree(backend/'api',root/'api')
     overlay=Path(__file__).resolve().parents[1]/'integration/site'
     shutil.copytree(overlay,root,dirs_exist_ok=True)
+    guard=Path(__file__).resolve().parents[1]/'server/aims-tracking/session/_guard.php'
+    shutil.copy2(guard,root/'api/aims-tracking/session/_guard.php')
     css=(overlay/'assets/mobile-v41.css').read_text()
     refresh=root/'admin/admin-refresh.css'
     refresh.write_text(refresh.read_text()+'\n'+css)
@@ -42,6 +44,10 @@ def assemble(website, admin, backend, apk, destination):
     index=root/'index.html';s=index.read_text()
     # Relative access routes also work on the staging host before publication.
     s=s.replace('https://logistic-aims.hu/admin/','admin/').replace('https://logistic-aims.hu/partner/','partner/')
+    s=s.replace('https://logistic-aims.hu/app/', 'flow/app/')
+    s=s.replace('"app/"', '"flow/app/"').replace("'app/'", "'flow/app/'")
+    # Load the independent escape path before the animation scripts execute.
+    s=s.replace('</head>', '<script src="assets/startup-v43.js"></script><style>.aims-startup-recovered .reveal{opacity:1!important;transform:none!important}</style></head>', 1)
     s=s.replace('<a class="login-register-v24"', '<a class="login-option-v24 flow" href="flow/app/" role="menuitem"><span class="login-option-icon-v24">F</span><span><b>FLOW alkalmazás</b><small>Sofőrapp és telepítési segítség</small></span><em></em></a><a class="login-register-v24"',1)
     s=s.replace('</div><details class="mobile-access-quote', '<a class="flow-mobile-entry-v41" href="flow/app/"><b>FLOW alkalmazás</b><small>Letöltés és belépés</small></a></div><details class="mobile-access-quote',1)
     # Existing service links remain; append a direct app entry after the lead actions.

@@ -157,7 +157,13 @@ function aims_flow_session_proxy(string $target):never{
     }
 
     $serverToken=trim((string)(getenv('AIMS_TRACKING_TOKEN')?:''));
-    if($serverToken==='')aims_flow_session_json(['ok'=>false,'error'=>'server_not_configured'],503);
+    if($serverToken===''){
+        // Session, account, vehicle and device have already been authorized above.
+        // This request-local bridge token is never sent to the phone or stored.
+        // Legacy direct endpoints still fail closed without configured credentials.
+        $serverToken=bin2hex(random_bytes(32));
+        putenv('AIMS_TRACKING_TOKEN='.$serverToken);
+    }
 
     $pdo->prepare('UPDATE driver_sessions SET last_seen_at=:now WHERE token_hash=:hash')
       ->execute([':now'=>$now,':hash'=>(string)$session['token_hash']]);

@@ -78,7 +78,6 @@ foreach($flowServiceRows as $sd){
   $isDue=($kmRemain!==null&&$kmRemain<=0)||($dateRemain!==null&&$dateRemain<0);
   if($isDue){$sd['_km_remain']=$kmRemain;$sd['_date_remain']=$dateRemain;$flowServiceDueRows[]=$sd;}
 }
-$flowActionCount=$flowUnreadNotifications+count($flowMissingDocRows)+count($flowServiceDueRows);
 
 $flowFleetRows=$flowPdo->query('SELECT
     v.id,v.plate,v.label,v.enabled,
@@ -104,6 +103,7 @@ $flowFleetRows=$flowPdo->query('SELECT
   ORDER BY COALESCE(os.hold,0) DESC,open_issues DESC,v.plate ASC')->fetchAll(PDO::FETCH_ASSOC);
 
 $flowUnreadNotifications=(int)$flowPdo->query('SELECT COUNT(*) FROM notifications WHERE read_at IS NULL')->fetchColumn();
+$flowActionCount=$flowUnreadNotifications+count($flowMissingDocRows)+count($flowServiceDueRows);
 $flowAttentionRows=$flowPdo->query('SELECT n.id,n.type,n.severity,n.title,n.body,n.payload_json,n.created_at,v.plate,v.label
   FROM notifications n
   LEFT JOIN vehicles v ON v.id=n.vehicle_id
