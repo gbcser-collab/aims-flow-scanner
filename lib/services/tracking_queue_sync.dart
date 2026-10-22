@@ -51,11 +51,15 @@ class TrackingQueueSync {
     var sent = 0;
     var attempted = 0;
     var held = false;
+    var archived = 0;
+    final consumed = <String>[];
+    try {
     for (final line in lines) {
       final payload = decode(line);
       if (payload == null) {
         await queue.quarantine(line, 'invalid_json');
-        await queue.acknowledge([line]);
+        archived++;
+        consumed.add(line);
         continue;
       }
       if (!belongsTo(payload, session)) {
@@ -88,14 +92,15 @@ class TrackingQueueSync {
       final body = decode(response.body);
       if (response.statusCode >= 200 && response.statusCode < 300 &&
           body?['ok'] == true && body?['registeredVehicle'] == true) {
-        await queue.acknowledge([line]);
+        consumed.add(line);
         sent++;
         continue;
       }
       if (response.statusCode == 400 || response.statusCode == 422 ||
           (response.statusCode == 409 && body?['error'] == 'point_identity_conflict')) {
         await queue.quarantine(line, 'server_rejected_${response.statusCode}');
-        await queue.acknowledge([line]);
+        archived++;
+        consumed.add(line);
         continue;
       }
       final denied = response.statusCode == 401 || response.statusCode == 403;
@@ -105,8 +110,14 @@ class TrackingQueueSync {
           : 'A szerver nem igazolta vissza a GPS-pontot. Újrapróbálásra vár.',
         retryAfter: denied ? const Duration(minutes: 5) : Duration.zero);
     }
-    return TrackingSyncResult(sent: sent, error: held
+    return TrackingSyncResult(sent: sent, error: archived > 0
+      ? 'Hibás GPS-bejegyzés külön megőrzésre került; irodai ellenőrzés szükséges.'
+      : held
       ? 'Másik sofőr vagy azonosításra váró korábbi GPS-adat maradt a telefonon.'
       : null);
+    } finally {
+      // One durable rewrite per batch, merging with points saved during HTTP.
+      await queue.acknowledge(consumed);
+    }
   }
 }

@@ -794,9 +794,10 @@ function aims_vehicle_for_point(PDO $pdo, string $deviceId, string $vehicleLabel
     }
     $vehicle = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
     if ($vehicle !== null && ($vehicle['device_id'] === null || $vehicle['device_id'] === '')) {
-        $bind = $pdo->prepare('UPDATE vehicles SET device_id = :device WHERE id = :id');
-        $bind->execute([':device' => $deviceId, ':id' => $vehicle['id']]);
-        $vehicle['device_id'] = $deviceId;
+        $bind = $pdo->prepare('UPDATE vehicles SET device_id = :device WHERE id = :id
+            AND NOT EXISTS (SELECT 1 FROM vehicles WHERE device_id = :existing_device)');
+        $bind->execute([':device' => $deviceId, ':id' => $vehicle['id'], ':existing_device' => $deviceId]);
+        if ($bind->rowCount() > 0) $vehicle['device_id'] = $deviceId;
     }
     return $vehicle;
 }

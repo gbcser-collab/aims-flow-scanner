@@ -155,6 +155,19 @@ void main() {
     expect(await queue.snapshot(), isEmpty);
   });
 
+  test('a full upload batch acknowledges with one durable queue rewrite', () async {
+    for (var i = 0; i < 40; i++) { await queue.append(point('$i')); }
+    var replacements = 0;
+    final measured = TrackingPointQueue(directory: () async => root,
+      beforeReplace: (_) async { replacements++; });
+    final result = await TrackingQueueSync(queue: measured,
+      loadSession: () async => account('123456'),
+      send: (_, __) async => accepted()).run();
+    expect(result.sent, 40);
+    expect(replacements, 1);
+    expect(await queue.snapshot(), isEmpty);
+  });
+
   test('known 32 bit collision now produces distinct stable point IDs', () {
     String idFor(int i) => RoamingResilience.pointId(deviceId: 'SIP-115-device',
       timestamp: DateTime.utc(2026, 9, 20, 8).add(Duration(seconds: i * 15)),

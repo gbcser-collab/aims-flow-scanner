@@ -54,7 +54,9 @@ class DeviceIdentityService {
     // The ID is not a credential; the secret and session token remain in the
     // private file / secure storage.
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_trackingDeviceKey, identity.deviceId);
+    if (!await prefs.setString(_trackingDeviceKey, identity.deviceId)) {
+      throw StateError('A készülékazonosító mentése nem sikerült.');
+    }
   }
 
   Future<DeviceIdentity> loadOrCreate() {
