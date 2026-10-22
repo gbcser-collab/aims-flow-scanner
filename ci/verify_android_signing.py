@@ -44,7 +44,7 @@ def main():
         digest = hashlib.file_digest(stream, 'sha256').hexdigest()
     receipt.write_text(json.dumps({
         'apk': apk.name, 'sha256': digest, 'certificateSha256': actual,
-        'signingMode': mode, 'buildType': 'debug-pilot',
+        'signingMode': mode, 'buildType': 'release-pilot',
         'sourceCommit': os.environ['GITHUB_SHA'],
         'upgradeRequirement': 'Same package and signing certificate; increasing versionCode.',
     }, indent=2) + '\n')

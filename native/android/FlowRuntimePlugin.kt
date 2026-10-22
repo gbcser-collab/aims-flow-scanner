@@ -117,11 +117,16 @@ class FlowRuntimePlugin : FlutterPlugin, ActivityAware {
         sink = target
         val manager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
         fun emit(online: Boolean) { main.post { if (sink === target) target.success(online) } }
+        var validatedNetwork: Network? = null
         val listener = object : ConnectivityManager.NetworkCallback() {
-            // A default-network handoff is not an outage. Report validated capabilities.
+            // A validated replacement path deserves one retry even when the
+            // old network never sent onLost (for example a roaming handoff).
             override fun onCapabilitiesChanged(network: Network, capabilities: NetworkCapabilities) {
-                emit(capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
-                    capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED))
+                val usable = capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                    capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+                if (usable && validatedNetwork != null && validatedNetwork != network) emit(false)
+                validatedNetwork = if (usable) network else null
+                emit(usable)
             }
             override fun onLost(network: Network) {
                 val caps = manager.getNetworkCapabilities(manager.activeNetwork)
