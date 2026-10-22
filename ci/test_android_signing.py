@@ -8,9 +8,41 @@ import unittest
 from unittest.mock import patch
 
 from prepare_android_signing import NAMES, prepare
+from verify_android_signing import single_certificate
 
 
 class SigningTest(unittest.TestCase):
+    def test_classic_apksigner_certificate(self):
+        digest = 'a1' * 32
+        self.assertEqual(single_certificate('Number of signers: 1\n'
+            f'Signer #1 certificate SHA-256 digest: {digest}\n'), digest)
+
+    def test_sdk_range_signers_with_the_same_certificate(self):
+        digest = 'a1' * 32
+        output = 'Number of signers: 1\n'
+        for minimum, maximum in [(24, 32), (33, 2147483647)]:
+            output += (f'Signer (minSdkVersion={minimum}, maxSdkVersion={maximum}) '
+                       f'certificate SHA-256 digest: {digest}\n')
+        output += f'Source Stamp Signer certificate SHA-256 digest: {"b2" * 32}\n'
+        self.assertEqual(single_certificate(output), digest)
+
+    def test_different_sdk_range_certificates_are_rejected(self):
+        with self.assertRaises(ValueError):
+            single_certificate('Number of signers: 1\n'
+                f'Signer (minSdkVersion=24) certificate SHA-256 digest: {"a1" * 32}\n'
+                f'Signer (minSdkVersion=33) certificate SHA-256 digest: {"b2" * 32}\n')
+
+    def test_public_key_and_stamp_cannot_substitute_an_apk_certificate(self):
+        with self.assertRaises(ValueError):
+            single_certificate('Number of signers: 1\n'
+                f'Signer #1 public key SHA-256 digest: {"a1" * 32}\n'
+                f'Source Stamp Signer certificate SHA-256 digest: {"a1" * 32}\n')
+
+    def test_multiple_signers_are_rejected(self):
+        with self.assertRaises(ValueError):
+            single_certificate('Number of signers: 2\n'
+                f'Signer #1 certificate SHA-256 digest: {"a1" * 32}\n')
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)

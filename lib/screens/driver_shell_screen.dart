@@ -4619,6 +4619,11 @@ class _DriverShellScreenState extends State<DriverShellScreen>
         MaterialPageRoute(builder: (_) => const FlowLoginScreen()),
         (_) => false,
       );
+    } catch (_) {
+      if (mounted) _snack(_l(
+        'A kijelentkezés helyi mentése nem sikerült. Próbáld újra.',
+        'Sign-out could not be saved on this phone. Try again.',
+        'Die Abmeldung konnte nicht gespeichert werden. Erneut versuchen.'));
     } finally {
       if (mounted) setState(() => _actionBusy = false);
     }

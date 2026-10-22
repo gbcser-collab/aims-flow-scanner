@@ -55,7 +55,15 @@ class _FlowLoginScreenState extends State<FlowLoginScreen> {
       if (!mounted) return;
       await _openDriver(validated);
     } on FlowSessionRejected catch (error) {
-      await _store.clearIfCurrent(saved);
+      try {
+        await _store.clearIfCurrent(saved);
+      } catch (_) {
+        if (mounted) setState(() {
+          _canRetryResume = true;
+          _error = 'A munkamenet helyi lezárása nem sikerült. Próbáld újra.';
+        });
+        return;
+      }
       if (mounted) setState(() => _error = error.message.toString());
     } on FlowSessionChanged {
       if (mounted) setState(() => _error = const FlowSessionChanged().toString());
