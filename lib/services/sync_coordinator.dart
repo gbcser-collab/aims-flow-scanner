@@ -6,6 +6,8 @@ import 'package:flutter/foundation.dart';
 import '../models/scan_models.dart';
 import 'aims_api_service.dart';
 import 'device_identity_service.dart';
+import 'flow_account_service.dart';
+import 'flow_local_journal.dart';
 import 'scan_repository.dart';
 import 'smart_document_repository.dart';
 import 'smart_document_service.dart';
@@ -16,8 +18,10 @@ class SyncCoordinator extends ChangeNotifier {
     SmartDocumentService smartService = const SmartDocumentService(),
     DeviceIdentityService identityService = const DeviceIdentityService(),
     AimsApiService api = const AimsApiService(),
+    Future<FlowAccountSession?> Function()? loadSession,
   }) : _repository = repository, _smartRepository = smartRepository,
-       _smartService = smartService, _identityService = identityService, _api = api;
+       _smartService = smartService, _identityService = identityService, _api = api,
+       _loadSession = loadSession ?? FlowSessionStore.instance.load;
 
   static final SyncCoordinator instance = SyncCoordinator();
   final ScanRepository _repository;
@@ -25,45 +29,46 @@ class SyncCoordinator extends ChangeNotifier {
   final SmartDocumentService _smartService;
   final DeviceIdentityService _identityService;
   final AimsApiService _api;
+  final Future<FlowAccountSession?> Function() _loadSession;
 
   Timer? _timer;
   bool _initialized = false;
   bool _syncing = false;
   String _deviceState = 'unknown';
-  int _pendingCount = 0;
+  int _cmrPendingCount = 0;
+  int _smartPendingCount = 0;
   String? _lastError;
   DateTime? _lastSyncAt;
 
   bool get syncing => _syncing;
   String get deviceState => _deviceState;
-  int get pendingCount => _pendingCount;
+  int get pendingCount => _cmrPendingCount + _smartPendingCount;
   String? get lastError => _lastError;
   DateTime? get lastSyncAt => _lastSyncAt;
 
   Future<void> initialize() async {
     if (_initialized) return;
     _initialized = true;
-    try {
-      await _repository.pruneExpiredApproved();
-      await refreshPendingCount();
-      _timer?.cancel();
-      _timer = Timer.periodic(
-        const Duration(minutes: 2),
-        (_) => unawaited(syncNow()),
-      );
-      unawaited(syncNow());
-    } catch (_) {
-      // Allow a later retry instead of getting stuck in a half-initialized state.
-      _initialized = false;
-      rethrow;
-    }
+    _timer?.cancel();
+    _timer = Timer.periodic(const Duration(minutes: 2), (_) => unawaited(syncNow()));
+    // Keep the retry timer alive even if a local index cannot be read initially.
+    await syncNow();
   }
 
   Future<void> refreshPendingCount() async {
-    final cmrPending = await _repository.pendingForSync();
-    final smartPending = await _smartRepository.pendingForSync();
-    _pendingCount = cmrPending.length + smartPending.length;
+    Object? failure;
+    await Future.wait([
+      () async {
+        try { _cmrPendingCount = (await _repository.pendingForSync()).length; }
+        catch (error) { failure ??= error; }
+      }(),
+      () async {
+        try { _smartPendingCount = (await _smartRepository.pendingForSync()).length; }
+        catch (error) { failure ??= error; }
+      }(),
+    ]);
     notifyListeners();
+    if (failure != null) throw failure!;
   }
 
   Future<void> syncNow() async {
@@ -71,118 +76,108 @@ class SyncCoordinator extends ChangeNotifier {
     _syncing = true;
     _lastError = null;
     notifyListeners();
-
     try {
+      // The legacy CMR device credential and FLOW session are independent.
+      // Neither channel may block the other's queue or authentication.
+      final errors = await Future.wait([_syncCmr(), _syncSmart()]);
+      final messages = errors.whereType<String>().toList();
+      _lastError = messages.isEmpty ? null : messages.join(' • ');
+    } finally {
+      try { await refreshPendingCount(); }
+      catch (_) { _lastError ??= 'A helyi dokumentumsor nem olvasható. Az adatokat megőriztük.'; }
+      _syncing = false;
+      notifyListeners();
+    }
+  }
+
+  Future<String?> _syncCmr() async {
+    String? error;
+    try {
+      await _repository.pruneExpiredApproved();
       final pending = await _repository.pendingForSync();
-      final smartPending = await _smartRepository.pendingForSync();
-      // An empty queue needs no enrollment/status round-trip or mobile radio wakeup.
-      if (pending.isEmpty && smartPending.isEmpty) return;
+      if (pending.isEmpty) return null;
       final identity = await _identityService.loadOrCreate();
       final enroll = await _api.enroll(identity, label: 'AIMS Flow Smart Scanner');
-      _deviceState = enroll['state'] as String? ?? _deviceState;
-
+      _deviceState = enroll['state'] as String? ?? 'unknown';
       final status = await _api.deviceStatus(identity);
-      _deviceState = status['state'] as String? ?? _deviceState;
+      _deviceState = status['state'] as String? ?? 'unknown';
       if (_deviceState != 'approved') {
-        _lastError = _deviceState == 'revoked'
-            ? 'A készülék hozzáférését az admin visszavonta.'
-            : 'A készülék admin jóváhagyásra vár.';
-        return;
+        return _deviceState == 'revoked'
+          ? 'A CMR-készülék hozzáférését az admin visszavonta.'
+          : 'A CMR-készülék admin jóváhagyásra vár.';
       }
-
       for (final document in pending) {
         try {
           final response = await _api.syncCmr(identity, document);
-          final updated = _applyServerState(document, response);
-          await _repository.updateIfUnchanged(document, updated);
+          await _repository.updateIfUnchanged(document, _applyServerState(document, response));
+          _lastSyncAt = DateTime.now();
         } on AimsApiException catch (e) {
-          if (e.code == 'device_pending') {
-            _deviceState = 'pending';
-            _lastError = 'A készülék admin jóváhagyásra vár.';
-            return;
-          }
-          if (e.code == 'device_revoked') {
-            _deviceState = 'revoked';
-            _lastError = 'A készülék hozzáférését az admin visszavonta.';
-            return;
+          if (e.code == 'device_pending' || e.code == 'device_revoked') {
+            _deviceState = e.code == 'device_pending' ? 'pending' : 'revoked';
+            return 'CMR hozzáférési hiba: ${e.code}';
           }
           await _repository.updateIfUnchanged(document, document.copyWith(
-            syncState: CmrSyncState.failed,
-            lastSyncError: e.code,
-          ));
-          _lastError = 'CMR szinkronhiba: ${e.code}';
-          if (e.retryable || e.statusCode == 401 || e.statusCode == 403) return;
+            syncState: CmrSyncState.failed, lastSyncError: e.code));
+          error = 'CMR szinkronhiba: ${e.code}';
+          if (e.retryable || e.statusCode == 401 || e.statusCode == 403) return error;
         } catch (e) {
           await _repository.updateIfUnchanged(document, document.copyWith(
-            syncState: CmrSyncState.failed,
-            lastSyncError: e.toString(),
-          ));
+            syncState: CmrSyncState.failed, lastSyncError: e.toString()));
           if (e is FileSystemException) {
-            _lastError = 'A dokumentum helyi fájlja nem olvasható. A bejegyzés megmaradt.';
+            error = 'A CMR helyi fájlja nem olvasható. A bejegyzés megmaradt.';
           } else {
-            _lastError = 'Nincs kapcsolat. A dokumentum offline sorban marad.';
-            return;
+            return 'Nincs kapcsolat. A CMR offline sorban marad.';
           }
         }
       }
-      for (final document in smartPending) {
-        try {
-          final result = await _smartService.send(document);
-          await _smartRepository.updateIfUnchanged(document,
-            document.copyWith(
-              syncState: SmartDocumentSyncState.uploaded,
-              serverDocumentId: result.documentId,
-              uploadedAt: DateTime.now().toUtc(),
-              clearLastError: true,
-            ),
-          );
-        } on SmartDocumentUploadException catch (e) {
-          await _smartRepository.updateIfUnchanged(document,
-            document.copyWith(
-              syncState: SmartDocumentSyncState.failed,
-              lastError: e.code,
-            ),
-          );
-          _lastError = e.retryable
-              ? 'Nincs stabil kapcsolat. A Smart Document offline sorban marad.'
-              : 'Smart Document hiba: ${e.code}';
-          if (e.retryable) {
-            // Do not hammer the same broken mobile connection with every
-            // queued document. The next sync cycle will retry safely.
-            break;
-          }
-        } catch (e) {
-          await _smartRepository.updateIfUnchanged(document,
-            document.copyWith(
-              syncState: SmartDocumentSyncState.failed,
-              lastError: e.toString(),
-            ),
-          );
-          _lastError =
-              'Smart Document szinkron várakozik. A fájl biztonságosan a telefonon marad.';
-          break;
-        }
-      }
-
-      _lastSyncAt = DateTime.now();
       await _repository.pruneExpiredApproved();
     } on AimsApiException catch (e) {
       if (e.code == 'device_pending') _deviceState = 'pending';
       if (e.code == 'device_revoked') _deviceState = 'revoked';
-      _lastError = 'Szinkron várakozik: ${e.code}';
+      return 'CMR szinkron várakozik: ${e.code}';
+    } on FileSystemException {
+      return 'A CMR helyi naplója nem olvasható. Az eredeti adat megmaradt.';
     } catch (_) {
-      _lastError = 'Nincs hálózati kapcsolat. Az adatok biztonságosan offline maradnak.';
-    } finally {
-      try {
-        final cmrPending = await _repository.pendingForSync();
-        final smartPending = await _smartRepository.pendingForSync();
-        _pendingCount = cmrPending.length + smartPending.length;
-      } catch (_) {
-        // Pending-count refresh is informational only. Never leave sync locked.
-      }
-      _syncing = false;
-      notifyListeners();
+      return 'A CMR-kapcsolat nem elérhető. A dokumentumok megmaradtak.';
     }
+    return error;
+  }
+
+  Future<String?> _syncSmart() async {
+    String? error;
+    try {
+      final pending = await _smartRepository.pendingForSync();
+      if (pending.isEmpty) return null;
+      final session = await _loadSession();
+      if (session == null || session.isExpired) return 'A Smart Document küldéshez lépj be a FLOW-fiókba.';
+      for (final document in pending) {
+        if (!RegExp(r'^\d{6}$').hasMatch(document.flowId) || flowJournalPlate(document.plate).isEmpty) {
+          error ??= 'Régi Smart Document azonosításra vár. A helyi példány megmaradt.';
+          continue;
+        }
+        if (document.flowId != session.flowId || flowJournalPlate(document.plate) != flowJournalPlate(session.plate)) continue;
+        try {
+          final result = await _smartService.send(document);
+          await _smartRepository.updateIfUnchanged(document, document.copyWith(
+            syncState: SmartDocumentSyncState.uploaded, serverDocumentId: result.documentId,
+            uploadedAt: DateTime.now().toUtc(), clearLastError: true));
+          _lastSyncAt = DateTime.now();
+        } on SmartDocumentUploadException catch (e) {
+          await _smartRepository.updateIfUnchanged(document, document.copyWith(
+            syncState: SmartDocumentSyncState.failed, lastError: e.code));
+          error = 'Smart Document szinkron várakozik: ${e.code}';
+          if (e.retryable || e.code == 'invalid_session' || e.code == 'session_changed' ||
+              e.code == 'owner_mismatch' || e.statusCode == 401 || e.statusCode == 403) return error;
+        } catch (_) {
+          return 'A Smart Document küldése nem sikerült. A helyi példány megmaradt.';
+        }
+      }
+    } on FileSystemException {
+      return 'A Smart Document helyi naplója nem olvasható. Az eredeti adat megmaradt.';
+    } catch (_) {
+      return 'A Smart Document állapota nem olvasható. Később újrapróbáljuk.';
+    }
+    return error;
   }
 
   ScannedDocument _applyServerState(ScannedDocument document, Map<String, dynamic> response) {
@@ -209,9 +204,21 @@ class SyncCoordinator extends ChangeNotifier {
     );
   }
 
+  void _stopAutoSync() {
+    _timer?.cancel();
+    _timer = null;
+    _initialized = false;
+  }
+
+  @override
+  void removeListener(VoidCallback listener) {
+    super.removeListener(listener);
+    if (!hasListeners) _stopAutoSync();
+  }
+
   @override
   void dispose() {
-    _timer?.cancel();
+    _stopAutoSync();
     super.dispose();
   }
 }

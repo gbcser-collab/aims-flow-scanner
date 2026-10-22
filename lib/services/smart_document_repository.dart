@@ -1,11 +1,15 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'smart_document_classifier.dart';
 import 'local_serial_executor.dart';
+import 'flow_account_service.dart';
+import 'flow_local_journal.dart';
+import 'flow_queue_summary.dart';
 
 enum SmartDocumentSyncState { pending, uploaded, failed }
 
@@ -18,6 +22,7 @@ class PendingSmartDocument {
     required this.confidence,
     required this.createdAt,
     required this.plate,
+    this.flowId = '',
     this.syncState = SmartDocumentSyncState.pending,
     this.serverDocumentId,
     this.uploadedAt,
@@ -31,6 +36,7 @@ class PendingSmartDocument {
   final double confidence;
   final DateTime createdAt;
   final String plate;
+  final String flowId;
   final SmartDocumentSyncState syncState;
   final String? serverDocumentId;
   final DateTime? uploadedAt;
@@ -55,6 +61,7 @@ class PendingSmartDocument {
         confidence: confidence,
         createdAt: createdAt,
         plate: plate,
+        flowId: flowId,
         syncState: syncState ?? this.syncState,
         serverDocumentId: serverDocumentId ?? this.serverDocumentId,
         uploadedAt: uploadedAt ?? this.uploadedAt,
@@ -69,6 +76,7 @@ class PendingSmartDocument {
         'confidence': confidence,
         'createdAt': createdAt.toUtc().toIso8601String(),
         'plate': plate,
+        'flowId': flowId,
         'syncState': syncState.name,
         'serverDocumentId': serverDocumentId,
         'uploadedAt': uploadedAt?.toUtc().toIso8601String(),
@@ -99,6 +107,7 @@ class PendingSmartDocument {
       confidence: (value['confidence'] as num?)?.toDouble() ?? 0,
       createdAt: createdAt.toUtc(),
       plate: value['plate']?.toString().trim().toUpperCase() ?? '',
+      flowId: value['flowId']?.toString().trim() ?? '',
       syncState: syncState,
       serverDocumentId: value['serverDocumentId']?.toString(),
       uploadedAt:
@@ -163,9 +172,13 @@ class SmartDocumentRepository {
   Future<List<PendingSmartDocument>> pendingForSync() async {
     final all = await loadAll();
     return all
-        .where((item) => item.needsSync && item.plate.trim().isNotEmpty)
+        .where((item) => item.needsSync)
         .toList();
   }
+
+  Future<FlowQueueSummary> queueSummary(FlowAccountSession session) async =>
+      FlowQueueSummary.fromRecords((await pendingForSync()).map((d) => d.toJson()),
+        session, timeKey: 'createdAt');
 
   Future<PendingSmartDocument> savePending({
     required String sourceImagePath,
@@ -173,9 +186,16 @@ class SmartDocumentRepository {
     required String rawText,
     required double confidence,
     required String plate,
+    String flowId = '',
   }) => _serial.run(() async {
+    final owner = flowId.trim();
+    if (owner.isNotEmpty && !RegExp(r'^\d{6}$').hasMatch(owner)) {
+      throw ArgumentError('Invalid document owner');
+    }
     final now = DateTime.now().toUtc();
-    final id = 'smart_${now.microsecondsSinceEpoch}';
+    final random = Random.secure();
+    final nonce = List.generate(8, (_) => random.nextInt(256).toRadixString(16).padLeft(2, '0')).join();
+    final id = 'smart_${owner}_${now.microsecondsSinceEpoch}_$nonce';
     final root = await (directory ?? getApplicationDocumentsDirectory)();
     final dir = Directory('${root.path}/aims_smart_documents');
     if (!await dir.exists()) await dir.create(recursive: true);
@@ -193,7 +213,8 @@ class SmartDocumentRepository {
       rawText: rawText,
       confidence: confidence,
       createdAt: now,
-      plate: plate.trim().toUpperCase(),
+      plate: flowJournalPlate(plate),
+      flowId: owner,
     );
     final all = await _loadAll();
     all.insert(0, item);

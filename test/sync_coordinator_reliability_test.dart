@@ -7,6 +7,10 @@ import 'package:aims_flow_scanner/services/aims_api_service.dart';
 import 'package:aims_flow_scanner/services/device_identity_service.dart';
 import 'package:aims_flow_scanner/services/scan_repository.dart';
 import 'package:aims_flow_scanner/services/sync_coordinator.dart';
+import 'package:aims_flow_scanner/services/flow_account_service.dart';
+import 'package:aims_flow_scanner/services/smart_document_repository.dart';
+import 'package:aims_flow_scanner/services/smart_document_service.dart';
+import 'package:aims_flow_scanner/services/smart_document_classifier.dart';
 
 class TestIdentity extends DeviceIdentityService {
   @override
@@ -16,12 +20,17 @@ class TestApi extends AimsApiService {
   int requests = 0;
   int uploads = 0;
   Object? failure;
+  Completer<void>? enrollGate;
+  Object? enrollFailure;
   Map<String, dynamic> response = {'state': 'uploaded', 'documentId': 'server-1'};
   Completer<void>? gate;
   final entered = Completer<void>();
   @override
   Future<Map<String, dynamic>> enroll(DeviceIdentity identity, {required String label}) async {
-    requests++; return {'state': 'approved'};
+    requests++;
+    if (enrollGate != null) await enrollGate!.future;
+    if (enrollFailure != null) throw enrollFailure!;
+    return {'state': 'approved'};
   }
   @override
   Future<Map<String, dynamic>> deviceStatus(DeviceIdentity identity) async {
@@ -34,6 +43,15 @@ class TestApi extends AimsApiService {
     if (gate != null) await gate!.future;
     if (failure != null) throw failure!;
     return response;
+  }
+}
+class TestSmartService extends SmartDocumentService {
+  final sent = <String>[];
+  final entered = Completer<void>();
+  @override
+  Future<SmartDocumentUploadResult> send(PendingSmartDocument document) async {
+    sent.add(document.id); if (!entered.isCompleted) entered.complete();
+    return const SmartDocumentUploadResult(documentId: 'smart-server', state: 'uploaded');
   }
 }
 void main() {
@@ -102,4 +120,60 @@ void main() {
     await sync.syncNow(); expect(api.uploads, 1);
     api.gate!.complete(); await uploading; expect(sync.syncing, isFalse);
   });
+  final owner = FlowAccountSession(flowId: '123456', sessionToken: 'a' * 64,
+    expiresAt: DateTime.utc(2099), onboardingComplete: true, plate: 'ABC123');
+  PendingSmartDocument smart(String id, {String flowId = '123456', String plate = 'ABC123'}) =>
+    PendingSmartDocument(id: id, flowId: flowId, plate: plate, type: SmartDocumentType.pod,
+      imagePath: '${root.path}/$id.jpg', rawText: 'POD', confidence: 1, createdAt: DateTime.utc(2026));
+  SyncCoordinator withSmart(TestSmartService service) => SyncCoordinator(repository: repository,
+    api: api, identityService: TestIdentity(), smartService: service, loadSession: () async => owner);
+
+  test('Smart-only queue does not contact the legacy device API', () async {
+    final service = TestSmartService(); sync.dispose(); sync = withSmart(service);
+    await const SmartDocumentRepository().update(smart('own'));
+    api.enrollFailure = const AimsApiException('device_revoked', 403);
+    await sync.syncNow();
+    expect(api.requests, 0); expect(service.sent, ['own']); expect(sync.pendingCount, 0);
+  });
+  test('stalled legacy enrollment cannot delay an independent FLOW document', () async {
+    final service = TestSmartService(); sync.dispose(); sync = withSmart(service);
+    await repository.update(doc('cmr'));
+    await const SmartDocumentRepository().update(smart('own'));
+    api.enrollGate = Completer<void>();
+    final pass = sync.syncNow();
+    await service.entered.future.timeout(const Duration(seconds: 2));
+    expect(api.enrollGate!.isCompleted, isFalse);
+    api.enrollGate!.complete(); await pass;
+    expect((await const SmartDocumentRepository().loadAll()).single.syncState, SmartDocumentSyncState.uploaded);
+  });
+  test('corrupt CMR index remains intact while Smart Document still uploads', () async {
+    final service = TestSmartService(); sync.dispose(); sync = withSmart(service);
+    await repository.update(doc('cmr'));
+    final index = File('${root.path}/aims_scans/index.json'); await index.writeAsString('{broken');
+    await const SmartDocumentRepository().update(smart('own'));
+    await sync.syncNow();
+    expect(service.sent, ['own']); expect(await index.readAsString(), '{broken');
+    expect(sync.lastError, contains('CMR')); expect(sync.syncing, isFalse);
+  });
+  test('corrupt Smart index cannot block CMR upload or become an empty stored index', () async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('aims_pending_smart_documents_v1', '{broken');
+    await repository.update(doc('cmr')); await sync.syncNow();
+    expect(api.uploads, 1); expect((await repository.loadAll()).single.syncState, CmrSyncState.uploaded);
+    expect(prefs.getString('aims_pending_smart_documents_v1'), '{broken');
+    expect(sync.lastError, contains('Smart Document'));
+  });
+  test('foreign, unassigned and blank-plate documents stay held without blocking own upload', () async {
+    final service = TestSmartService(); sync.dispose(); sync = withSmart(service);
+    const repo = SmartDocumentRepository();
+    await repo.update(smart('old', flowId: ''));
+    await repo.update(smart('foreign', flowId: '654321'));
+    await repo.update(smart('blank', plate: ''));
+    await repo.update(smart('own'));
+    await sync.syncNow();
+    expect(service.sent, ['own']); expect(sync.pendingCount, 3);
+    final summary = await repo.queueSummary(owner);
+    expect(summary.unidentified, 2); expect(summary.other, 1); expect(summary.pending, 0);
+  });
+
 }

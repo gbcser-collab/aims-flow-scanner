@@ -19,6 +19,7 @@ import '../services/driver_api_service.dart';
 import '../services/driver_push_service.dart';
 import '../services/flow_account_service.dart';
 import '../services/flow_queue_summary.dart';
+import '../services/foreground_session_guard.dart';
 import '../services/smart_document_repository.dart';
 import '../services/flow_operations_service.dart';
 import '../services/flow_safety_check_service.dart';
@@ -333,6 +334,9 @@ class _DriverShellScreenState extends State<DriverShellScreen>
   int _autopilotFailureCount = 0;
   DateTime? _autopilotLastSuccessAt;
   bool _appInForeground = true;
+  final _foregroundSession = ForegroundSessionGuard();
+  bool _resumeRefreshBusy = false;
+  bool _loginRedirecting = false;
   final Set<int> _preArrivalBriefedStops = <int>{};
   DateTime? _lastPreArrivalCheckAt;
   DriverRestModeState _restMode = const DriverRestModeState(active: false);
@@ -2476,9 +2480,11 @@ class _DriverShellScreenState extends State<DriverShellScreen>
       await _refreshOfficeMessages(silent: true);
       _officeMessageTimer?.cancel();
       _officeMessageTimer = Timer.periodic(const Duration(seconds: 15), (_) {
-        if (_plate.isNotEmpty) {
-          unawaited(_refreshOfficeMessages(silent: true));
-        }
+        unawaited(() async {
+          if (_plate.isNotEmpty && await _authorizeForeground()) {
+            await _refreshOfficeMessages(silent: true);
+          }
+        }().catchError((Object _) {}));
       });
       _scheduleAutopilotRefresh(1);
     }
@@ -2577,8 +2583,8 @@ class _DriverShellScreenState extends State<DriverShellScreen>
     // A long GPS backlog must not delay workday, Safety or job recovery.
     await Future.wait([
       _tracking.syncPending(),
-      if (_appInForeground) _runtimeRecoverySweep(),
-      if (_appInForeground) _refreshAfterResume(),
+      _resumeDriver(force: true),
+      _sync.syncNow(),
     ]);
   }
 
@@ -2594,7 +2600,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
     _runtimeHealthTimer?.cancel();
     _runtimeHealthTimer = Timer.periodic(
       const Duration(seconds: 60),
-      (_) => unawaited(_runtimeRecoverySweep()),
+      (_) => unawaited(_appInForeground ? _runtimeRecoverySweep() : _resumeDriver()),
     );
     unawaited(_runtimeRecoverySweep());
   }
@@ -2610,6 +2616,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
 
     Future<void> safe(Future<void> Function() action) async {
       try {
+        if (!await _authorizeForeground()) return;
         await action();
       } catch (_) {
         // The watchdog never lets one optional subsystem stop another one.
@@ -2717,9 +2724,9 @@ class _DriverShellScreenState extends State<DriverShellScreen>
     if (_plate.isEmpty || !_appInForeground) return;
     final safeSeconds = seconds.clamp(8, 120).toInt();
     _autopilotTimer = Timer(Duration(seconds: safeSeconds), () {
-      if (_plate.isNotEmpty) {
-        unawaited(_refreshAutopilot());
-      }
+      unawaited(() async {
+        if (_plate.isNotEmpty && await _authorizeForeground()) await _refreshAutopilot();
+      }().catchError((Object _) {}));
     });
   }
 
@@ -2763,7 +2770,8 @@ class _DriverShellScreenState extends State<DriverShellScreen>
   }
 
   Future<void> _refreshAutopilot() async {
-    if (_plate.isEmpty || _autopilotRefreshing) return;
+    if (_plate.isEmpty || _autopilotRefreshing || !_appInForeground) return;
+    if (!await _authorizeForeground() || _autopilotRefreshing) return;
     if (mounted) {
       setState(() => _autopilotRefreshing = true);
     } else {
@@ -4232,61 +4240,71 @@ class _DriverShellScreenState extends State<DriverShellScreen>
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(value)));
   }
 
+  Future<bool> _authorizeForeground() async {
+    try {
+      return mounted && await _foregroundSession.authorize(_flowSession) && mounted;
+    } on FlowSessionChanged {
+      _appInForeground = false;
+      _autopilotTimer?.cancel();
+      _officeMessageTimer?.cancel();
+      if (mounted && !_loginRedirecting) {
+        _loginRedirecting = true;
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (_) => const FlowLoginScreen()), (_) => false);
+      }
+      return false;
+    } catch (_) {
+      // A transient storage error suspends requests without discarding login.
+      _appInForeground = false;
+      _autopilotTimer?.cancel();
+      _officeMessageTimer?.cancel();
+      return false;
+    }
+  }
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.paused ||
-        state == AppLifecycleState.inactive ||
-        state == AppLifecycleState.hidden ||
-        state == AppLifecycleState.detached) {
+    if (state != AppLifecycleState.resumed) {
+      _foregroundSession.pause();
       _appInForeground = false;
       _autopilotTimer?.cancel();
       _officeMessageTimer?.cancel();
       return;
     }
-    if (state != AppLifecycleState.resumed || !mounted || _plate.isEmpty) {
-      return;
-    }
+    if (!mounted || _plate.isEmpty) return;
+    _foregroundSession.resume();
+    _appInForeground = false;
+    unawaited(_resumeDriver());
+  }
+
+  Future<void> _resumeDriver({bool force = false}) async {
+    if (!mounted || _plate.isEmpty || !await _authorizeForeground()) return;
     _appInForeground = true;
     _officeMessageTimer?.cancel();
     _officeMessageTimer = Timer.periodic(const Duration(seconds: 15), (_) {
-      if (_plate.isNotEmpty) {
-        unawaited(_refreshOfficeMessages(silent: true));
-      }
+      unawaited(() async {
+        if (_plate.isNotEmpty && await _authorizeForeground()) {
+          await _refreshOfficeMessages(silent: true);
+        }
+      }().catchError((Object _) {}));
     });
     _scheduleAutopilotRefresh(1);
-
     final now = DateTime.now();
     final previous = _lastResumeRefreshAt;
-    if (previous != null &&
-        now.difference(previous) < const Duration(seconds: 10)) {
-      return;
-    }
+    if (!force && previous != null && now.difference(previous) < const Duration(seconds: 10)) return;
+    if (_resumeRefreshBusy) return;
+    _resumeRefreshBusy = true;
     _lastResumeRefreshAt = now;
-    unawaited(_refreshAfterResume());
-    unawaited(_runtimeRecoverySweep());
+    try {
+      await _refreshAfterResume();
+      if (_appInForeground) await _runtimeRecoverySweep();
+    } finally {
+      _resumeRefreshBusy = false;
+    }
   }
 
   Future<void> _refreshAfterResume() async {
-    try {
-      // A retained Android engine can outlive the login that opened this UI.
-      // Re-check local ownership before resuming any driver-specific requests.
-      final current = await FlowSessionStore.instance.load();
-      if (!mounted) return;
-      final shown = _flowSession;
-      if (current == null || (shown != null &&
-          (current.sessionToken != shown.sessionToken ||
-           current.flowId != shown.flowId || current.plate != shown.plate))) {
-        _appInForeground = false;
-        _autopilotTimer?.cancel();
-        _officeMessageTimer?.cancel();
-        Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(builder: (_) => const FlowLoginScreen()), (_) => false);
-        return;
-      }
-    } catch (_) {
-      // A storage failure must not log out or start requests with stale state.
-      return;
-    }
+    if (!await _authorizeForeground()) return;
     try {
       await _tracking.recover();
       final status = await _tracking.currentStatus();
@@ -4297,6 +4315,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
 
     Future<void> safe(Future<void> Function() action) async {
       try {
+        if (!await _authorizeForeground()) return;
         await action();
       } catch (_) {
         // Resume is a recovery sweep: one failed subsystem must not stop others.
@@ -4419,6 +4438,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
     await queue('GPS', () => _tracking.queueSummary(session));
     await queue(_l('Munkanapok', 'Workdays', 'Arbeitstage'), () => _workday.queueSummary(session));
     await queue('Safety Check', () => _safetyCheck.queueSummary(session));
+    await queue('Smart Document', () => const SmartDocumentRepository().queueSummary(session));
     final vehicleDetail = _l('A jelenlegi jármű helyi küldési sora.',
       'Local send queue for the current vehicle.', 'Lokale Sendeliste des aktuellen Fahrzeugs.');
     rows.addAll([
@@ -4434,10 +4454,9 @@ class _DriverShellScreenState extends State<DriverShellScreen>
     final documentsTitle = _l('Dokumentumok a telefonon', 'Documents on this phone', 'Dokumente auf diesem Telefon');
     try {
       final cmr = await _scanRepository.pendingForSync();
-      final smart = await const SmartDocumentRepository().pendingForSync();
       final approval = cmr.where((d) => d.syncState == CmrSyncState.uploaded).length;
       rows.add(FlowSyncRow(title: documentsTitle,
-        pending: cmr.length - approval + smart.length, detail: [
+        pending: cmr.length - approval, detail: [
           _l('Helyben elérhető, feltöltésre váró dokumentumok.',
             'Locally available documents waiting for upload.',
             'Lokal verfügbare Dokumente zum Hochladen.'),
@@ -4655,6 +4674,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _foregroundSession.pause();
     _refreshGeneration++;
     _pendingStopRetryTimer?.cancel();
     _pendingStopRetryTimer = null;

@@ -7,6 +7,8 @@ import 'package:path_provider/path_provider.dart';
 
 import '../models/scan_models.dart';
 import '../services/aims_locale.dart';
+import '../services/flow_account_service.dart';
+import '../services/flow_local_journal.dart';
 import '../services/aims_scan_engine.dart';
 import '../services/cmr_parser.dart';
 import '../services/invoice_parser.dart';
@@ -423,6 +425,7 @@ class _SmartDocumentScannerScreenState
       );
 
   Future<void> _routeResult({
+    required String flowId,
     required String imagePath,
     required String? signaturePath,
     required String rawText,
@@ -498,6 +501,7 @@ class _SmartDocumentScannerScreenState
           initialType: type,
           confidence: classification.confidence,
           plate: widget.plate,
+          flowId: flowId,
         ),
       ),
     );
@@ -522,6 +526,10 @@ class _SmartDocumentScannerScreenState
     String? output;
     String? signature;
     try {
+      final owner = await FlowSessionStore.instance.load();
+      if (owner == null || flowJournalPlate(owner.plate) != flowJournalPlate(widget.plate)) {
+        throw const FlowSessionChanged();
+      }
       await _prepareCapture(camera);
       if (!mounted) return;
       setState(() => _phase = _l(
@@ -589,6 +597,7 @@ class _SmartDocumentScannerScreenState
 
       await _disposeCamera();
       await _routeResult(
+        flowId: owner.flowId,
         imagePath: result.outputPath,
         signaturePath: signature,
         rawText: text,
@@ -817,3 +826,4 @@ class _SmartDocumentScannerScreenState
     );
   }
 }
+

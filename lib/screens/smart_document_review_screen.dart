@@ -16,6 +16,7 @@ class SmartDocumentReviewScreen extends StatefulWidget {
     required this.initialType,
     required this.confidence,
     required this.plate,
+    this.flowId = '',
   });
 
   final String imagePath;
@@ -23,6 +24,7 @@ class SmartDocumentReviewScreen extends StatefulWidget {
   final SmartDocumentType initialType;
   final double confidence;
   final String plate;
+  final String flowId;
 
   @override
   State<SmartDocumentReviewScreen> createState() =>
@@ -58,8 +60,9 @@ class _SmartDocumentReviewScreenState extends State<SmartDocumentReviewScreen> {
         rawText: widget.rawText,
         confidence: widget.confidence,
         plate: widget.plate,
+        flowId: widget.flowId,
       );
-      await SyncCoordinator.instance.refreshPendingCount();
+      try { await SyncCoordinator.instance.refreshPendingCount(); } catch (_) {}
       unawaited(SyncCoordinator.instance.syncNow());
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -213,3 +216,4 @@ class _SmartDocumentReviewScreenState extends State<SmartDocumentReviewScreen> {
     );
   }
 }
+

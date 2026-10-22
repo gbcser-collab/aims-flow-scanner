@@ -96,4 +96,23 @@ void main() {
     expect(retained.lastError, 'newer');
   });
 
+  test('captured Smart Document owner survives serialization and synchronization updates', () async {
+    final image = File('${root.path}/capture.jpg'); await image.writeAsString('image-bytes');
+    final repo = SmartDocumentRepository(directory: () async => root);
+    final captured = await repo.savePending(sourceImagePath: image.path, type: SmartDocumentType.pod,
+      rawText: 'POD', confidence: 1, plate: 'ABC-123', flowId: '123456');
+    expect(captured.flowId, '123456'); expect(captured.plate, 'ABC123');
+    await repo.updateIfUnchanged(captured, captured.copyWith(syncState: SmartDocumentSyncState.failed));
+    final restored = (await repo.loadAll()).single;
+    expect(restored.flowId, '123456'); expect(restored.id, captured.id);
+    expect(restored.syncState, SmartDocumentSyncState.failed);
+  });
+  test('legacy Smart Document retains unknown ownership without inheriting a login', () async {
+    final legacy = smart('legacy').toJson()..remove('flowId');
+    final restored = PendingSmartDocument.fromJson(legacy)!;
+    expect(restored.flowId, isEmpty);
+    await const SmartDocumentRepository().update(restored);
+    expect((await const SmartDocumentRepository().loadAll()).single.flowId, isEmpty);
+  });
+
 }
