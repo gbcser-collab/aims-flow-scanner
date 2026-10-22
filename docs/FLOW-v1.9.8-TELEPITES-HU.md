@@ -19,7 +19,7 @@ A tulajdonosi védelem ebben a kiadásban kliensoldali; a szerver végpontjai é
 
 ## Ellenőrzés
 
-Új tesztek vizsgálják a háttérbe lépés közben befejeződő belépésellenőrzést, fiók- és rendszámváltást, átmeneti tárhelyhibát, egymástól független dokumentumküldést, sérült naplókat, változó munkamenetet, hibás nyugtát és beragadt HTTP-választ. A tényleges CI- és APK-eredmény a kiadás lezárásakor kerül ide.
+Új tesztek vizsgálják a háttérbe lépés közben befejeződő belépésellenőrzést, fiók- és rendszámváltást, átmeneti tárhelyhibát, egymástól független dokumentumküldést, sérült naplókat, változó munkamenetet, hibás nyugtát és beragadt HTTP-választ. A teljes [CI-futás](https://github.com/gbcser-collab/aims-flow-scanner/actions/runs/39758993549) sikeres: **165 Flutter-teszt 30 fájlban**, köztük **20 új regressziós teszt**; **10 aláírási teszt**; hibamentes statikus elemzés. A PHP/SQLite és valós HTTP jogosultsági, GPS-visszajátszási, munkanap-, Safety-, havi riport-, DST- és ECO-vizsgálatok is sikeresek. Ellenőrzött forráscommit: `e704e8bbc6f02441f4254149c863dc2140094993`.
 
 ## Telefonos átvétel és telepítés
 
@@ -30,3 +30,17 @@ Valódi telefonos GPS- és fogyasztásmérés ebben a környezetben nem történ
 A release fordítás és a tartós aláírás külön tulajdonság. `ephemeral-debug` aláírás esetén külön teszttelefonra telepíts: korábbi, más kulccsal aláírt PILOT fölé nem garantált az adatmegőrző frissítés. **Függő adatok mellett a régi appot ne töröld, és ne ürítsd az adatait.** A tartós kulcs beállítása: [v1.9.5 útmutató](FLOW-v1.9.5-TELEPITES-HU.md#tartós-pilot-aláírás-beállítása).
 
 Hivatalos API-háttér: [Flutter életciklus](https://api.flutter.dev/flutter/dart-ui/AppLifecycleState.html), [Dart HTTP kliens](https://pub.dev/documentation/http/latest/http/Client-class.html).
+
+## Átadott telepítő
+
+Az [Android release build](https://github.com/gbcser-collab/aims-flow-scanner/actions/runs/39758993489) sikeres. A letöltött ZIP mérete és SHA-256 értéke egyezik a GitHub Actions műtermékével. Az APK ellenőrzőösszege és tanúsítványa egyezik a build nyugtájával. Ellenőrizve: csomagazonosító, verzió, buildszám, Android 7 minimum, nem hibakereshető alkalmazás, letiltott backup, location foreground service, hálózati jogosultságok és a két eredeti értesítési hang változatlan tartalma.
+
+| Tulajdonság | Érték |
+| --- | --- |
+| Fájl | `AIMS-FLOW-v1.9.8-PILOT-build38.apk` |
+| Méret | 98 738 151 bájt (98,7 MB) |
+| SHA-256 | `6f515b2baddab7d4af9ff7f7fddc6c9675e02927d391a02d7e1f2315149a4c66` |
+| Tanúsítvány SHA-256 | `3575e813c67e22dfddb84ded55933f88576cad5490d1d42433b261d9754af389` |
+| Fordítás / aláírás | `release-pilot` / `ephemeral-debug` |
+
+A tanúsítvány eltér a v1.9.7 PILOT tanúsítványától. Ez a csomag külön teszttelefonra telepíthető; éles terítés nem történt. A tartós, adatmegőrző frissítési csatornához az eredeti megőrzött aláírókulcs szükséges.
