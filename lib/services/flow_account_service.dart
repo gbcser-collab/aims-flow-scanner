@@ -135,7 +135,7 @@ class FlowSessionStore {
   final Future<void> Function(String)? writeSecure;
   final Future<void> Function()? deleteSecure;
   final bool _preferencesOnly;
-  Future<void> _tail = Future<void>.value();
+  Future<void>? _tail;
   int _revision = 0;
 
   static bool get _runningUnderFlutterTest {
@@ -150,13 +150,22 @@ class FlowSessionStore {
 
   Future<T> _locked<T>(Future<T> Function() action) {
     final result = Completer<T>();
-    _tail = _tail.then((_) async {
+    final previous = _tail;
+    final done = Completer<void>();
+    _tail = done.future;
+    Future<void> run() async {
       try {
+        if (previous != null) await previous;
         result.complete(await action());
       } catch (error, stack) {
         result.completeError(error, stack);
+      } finally {
+        // Do not retain an idle Future bound to a previous widget/test zone.
+        if (identical(_tail, done.future)) _tail = null;
+        done.complete();
       }
-    });
+    }
+    unawaited(run());
     return result.future;
   }
 

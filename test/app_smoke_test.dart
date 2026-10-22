@@ -97,7 +97,7 @@ void main() {
     await tester.pumpWidget(
       const MaterialApp(home: DriverShellScreen()),
     );
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 300));
 
     expect(find.byType(AimsFlowLogo), findsOneWidget);
     expect(find.text('AIMS FLOW'), findsOneWidget);

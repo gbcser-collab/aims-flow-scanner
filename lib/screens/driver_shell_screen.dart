@@ -1526,13 +1526,17 @@ class _DriverShellScreenState extends State<DriverShellScreen>
   }
 
   Future<void> _rememberOdometer(int km, {required String source}) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt('aims_driver_last_odometer_km', km);
     final session = _flowSession;
     if (session != null) {
-      final updated = session.copyWith(currentKm: km);
+      final store = FlowSessionStore.instance;
+      final revision = await store.revisionFor(session);
+      final saved = await store.load();
+      if (saved == null || saved.sessionToken != session.sessionToken) {
+        throw const FlowSessionChanged();
+      }
+      final updated = saved.copyWith(currentKm: km);
+      await store.replaceCurrent(session, updated, revision);
       _flowSession = updated;
-      await FlowSessionStore.instance.save(updated);
       try {
         await _flowOps.recordOdometer(
           session: updated,
@@ -4312,9 +4316,9 @@ class _DriverShellScreenState extends State<DriverShellScreen>
     if (value == null) return '—';
     final minutes = DateTime.now().difference(value).inMinutes;
     if (minutes <= 0) return _l('most', 'now', 'jetzt');
-    if (minutes < 60) return '$minutes p';
+    if (minutes < 60) return '$minutes ${_l('p', 'min', 'Min.')}';
     final hours = minutes ~/ 60;
-    return '$hours ó';
+    return '$hours ${_l('ó', 'h', 'Std.')}';
   }
 
   Future<void> _refreshDriverHealth() async {

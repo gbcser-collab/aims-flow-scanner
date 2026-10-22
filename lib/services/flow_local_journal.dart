@@ -8,12 +8,26 @@ String flowJournalPlate(String value) =>
 
 /// Serialize local read/modify/write operations; network calls stay outside.
 class FlowLocalJournal {
-  static Future<void> _tail = Future<void>.value();
+  static Future<void>? _tail;
 
   static Future<T> run<T>(Future<T> Function() action) {
-    final result = _tail.then((_) => action());
-    _tail = result.then<void>((_) {}, onError: (Object _, StackTrace __) {});
-    return result;
+    final previous = _tail;
+    final done = Completer<void>();
+    final result = Completer<T>();
+    _tail = done.future;
+    Future<void> execute() async {
+      try {
+        if (previous != null) await previous;
+        result.complete(await action());
+      } catch (error, stack) {
+        result.completeError(error, stack);
+      } finally {
+        if (identical(_tail, done.future)) _tail = null;
+        done.complete();
+      }
+    }
+    unawaited(execute());
+    return result.future;
   }
 
   /// Capture pre-upgrade identity before login/logout replaces the old hints.
