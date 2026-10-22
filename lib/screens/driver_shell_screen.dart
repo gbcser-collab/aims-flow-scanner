@@ -4268,6 +4268,26 @@ class _DriverShellScreenState extends State<DriverShellScreen>
 
   Future<void> _refreshAfterResume() async {
     try {
+      // A retained Android engine can outlive the login that opened this UI.
+      // Re-check local ownership before resuming any driver-specific requests.
+      final current = await FlowSessionStore.instance.load();
+      if (!mounted) return;
+      final shown = _flowSession;
+      if (current == null || (shown != null &&
+          (current.sessionToken != shown.sessionToken ||
+           current.flowId != shown.flowId || current.plate != shown.plate))) {
+        _appInForeground = false;
+        _autopilotTimer?.cancel();
+        _officeMessageTimer?.cancel();
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (_) => const FlowLoginScreen()), (_) => false);
+        return;
+      }
+    } catch (_) {
+      // A storage failure must not log out or start requests with stale state.
+      return;
+    }
+    try {
       await _tracking.recover();
       final status = await _tracking.currentStatus();
       if (mounted) setState(() => _trackingStatus = status);
