@@ -100,7 +100,7 @@ class _FlowSyncDetailsScreenState extends State<FlowSyncDetailsScreen> {
       Padding(padding: const EdgeInsets.all(16), child: SizedBox(width: double.infinity,
         child: FilledButton.icon(onPressed: _busy ? null : () => _refresh(send: true),
           icon: const Icon(Icons.sync), label: Text(_l('Küldés újrapróbálása',
-            'Retry sending', 'Erneut senden')))),
+            'Retry sending', 'Erneut senden'))))),
     ])),
   );
 }

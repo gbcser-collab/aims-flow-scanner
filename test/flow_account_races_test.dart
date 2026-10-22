@@ -1,10 +1,12 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:aims_flow_scanner/services/flow_account_service.dart';
+import 'package:aims_flow_scanner/screens/flow_login_screen.dart';
 
 FlowAccountSession driver(String id, String token) => FlowAccountSession(
   flowId: id, sessionToken: token * 64, expiresAt: DateTime.utc(2099),
@@ -162,5 +164,33 @@ void main() {
       http.Response('{"error":"invalid_session"}', 401)));
     await expectLater(api.validateSession(a), throwsA(isA<StateError>()
       .having((e) => e.message, 'message', contains('munkamenet lejárt'))));
+  });
+
+  testWidgets('login screen preserves saved account on temporary network failure', (tester) async {
+    await store.save(a);
+    final api = FlowAccountService(store: store,
+      client: MockClient((_) async => throw http.ClientException('offline')));
+    await tester.pumpWidget(MaterialApp(home: FlowLoginScreen(account: api, sessionStore: store)));
+    await tester.pumpAndSettle();
+    expect((await store.load())?.flowId, a.flowId);
+    expect(find.text('Mentett belépés újraellenőrzése'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('late rejected resume cannot clear a newly saved account', (tester) async {
+    await store.save(a);
+    final gate = Completer<http.Response>();
+    final entered = Completer<void>();
+    final api = FlowAccountService(store: store, client: MockClient((_) {
+      entered.complete(); return gate.future;
+    }));
+    await tester.pumpWidget(MaterialApp(home: FlowLoginScreen(account: api, sessionStore: store)));
+    await tester.pump();
+    expect(entered.isCompleted, isTrue);
+    await store.save(b);
+    gate.complete(http.Response('{"error":"invalid_session"}', 401));
+    await tester.pumpAndSettle();
+    expect((await store.load())?.flowId, b.flowId);
+    expect(tester.takeException(), isNull);
   });
 }
