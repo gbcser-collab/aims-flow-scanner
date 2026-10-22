@@ -35,4 +35,18 @@ A [v1.9.6 telefonos GPS- és akkumulátorpróbái](FLOW-v1.9.6-TELEPITES-HU.md) 
 
 Célzott vizsgálatok: átmeneti munkamenet- és naplóolvasási hiba, hibás napló, lejárt/idegen munkamenet, munkanap lezárása a hiba után; új szinkronkérés folyamatban lévő küldés közben, hibás első kör utáni helyreállás, megszüntetés; részleges fájlírás, írási hiba, adatbázis-visszagörgetés, nyolc külön PHP-folyamat egyidejű ismétlése, valódi HTTP jogosultsági és változatlan tartalmú ismétlési próbák.
 
-A kiadási eredmények a teljes CI és Android-fordítás befejezése után kerülnek ide. Műszaki háttér: [SQLite tranzakciók](https://www.sqlite.org/lang_transaction.html), [PHP fsync](https://www.php.net/manual/en/function.fsync.php), [PHP fwrite](https://www.php.net/manual/en/function.fwrite.php).
+A [teljes CI-futás](https://github.com/gbcser-collab/aims-flow-scanner/actions/runs/39764300178) sikeres: **175 Flutter-teszt 31 fájlban**, köztük 10 új célzott teszt; **10 aláírási teszt**; hibamentes statikus elemzés. A Smart Document nyolcfolyamatos versenyhelyzet-, részleges írás-, visszagörgetési és valódi HTTP-próbái, valamint a meglévő PHP/SQLite, GPS, munkanap, Safety, havi riport, DST és ECO ellenőrzések is sikeresek. Ellenőrzött forráscommit: `1c98f8d06339e76e7684e83ffe3cce87f63832fc`. Műszaki háttér: [SQLite tranzakciók](https://www.sqlite.org/lang_transaction.html), [PHP fsync](https://www.php.net/manual/en/function.fsync.php), [PHP fwrite](https://www.php.net/manual/en/function.fwrite.php).
+
+## Ellenőrzött APK
+
+Az [Android-fordítás](https://github.com/gbcser-collab/aims-flow-scanner/actions/runs/39764300184) sikeres. A letöltött buildcsomag mérete és SHA-256 lenyomata egyezik a GitHub Actions műtermékével. Az APK és az aláíró tanúsítvány lenyomata egyezik a fordítás nyugtájával. Ellenőrizve: verzió és buildszám, csomagazonosító, Android 7 minimum, nem hibakereshető alkalmazás, letiltott backup, hálózati jogosultság, helymeghatározási előtérszolgáltatás és a két eredeti értesítési hang.
+
+| Tulajdonság | Érték |
+| --- | --- |
+| APK | `AIMS-FLOW-v1.9.9-PILOT-build39.apk` |
+| Méret | 98 754 535 bájt (98,8 MB) |
+| SHA-256 | `b0593ca2739b027e485343f3bab1f3c5ebd5583b79149e89f21788f96935ca94` |
+| Tanúsítvány SHA-256 | `159c5a4e3198bc8ffb14e409ee971c78396b93be5014df4d51522b8881b1de5c` |
+| Fordítás / aláírás | `release-pilot` / `ephemeral-debug` |
+
+Az aláírás eltér a v1.9.8 PILOT aláírásától. Külön teszttelefonra telepítsd; a meglévő, függő adatokat tartalmazó appot ne töröld. Az adatmegőrző frissítési csatornához tartós aláírókulcs szükséges.
