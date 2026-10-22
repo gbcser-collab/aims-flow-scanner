@@ -21,6 +21,7 @@ import 'tracking_shutdown.dart';
 import 'tracking_workday_guard.dart';
 import 'local_serial_executor.dart';
 import 'tracking_policy.dart';
+import 'tracking_location_settings.dart';
 import 'tracking_platform.dart';
 import 'gps_point_quality.dart';
 import 'roaming_resilience.dart';
@@ -353,7 +354,7 @@ class VehicleTrackingService {
           }
         },
         () async {
-          if (Platform.isAndroid && !_runningUnderFlutterTest) await TrackingPlatform.setActive(false);
+          if ((Platform.isAndroid || Platform.isIOS) && !_runningUnderFlutterTest) await TrackingPlatform.setActive(false);
         },
       ]);
     } catch (_) {
@@ -441,7 +442,7 @@ class VehicleTrackingService {
         return;
       }
       final foreground = WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
-      if (Platform.isAndroid && !foreground && permission != LocationPermission.always) {
+      if ((Platform.isAndroid || Platform.isIOS) && !foreground && permission != LocationPermission.always) {
         _lastError = 'A GPS újraindításához nyisd meg az appot, vagy engedélyezd a helyhozzáférést mindig.';
         _emit();
         return;
@@ -450,22 +451,12 @@ class VehicleTrackingService {
       if (streamSession == null || !_enabled || generation != _locationGeneration ||
           !await _hasActiveWorkday(session: streamSession)) return;
       _activeInterval = _policy.sampleInterval;
-      final LocationSettings settings = Platform.isAndroid
-          ? AndroidSettings(
-              accuracy: LocationAccuracy.high,
-              // Timed stationary fixes avoid extra getCurrentPosition requests.
-              distanceFilter: 0,
-              intervalDuration: _activeInterval,
-              foregroundNotificationConfig: const ForegroundNotificationConfig(
-                notificationTitle: 'AIMS FLOW – munkanapkövetés',
-                notificationText: 'A helyzet a munkanap lezárásáig frissül. Megnyitás: részletek.',
-                enableWakeLock: false,
-                enableWifiLock: false,
-                setOngoing: true,
-              ),
-            )
-          : const LocationSettings(accuracy: LocationAccuracy.high, distanceFilter: 0);
-      if (Platform.isAndroid && !_runningUnderFlutterTest) await TrackingPlatform.setActive(true);
+      final settings = flowLocationSettings(
+        platform: Platform.isIOS ? TargetPlatform.iOS :
+            Platform.isAndroid ? TargetPlatform.android : TargetPlatform.linux,
+        interval: _activeInterval,
+      );
+      if ((Platform.isAndroid || Platform.isIOS) && !_runningUnderFlutterTest) await TrackingPlatform.setActive(true);
       if (!_enabled || generation != _locationGeneration) return;
       _streamStartedAt = DateTime.now();
       _lastReceivedAt = null;
@@ -516,7 +507,11 @@ class VehicleTrackingService {
       if (!await _hasActiveWorkday()) { await _disable(); return; }
       final since = _lastReceivedAt ?? _streamStartedAt;
       if (_streamRecoveryTimer == null && (_subscription == null ||
-          (since != null && DateTime.now().difference(since) > _policy.staleAfter))) {
+          flowFixNeedsRestart(
+            platform: Platform.isIOS ? TargetPlatform.iOS : TargetPlatform.android,
+            receivedFix: _lastReceivedAt != null,
+            age: since == null ? Duration.zero : DateTime.now().difference(since),
+            staleAfter: _policy.staleAfter))) {
         await _restartLocationStream();
       } else {
         await _applyProfile();
@@ -532,10 +527,12 @@ class VehicleTrackingService {
   }
 
   Future<void> _applyProfile() async {
-    if (_subscription == null || _activeInterval == _policy.sampleInterval) return;
+    // Core Location uses displacement, not Android's requested time interval.
+    // Keep its session alive across stationary/moving transitions.
+    if (Platform.isIOS || _subscription == null || _activeInterval == _policy.sampleInterval) return;
     // Keep an already running foreground service intact if Android would
     // forbid restarting it from the background with while-in-use permission.
-    if (Platform.isAndroid && WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed &&
+    if ((Platform.isAndroid || Platform.isIOS) && WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed &&
         await Geolocator.checkPermission() != LocationPermission.always) return;
     await _restartLocationStream();
   }
@@ -545,7 +542,7 @@ class VehicleTrackingService {
     _restarting = true;
     try {
       if (!await _hasActiveWorkday()) { await _disable(); return; }
-      if (Platform.isAndroid && WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed &&
+      if ((Platform.isAndroid || Platform.isIOS) && WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed &&
           await Geolocator.checkPermission() != LocationPermission.always) return;
       _locationGeneration++;
       final current = _subscription;

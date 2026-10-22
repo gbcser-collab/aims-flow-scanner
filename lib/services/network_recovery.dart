@@ -19,7 +19,7 @@ class NetworkRecovery {
 
   static const _channel =
       EventChannel('hu.logisticaims.aims_flow/connectivity');
-  static Stream<bool> get androidEvents =>
+  static Stream<bool> get mobileEvents =>
       _channel.receiveBroadcastStream().map((event) => event == true);
 
   final Future<void> Function() onRestored;

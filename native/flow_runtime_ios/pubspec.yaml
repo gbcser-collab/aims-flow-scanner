@@ -1,0 +1,15 @@
+name: flow_runtime_ios
+description: Native iOS network recovery and tracking readiness for AIMS FLOW.
+version: 1.0.0
+publish_to: none
+environment:
+  sdk: '>=3.12.0 <4.0.0'
+  flutter: '>=3.44.0'
+dependencies:
+  flutter:
+    sdk: flutter
+flutter:
+  plugin:
+    platforms:
+      ios:
+        pluginClass: FlowRuntimePlugin

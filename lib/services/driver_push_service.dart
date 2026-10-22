@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -33,6 +34,8 @@ class DriverPushEvent {
 
 @pragma('vm:entry-point')
 Future<void> aimsDriverMessagingBackgroundHandler(RemoteMessage message) async {
+  // APNs presents background alert messages itself.
+  if (Platform.isIOS && message.notification != null) return;
   final options = RuntimeFirebaseOptions.current;
   if (options != null && Firebase.apps.isEmpty) {
     await Firebase.initializeApp(options: options);
@@ -181,7 +184,8 @@ class DriverPushService {
   Future<void> _initializeLocalNotifications() async {
     const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
     await _notifications.initialize(
-      const InitializationSettings(android: androidInit),
+      const InitializationSettings(android: androidInit, iOS: DarwinInitializationSettings(
+        requestAlertPermission: false, requestBadgePermission: false, requestSoundPermission: false)),
       onDidReceiveNotificationResponse: (response) {
         _handleNotificationResponse(response);
       },
@@ -249,6 +253,10 @@ class DriverPushService {
   Future<String> _getFcmTokenWithRetry() async {
     String? token;
     for (var attempt = 0; attempt < 4; attempt++) {
+      if (Platform.isIOS && await FirebaseMessaging.instance.getAPNSToken() == null) {
+        await Future<void>.delayed(Duration(milliseconds: 500 * (attempt + 1)));
+        continue;
+      }
       token = await FirebaseMessaging.instance.getToken();
       if (token != null && token.isNotEmpty) return token;
       await Future<void>.delayed(Duration(milliseconds: 500 * (attempt + 1)));
@@ -268,7 +276,7 @@ class DriverPushService {
     return <String, String>{
       'fcmToken': fcm,
       'deviceId': tracking.deviceId,
-      'platform': 'android',
+      'platform': Platform.isIOS ? 'ios' : 'android',
     };
   }
 
@@ -301,7 +309,8 @@ class DriverPushService {
 
     const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
     await _notifications.initialize(
-      const InitializationSettings(android: androidInit),
+      const InitializationSettings(android: androidInit, iOS: DarwinInitializationSettings(
+        requestAlertPermission: false, requestBadgePermission: false, requestSoundPermission: false)),
     );
     final android = _notifications.resolvePlatformSpecificImplementation<
         AndroidFlutterLocalNotificationsPlugin>();
@@ -336,7 +345,7 @@ class DriverPushService {
       notificationId,
       title.isEmpty ? 'AIMS Flow' : title,
       body,
-      const NotificationDetails(android: details),
+      const NotificationDetails(android: details, iOS: DarwinNotificationDetails()),
       payload: jsonEncode(Map<String, dynamic>.from(message.data)),
     );
   }
@@ -352,7 +361,8 @@ class DriverPushService {
 
     const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
     await _notifications.initialize(
-      const InitializationSettings(android: androidInit),
+      const InitializationSettings(android: androidInit, iOS: DarwinInitializationSettings(
+        requestAlertPermission: false, requestBadgePermission: false, requestSoundPermission: false)),
     );
     final android = _notifications.resolvePlatformSpecificImplementation<
         AndroidFlutterLocalNotificationsPlugin>();
@@ -390,7 +400,7 @@ class DriverPushService {
           ? notification!.title!.trim()
           : 'Főnökség · új üzenet',
       body,
-      const NotificationDetails(android: details),
+      const NotificationDetails(android: details, iOS: DarwinNotificationDetails()),
       payload: jsonEncode(Map<String, dynamic>.from(message.data)),
     );
   }
@@ -400,7 +410,8 @@ class DriverPushService {
 
     const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
     await _notifications.initialize(
-      const InitializationSettings(android: androidInit),
+      const InitializationSettings(android: androidInit, iOS: DarwinInitializationSettings(
+        requestAlertPermission: false, requestBadgePermission: false, requestSoundPermission: false)),
     );
     final android = _notifications.resolvePlatformSpecificImplementation<
         AndroidFlutterLocalNotificationsPlugin>();
@@ -464,7 +475,7 @@ class DriverPushService {
       jobId == 0 ? DateTime.now().millisecondsSinceEpoch ~/ 1000 : jobId,
       title,
       body,
-      NotificationDetails(android: details),
+      NotificationDetails(android: details, iOS: DarwinNotificationDetails()),
       payload: jsonEncode(data),
     );
   }

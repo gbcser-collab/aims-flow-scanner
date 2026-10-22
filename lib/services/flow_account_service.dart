@@ -130,7 +130,10 @@ class FlowSessionStore {
   static final instance = FlowSessionStore();
   static const _key = 'aims_flow_driver_session_v2';
   static const _revokedKey = 'aims_flow_session_revoked_v1';
-  static final _secure = FlutterSecureStorage(aOptions: AndroidOptions());
+  static final _secure = FlutterSecureStorage(
+    aOptions: AndroidOptions(),
+    iOptions: IOSOptions(accessibility: KeychainAccessibility.first_unlock_this_device),
+  );
   final Future<String?> Function()? readSecure;
   final Future<void> Function(String)? writeSecure;
   final Future<void> Function()? deleteSecure;

@@ -2591,9 +2591,10 @@ class _DriverShellScreenState extends State<DriverShellScreen>
   void _startRuntimeSupervisor() {
     final underTest = WidgetsBinding.instance.runtimeType
         .toString().contains('TestWidgetsFlutterBinding');
-    if (!underTest && defaultTargetPlatform == TargetPlatform.android) {
+    if (!underTest && (defaultTargetPlatform == TargetPlatform.android ||
+        defaultTargetPlatform == TargetPlatform.iOS)) {
       _networkRecovery ??= NetworkRecovery(
-        NetworkRecovery.androidEvents,
+        NetworkRecovery.mobileEvents,
         _onNetworkRestored,
       );
     }

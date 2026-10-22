@@ -1,0 +1,68 @@
+name: Build AIMS FLOW iOS unsigned
+on:
+  push:
+    branches: [aims-flow-r105-next-v190-stabilization]
+    paths: ['lib/**', 'native/**', 'pubspec.yaml', 'ci/configure_ios.py', '.github/workflows/v1910-ios.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: flow-ios-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Generate iOS runner
+        run: |
+          flutter config --no-enable-swift-package-manager
+          flutter create --platforms=ios --org hu.logisticaims --project-name aims_flow_scanner /tmp/aims_flow_ios
+          cp -R /tmp/aims_flow_ios/ios ./ios
+          python3 ci/configure_ios.py
+          flutter pub get
+      - name: Analyze
+        run: flutter analyze
+      - name: Build for iPhone without signing
+        run: flutter build ios --release --no-codesign
+      - name: Verify and package unsigned app and reproducible source
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import plistlib, subprocess, zipfile, hashlib
+          app=Path('build/ios/iphoneos/Runner.app')
+          info=plistlib.loads((app/'Info.plist').read_bytes())
+          assert info['CFBundleShortVersionString']=='1.9.10'
+          assert info['CFBundleVersion']=='40'
+          assert 'location' in info['UIBackgroundModes']
+          assert float(info['MinimumOSVersion'])>=15.5
+          assert info['NSLocationAlwaysAndWhenInUseUsageDescription']
+          assert (app/'Frameworks/App.framework/App').is_file()
+          Path('IOS_BUILD_RECEIPT.txt').write_text(subprocess.check_output(['git','rev-parse','HEAD'],text=True)+str(info)+'\nUNSIGNED: Apple signing required before device installation.\n')
+          subprocess.run(['ditto','-c','-k','--keepParent',str(app),'AIMS-FLOW-v1.9.10-iOS-UNSIGNED.zip'],check=True)
+          files=subprocess.check_output(['git','ls-files','-z'],text=True).split('\0')
+          with zipfile.ZipFile('AIMS-FLOW-v1.9.10-iOS-SOURCE.zip','w',zipfile.ZIP_DEFLATED) as z:
+            for name in files:
+              f=Path(name)
+              if name and f.is_file(): z.write(f,'AIMS-FLOW-iOS/'+name)
+            for f in Path('ios').rglob('*'):
+              if f.is_file() and not any(x in f.parts for x in ['Pods','.symlinks','ephemeral','xcuserdata']) and f.name not in ['Generated.xcconfig','flutter_export_environment.sh']:
+                z.write(f,'AIMS-FLOW-iOS/'+str(f))
+            z.write('pubspec.lock','AIMS-FLOW-iOS/pubspec.lock')
+            z.write('IOS_BUILD_RECEIPT.txt','AIMS-FLOW-iOS/IOS_BUILD_RECEIPT.txt')
+          Path('SHA256SUMS-ios.txt').write_text(''.join(hashlib.sha256(f.read_bytes()).hexdigest()+'  '+f.name+'\n' for f in sorted(Path('.').glob('AIMS-FLOW-v1.9.10-iOS-*.zip'))))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AIMS-FLOW-v1.9.10-iOS
+          path: |
+            AIMS-FLOW-v1.9.10-iOS-*.zip
+            SHA256SUMS-ios.txt
+            IOS_BUILD_RECEIPT.txt
+          if-no-files-found: error
+          retention-days: 30

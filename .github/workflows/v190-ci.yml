@@ -36,6 +36,9 @@ jobs:
       - name: Android signing preflight regression tests
         run: python3 ci/test_android_signing.py
 
+      - name: iOS runner configuration regression
+        run: python3 ci/test_configure_ios.py
+
       - name: PHP syntax
         run: |
           find admin api server/aims-tracking -name '*.php' -print0 | xargs -0 -n1 php -l

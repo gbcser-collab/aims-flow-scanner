@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:http/http.dart' as http;
 
@@ -580,7 +581,7 @@ class DriverApiService {
             'plate': plate.trim().toUpperCase(),
             'deviceId': deviceId,
             'fcmToken': fcmToken,
-            'platform': 'android',
+            'platform': Platform.isIOS ? 'ios' : 'android',
           }),
         )
         .timeout(const Duration(seconds: 12));

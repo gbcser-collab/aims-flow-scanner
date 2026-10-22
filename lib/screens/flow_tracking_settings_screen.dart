@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import '../services/tracking_platform.dart';
@@ -112,19 +113,24 @@ class _FlowTrackingSettingsScreenState extends State<FlowTrackingSettingsScreen>
             'Standort immer erlauben, damit GPS im Hintergrund wieder anlaufen kann. Ortung nur während des Arbeitstags.'),
           _permission == null ? null : _permission == LocationPermission.always, action: () => _settings()),
         _row(_l('Akkumulátor és háttérfutás', 'Battery and background activity', 'Akku und Hintergrundaktivität'),
+          Platform.isIOS ? _l(
+            'iPhone-on engedélyezd a Mindig és a Pontos hely beállítást. A munkanap előtt nyisd meg az appot. Alacsony töltöttségnél az iOS korlátozhatja a háttérműveleteket.',
+            'On iPhone enable Always and Precise Location. Open the app before the workday. Low Power Mode may limit background activity.',
+            'Auf dem iPhone Immer und Genauer Standort aktivieren. Vor dem Arbeitstag die App öffnen. Der Stromsparmodus kann Hintergrundaktivität begrenzen.') :
           _l('Ha a telefon leállítja a követést: az AIMS FLOW akkumulátorhasználata legyen „Korlátlan”, és ne kerüljön alvó alkalmazások közé.',
             'If the phone stops tracking, set AIMS FLOW battery use to Unrestricted and exclude it from sleeping apps.',
             'Wenn das Telefon die Ortung beendet: Akkunutzung für AIMS FLOW auf Uneingeschränkt stellen und nicht in Standby-Apps aufnehmen.'),
           _device.isEmpty ? null : _device['batteryOptimized'] != true &&
             _device['backgroundRestricted'] != true && _device['powerSave'] != true,
           action: () => _settings(battery: true)),
-        _row(_l('Látható követési értesítés', 'Visible tracking notification', 'Sichtbare Ortungsbenachrichtigung'),
+        _row(Platform.isIOS ? _l('Értesítések', 'Notifications', 'Mitteilungen') : _l('Látható követési értesítés', 'Visible tracking notification', 'Sichtbare Ortungsbenachrichtigung'),
+          Platform.isIOS ? _l('A háttérkövetést az iOS helyzetjelzője mutatja. A fuvarértesítésekhez külön push-beállítás kell.', 'iOS shows its location indicator during background tracking. Job alerts require push configuration.', 'iOS zeigt die Standortanzeige bei Hintergrundortung. Auftragsmeldungen benötigen eine Push-Konfiguration.') :
           _l('Az értesítésből visszanyithatod az alkalmazást.', 'Reopen the app from its notification.',
             'Die App kann über die Benachrichtigung geöffnet werden.'),
           _device['notifications'] as bool?, action: () => _settings()),
         if (s != null) _row(_l('Mentett GPS-adatok', 'Saved GPS data', 'Gespeicherte GPS-Daten'),
           '${s.queueDepth} ${_l('pont vár küldésre.', 'point(s) waiting to upload.', 'Punkt(e) warten auf Übertragung.')}\n'
-          '${_l('Kért mérési időköz', 'Requested sampling interval', 'Angefordertes Messintervall')}: ${s.sampleSeconds} s', true),
+          '${Platform.isIOS ? _l('iOS: 10 méteres elmozdulásszűrés; az időközt a rendszer szabályozza.', 'iOS: 10 m displacement filter; timing is controlled by the system.', 'iOS: 10-m-Bewegungsfilter; Zeitabstand durch das System.') : '${_l('Kért mérési időköz', 'Requested sampling interval', 'Angefordertes Messintervall')}: ${s.sampleSeconds} s'}', true),
         if (s?.lastError != null) Padding(padding: const EdgeInsets.symmetric(vertical: 12), child: Text(s!.lastError!)),
         const SizedBox(height: 16),
         FilledButton.icon(onPressed: _busy ? null : () => _refresh(retry: true), icon: const Icon(Icons.gps_fixed),
