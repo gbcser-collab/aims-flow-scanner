@@ -32,7 +32,6 @@ jobs:
           npx playwright install webkit
       - name: Check iPhone, iPad and desktop layouts
         run: |
-          python3 -m http.server 8088 --bind 127.0.0.1 --directory integration/site > /tmp/flow-site.log 2>&1 &
           mkdir -p integration/site/flow/assets
           base64 --decode < integration/flow-logo.png.b64 > integration/site/flow/assets/aims-flow-logo.png
           node integration/test-website.cjs

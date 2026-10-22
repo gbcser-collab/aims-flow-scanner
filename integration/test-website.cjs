@@ -1,13 +1,17 @@
 const {webkit}=require('playwright');
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
+const {pathToFileURL}=require('node:url');
+const path=require('node:path');
 (async()=>{
  const browser=await webkit.launch();fs.mkdirSync('website-checks',{recursive:true});
  const results=[];
  for(const size of [{width:375,height:812},{width:390,height:844},{width:844,height:390},{width:820,height:1180},{width:1440,height:1000}]){
   const context=await browser.newContext({viewport:size,isMobile:size.width<1000,hasTouch:size.width<1000,reducedMotion:'reduce'});
   const page=await context.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));
-  await page.goto('http://127.0.0.1:8088/flow/app/',{waitUntil:'networkidle'});
+  await page.goto(pathToFileURL(path.resolve('integration/site/flow/app/index.html')).href,{waitUntil:'domcontentloaded'});
+  await page.evaluate(()=>document.fonts.ready);
+  assert.equal(await page.locator('body').evaluate(el=>getComputedStyle(el).backgroundColor),'rgb(7, 16, 29)');
   assert.equal(await page.locator('h1').count(),1);
   assert.equal(await page.locator('a[download]').getAttribute('href'),'downloads/AIMS-FLOW-v1.9.10-PILOT-build40.apk');
   assert.ok(await page.locator('a[href="../../admin/index.php"]').count()>0);
