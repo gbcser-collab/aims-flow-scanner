@@ -12,7 +12,7 @@ def single_certificate(output):
     # v3.1 uses SDK-range signer labels and can repeat the same certificate.
     # Exclude Source Stamp Signer and public-key digests: neither signs the APK.
     certificates = {value.lower() for value in re.findall(
-        r'^Signer[^\r\n]* certificate SHA-256 digest: ([a-fA-F0-9]{64})\s*$',
+        r'^(?:V[1-9](?:\.[0-9]+)? )?Signer[^\r\n]* certificate SHA-256 digest: ([a-fA-F0-9]{64})\s*$',
         output, re.MULTILINE)}
     if counts != ['1'] or len(certificates) != 1:
         raise ValueError('Expected one APK signer with one certificate across all SDK ranges')

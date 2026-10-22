@@ -12,6 +12,11 @@ from verify_android_signing import single_certificate
 
 
 class SigningTest(unittest.TestCase):
+    def test_actual_build_tools_output_from_the_failed_pilot_run(self):
+        output = (Path(__file__).parent / 'fixtures' / 'apksigner-v2.txt').read_text()
+        self.assertEqual(single_certificate(output),
+            '86f2970df70eb85c2446bb50f8dd603b33fb9cc7d1252dac8a9af64b59a01cc3')
+
     def test_classic_apksigner_certificate(self):
         digest = 'a1' * 32
         self.assertEqual(single_certificate('Number of signers: 1\n'
