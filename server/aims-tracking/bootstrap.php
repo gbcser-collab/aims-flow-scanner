@@ -554,6 +554,10 @@ function aims_db(): PDO {
         received_at TEXT NOT NULL,
         FOREIGN KEY(vehicle_id) REFERENCES vehicles(id) ON DELETE CASCADE
     )');
+    $safetyColumns=array_column($pdo->query('PRAGMA table_info(vehicle_safety_checks)')->fetchAll(PDO::FETCH_ASSOC),'name');
+    if (!in_array('flow_id',$safetyColumns,true)) {
+        $pdo->exec("ALTER TABLE vehicle_safety_checks ADD COLUMN flow_id TEXT NOT NULL DEFAULT ''");
+    }
     $pdo->exec('CREATE INDEX IF NOT EXISTS idx_vehicle_safety_vehicle_time
         ON vehicle_safety_checks(vehicle_id, created_at DESC)');
 

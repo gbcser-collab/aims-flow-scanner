@@ -270,6 +270,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
   List<FlowServiceAlert> _serviceAlerts = const [];
   FlowSafetyCheckRecord? _lastSafetyCheck;
   int _pendingSafetyCheckCount = 0;
+  int _unidentifiedSafetyCount = 0;
   int _pendingWorkdayCount = 0;
   DateTime? _lastServiceGuardRefresh;
   bool _safetyPromptOpen = false;
@@ -1804,12 +1805,16 @@ class _DriverShellScreenState extends State<DriverShellScreen>
 
   Future<void> _refreshSafetyStatus() async {
     try {
-      final latest = await _safetyCheck.latestRecord();
-      final pending = await _safetyCheck.pendingCount();
+      final session = _flowSession;
+      if (session == null) return;
+      final latest = await _safetyCheck.latestRecord(session: session);
+      final pending = await _safetyCheck.pendingCount(session: session);
+      final unidentified = await _safetyCheck.unidentifiedPendingCount();
       if (!mounted) return;
       setState(() {
         _lastSafetyCheck = latest;
         _pendingSafetyCheckCount = pending;
+        _unidentifiedSafetyCount = unidentified;
       });
     } catch (_) {}
   }
@@ -1867,7 +1872,9 @@ class _DriverShellScreenState extends State<DriverShellScreen>
 
   Future<void> _showSafetyHistory() async {
     if (!mounted) return;
-    final records = await _safetyCheck.recentRecords(limit: 10);
+    final session = _flowSession;
+    if (session == null) return;
+    final records = await _safetyCheck.recentRecords(limit: 10, session: session);
     if (!mounted) return;
     await showModalBottomSheet<void>(
       context: context,
@@ -1891,6 +1898,12 @@ class _DriverShellScreenState extends State<DriverShellScreen>
               style: const TextStyle(color: Colors.white),
             ),
             const SizedBox(height: 12),
+            if (_unidentifiedSafetyCount > 0)
+              ListTile(
+                leading: const Icon(Icons.info_outline_rounded),
+                title: Text('$_unidentifiedSafetyCount régi ellenőrzés azonosításra vár'),
+                subtitle: const Text('Helyben megőrizve. A korábbi sofőr nem azonosítható biztosan; irodai egyeztetés szükséges.'),
+              ),
             if (records.isEmpty)
               const ListTile(
                 contentPadding: EdgeInsets.zero,
@@ -2365,7 +2378,7 @@ class _DriverShellScreenState extends State<DriverShellScreen>
         ) ??
         false;
     if (!start) {
-      await _safetyCheck.snooze();
+      await _safetyCheck.snooze(session: session);
       _safetyPromptOpen = false;
       return;
     }

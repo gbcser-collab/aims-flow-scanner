@@ -12,6 +12,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'country_code_service.dart';
 import 'flow_account_service.dart';
 import 'flow_local_journal.dart';
+import 'tracking_shutdown.dart';
 import 'gps_point_quality.dart';
 import 'roaming_resilience.dart';
 
@@ -107,6 +108,7 @@ class VehicleTrackingService {
   String _deviceId = '';
   String _vehicleLabel = '';
   bool _enabled = false;
+  int _locationGeneration = 0;
 
   Stream<VehicleTrackingStatus> get statusStream => _statusController.stream;
 
@@ -218,15 +220,11 @@ class VehicleTrackingService {
     return enableWithPermission();
   }
 
-  /// Flushes queued points best-effort and stops foreground GPS at workday end.
+  /// Stop foreground GPS first; a stalled upload never delays local closure.
   Future<void> endWorkday() async {
     if (_runningUnderFlutterTest) return;
-    try {
-      await _requestFlush();
-    } catch (_) {}
-    await disable();
     _lastError = null;
-    _emit();
+    await stopTrackingBeforeSync(stop: disable, sync: _requestFlush);
   }
 
   Future<void> syncPending() => _requestFlush();
@@ -297,11 +295,9 @@ class VehicleTrackingService {
   }
 
   Future<void> disable() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_enabledKey, false);
+    _locationGeneration++;
     _enabled = false;
-
-    await _subscription?.cancel();
+    final subscription = _subscription;
     _subscription = null;
     _heartbeatTimer?.cancel();
     _heartbeatTimer = null;
@@ -313,7 +309,13 @@ class VehicleTrackingService {
     _streamRecoveryTimer = null;
     _streamStartedAt = null;
     _streamFailures = 0;
-    _emit();
+    try {
+      await subscription?.cancel();
+    } finally {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_enabledKey, false);
+      _emit();
+    }
   }
 
   Future<void> setVehicleLabel(String label) async {
@@ -362,6 +364,7 @@ class VehicleTrackingService {
 
   Future<void> _startLocationStream({required bool requestPermission}) async {
     if (_subscription != null) return;
+    final generation = _locationGeneration;
     if (!await _hasActiveWorkday()) {
       await disable();
       return;
@@ -402,6 +405,8 @@ class VehicleTrackingService {
             distanceFilter: 3,
           );
 
+    if (!await _hasActiveWorkday() || !_enabled ||
+        generation != _locationGeneration || _subscription != null) return;
     _subscription = Geolocator.getPositionStream(
       locationSettings: settings,
     ).listen(

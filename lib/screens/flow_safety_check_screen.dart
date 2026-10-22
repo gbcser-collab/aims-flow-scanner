@@ -73,13 +73,13 @@ class _FlowSafetyCheckScreenState extends State<FlowSafetyCheckScreen> {
                   ButtonSegment(value: 'problem', label: Text('PROBLÉMA')),
                 ],
                 selected: {_status[key]!},
-                onSelectionChanged: (value) =>
+                onSelectionChanged: _busy ? null : (value) =>
                     setState(() => _status[key] = value.first),
               ),
               if (photo) ...[
                 const SizedBox(height: 10),
                 OutlinedButton.icon(
-                  onPressed: () => _photo(key, photoTitle ?? title),
+                  onPressed: _busy ? null : () => _photo(key, photoTitle ?? title),
                   icon: Icon(
                     _photos.containsKey(key)
                         ? Icons.check_circle_rounded
@@ -185,6 +185,7 @@ class _FlowSafetyCheckScreenState extends State<FlowSafetyCheckScreen> {
                     const SizedBox(height: 10),
                     TextField(
                       controller: _km,
+                      enabled: !_busy,
                       keyboardType: TextInputType.number,
                       inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                       decoration: const InputDecoration(
@@ -194,7 +195,7 @@ class _FlowSafetyCheckScreenState extends State<FlowSafetyCheckScreen> {
                     ),
                     const SizedBox(height: 10),
                     OutlinedButton.icon(
-                      onPressed: () => _photo(
+                      onPressed: _busy ? null : () => _photo(
                         'odometer',
                         'Fotó a kilométeróráról',
                       ),
@@ -230,3 +231,4 @@ class _FlowSafetyCheckScreenState extends State<FlowSafetyCheckScreen> {
         ),
       );
 }
+

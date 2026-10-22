@@ -202,6 +202,7 @@ class FlowOperationsService {
     request.headers.addAll(_headers(session, json: false));
     request.fields.addAll({
       'action': 'safety_check',
+      'flowId': session.flowId,
       'plate': plate,
       'id': id,
       'km': km.toString(),
@@ -229,3 +230,4 @@ class FlowOperationsService {
     await _decode(response);
   }
 }
+

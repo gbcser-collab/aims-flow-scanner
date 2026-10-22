@@ -134,6 +134,15 @@ function aims_flow_session_proxy(string $target):never{
         aims_flow_session_json(['ok'=>false,'error'=>'workday_owner_forbidden'],403);
     }
 
+    if (basename($target)==='driver_ops_v2.php' && ($request['action']??'')==='safety_check') {
+        $owner=trim((string)($request['flowId']??''));
+        if (($owner!=='' && !hash_equals((string)$session['flow_id'],$owner)) ||
+            (preg_match('/^(\d{6})-/',(string)($request['id']??''),$safetyOwner) &&
+             !hash_equals((string)$session['flow_id'],$safetyOwner[1]))) {
+            aims_flow_session_json(['ok'=>false,'error'=>'safety_owner_forbidden'],403);
+        }
+    }
+
     $assignedDevice=trim((string)($session['device_id']??''));
     $requestDevice=trim((string)($request['deviceId']??''));
     if($requestDevice!==''&&$assignedDevice!==''&&!hash_equals($assignedDevice,$requestDevice)){
