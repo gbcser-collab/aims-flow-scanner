@@ -5,6 +5,8 @@ on:
     branches: [aims-flow-r105-next-v190-stabilization]
     paths:
       - 'lib/**'
+      - 'native/**'
+      - '.github/workflows/v190-android-apk.yml'
       - 'test/**'
       - 'ci/**'
       - 'api/**'

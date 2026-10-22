@@ -54,6 +54,7 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           import shutil
+          import re
 
           manifest=Path('android/app/src/main/AndroidManifest.xml')
           text=manifest.read_text()
@@ -102,6 +103,17 @@ jobs:
                   g=g.replace('dependencies {','dependencies {\n    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")',1)
               else:
                   g+='\n\ndependencies {\n    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")\n}\n'
+          # Only these unbundled optional OCR scripts may be ignored by R8.
+          scripts=set()
+          for source in Path('lib').rglob('*.dart'):
+              scripts.update(re.findall(r'TextRecognitionScript\.(\w+)',source.read_text()))
+          if scripts != {'latin'}:
+              raise SystemExit('Update ML Kit dependencies and R8 rules before changing OCR scripts.')
+          shutil.copy2('native/android/proguard-rules.pro','android/app/proguard-rules.pro')
+          keep=Path('android/app/src/main/res/raw/flow_keep.xml')
+          keep.parent.mkdir(parents=True,exist_ok=True)
+          shutil.copy2('native/android/flow_keep.xml',keep)
+          g+='\nandroid { buildTypes { getByName("release") { proguardFiles("proguard-rules.pro") } } }\n'
           gradle.write_text(g)
           PY
 
