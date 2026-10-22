@@ -122,12 +122,14 @@ jobs:
       - name: Tests file by file
         run: |
           set -euo pipefail
+          failed=0
           for file in test/*_test.dart; do
             echo "============================================================"
             echo "RUNNING $file"
             echo "============================================================"
-            timeout --signal=TERM --kill-after=15s 150s flutter test -r expanded "$file"
+            if ! timeout --signal=TERM --kill-after=15s 150s flutter test -r expanded "$file"; then failed=1; fi
           done
+          exit "$failed"
 
       - name: Client security guards
         run: |

@@ -37,7 +37,7 @@ void main() {
 
   testWidgets('AIMS Flow starts on FLOW ID and PIN login', (tester) async {
     await tester.pumpWidget(const AimsFlowApp());
-    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pumpAndSettle();
 
     expect(find.text('AIMS FLOW'), findsOneWidget);
     expect(find.text('SOFŐR BELÉPÉS'), findsOneWidget);
@@ -56,7 +56,7 @@ void main() {
 
   testWidgets('FLOW ID and PIN fields accept digits only', (tester) async {
     await tester.pumpWidget(const AimsFlowApp());
-    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pumpAndSettle();
 
     final flowId = find.byKey(const Key('flow-login-flow-id'));
     final pin = find.byKey(const Key('flow-login-pin'));
@@ -72,7 +72,7 @@ void main() {
   testWidgets('display mode can be changed from the login screen',
       (tester) async {
     await tester.pumpWidget(const AimsFlowApp());
-    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pumpAndSettle();
 
     expect(find.text('VILÁGOS'), findsOneWidget);
     await tester.tap(find.text('VILÁGOS'));
@@ -97,7 +97,7 @@ void main() {
     await tester.pumpWidget(
       const MaterialApp(home: DriverShellScreen()),
     );
-    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pumpAndSettle();
 
     expect(find.byType(AimsFlowLogo), findsOneWidget);
     expect(find.text('AIMS FLOW'), findsOneWidget);
@@ -127,3 +127,4 @@ void main() {
     expect(find.byKey(const Key('aims-assistant-talk')), findsNothing);
   });
 }
+
