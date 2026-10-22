@@ -1,0 +1,36 @@
+name: Validate FLOW website integration
+on:
+  push:
+    branches: [aims-flow-r105-next-v190-stabilization]
+    paths: ['integration/**', 'ci/assemble_website.py', '.github/workflows/v1910-website.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate merged PHP and package script
+        run: |
+          find integration -name '*.php' -print0 | xargs -0 -n1 php -l
+          python3 -m py_compile ci/assemble_website.py
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install WebKit test runner
+        run: |
+          npm install --no-save playwright@1.56.1
+          npx playwright install --with-deps webkit
+      - name: Check iPhone, iPad and desktop layouts
+        run: |
+          python3 -m http.server 8088 --bind 127.0.0.1 --directory integration/site > /tmp/flow-site.log 2>&1 &
+          mkdir -p integration/site/flow/assets
+          base64 -d integration/flow-logo.png.b64 > integration/site/flow/assets/aims-flow-logo.png
+          node integration/test-website.cjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AIMS-FLOW-website-WebKit-checks
+          path: website-checks/
+          if-no-files-found: error

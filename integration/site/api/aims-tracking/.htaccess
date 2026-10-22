@@ -1,0 +1,7 @@
+Options -Indexes
+<FilesMatch "\.(?:sqlite|sqlite-wal|sqlite-shm|db|log|bak|sh)$">
+  Require all denied
+</FilesMatch>
+<FilesMatch "^(?:README.*|preflight\.php|install_.*)$">
+  Require all denied
+</FilesMatch>

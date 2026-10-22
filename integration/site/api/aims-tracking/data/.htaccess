@@ -1,0 +1,2 @@
+# The offline queue, tracking database and documents are never public files.
+Require all denied
