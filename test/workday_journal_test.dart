@@ -222,4 +222,43 @@ void main() {
     expect(ops.sent.length, 2);
     expect(await workday.pendingCount(session: a), 0);
   });
+  test('slow GPS start, close and next start keep their durable order across services', () async {
+    final gate = Completer<void>();
+    final started = Completer<void>();
+    final finished = Completer<void>();
+    final events = <String>[];
+    var starts = 0;
+    Future<void> begin(String plate) async {
+      starts++; events.add('begin$starts');
+      if (starts == 1) { started.complete(); await gate.future; }
+      if (starts == 2) finished.complete();
+    }
+    final ops = RecordingOps();
+    final a = driver('123456');
+    final first = FlowWorkdayService(operations: ops, beginTracking: begin,
+      endTracking: () async { events.add('stop'); });
+    final second = FlowWorkdayService(operations: ops, beginTracking: begin,
+      endTracking: () async { events.add('stop'); });
+    await first.startIfNeeded(session: a, plate: a.plate, startKm: 1000);
+    await started.future;
+    await first.finish(session: a, plate: a.plate, endKm: 1100);
+    expect((await first.load(session: a)).active, isFalse);
+    await second.startIfNeeded(session: a, plate: a.plate, startKm: 1100);
+    expect(events, ['begin1']);
+    gate.complete(); await finished.future.timeout(const Duration(seconds: 2));
+    expect(events, ['begin1', 'stop', 'begin2']);
+    expect((await second.load(session: a)).active, isTrue);
+  });
+  test('failed GPS transition cannot poison the following local closure', () async {
+    final stopped = Completer<void>();
+    final workday = FlowWorkdayService(operations: RecordingOps(),
+      beginTracking: (_) async { throw StateError('GPS unavailable'); },
+      endTracking: () async { stopped.complete(); });
+    final a = driver('123456');
+    await workday.startIfNeeded(session: a, plate: a.plate, startKm: 1000);
+    await workday.finish(session: a, plate: a.plate, endKm: 1100);
+    await stopped.future.timeout(const Duration(seconds: 2));
+    expect((await workday.load(session: a)).active, isFalse);
+  });
+
 }

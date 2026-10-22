@@ -33,4 +33,25 @@ void main() {
       sync: () async { synced = true; }), throwsStateError);
     expect(synced, isFalse);
   });
+  test('failed status cleanup cannot skip GPS, native or persistence cleanup', () async {
+    final events = <String>[];
+    await expectLater(finishTrackingCleanup([
+      () async { events.add('status'); throw StateError('plugin failure'); },
+      () async { events.add('gps'); },
+      () async { events.add('native'); },
+      () async { events.add('persist'); },
+    ]), throwsStateError);
+    expect(events, containsAll(['status', 'gps', 'native', 'persist']));
+  });
+  test('stalled cleanup is bounded and does not delay independent GPS cancellation', () async {
+    final stalled = Completer<void>();
+    var gpsStopped = false;
+    await expectLater(finishTrackingCleanup([
+      () => stalled.future,
+      () async { gpsStopped = true; },
+    ], timeout: const Duration(milliseconds: 20)), throwsA(isA<TimeoutException>()));
+    expect(gpsStopped, isTrue);
+    stalled.complete();
+  });
+
 }

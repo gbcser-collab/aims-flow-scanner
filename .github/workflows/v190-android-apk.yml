@@ -185,14 +185,14 @@ jobs:
             --dart-define=AIMS_FIREBASE_ANDROID_APP_ID="$AIMS_FIREBASE_ANDROID_APP_ID" \
             --dart-define=AIMS_FIREBASE_STORAGE_BUCKET="$AIMS_FIREBASE_STORAGE_BUCKET"
           test -s build/app/outputs/flutter-apk/app-release.apk
-          cp build/app/outputs/flutter-apk/app-release.apk AIMS-FLOW-v1.9.6-PILOT-build36.apk
-          sha256sum AIMS-FLOW-v1.9.6-PILOT-build36.apk | tee AIMS-FLOW-v1.9.6-PILOT-build36.apk.sha256
+          cp build/app/outputs/flutter-apk/app-release.apk AIMS-FLOW-v1.9.7-PILOT-build37.apk
+          sha256sum AIMS-FLOW-v1.9.7-PILOT-build37.apk | tee AIMS-FLOW-v1.9.7-PILOT-build37.apk.sha256
 
       - name: Verify APK signing and write public receipt
         env:
           AIMS_SIGNING_MODE: ${{ steps.signing.outputs.mode }}
           AIMS_ANDROID_CERT_SHA256: ${{ secrets.AIMS_ANDROID_CERT_SHA256 }}
-        run: python3 ci/verify_android_signing.py AIMS-FLOW-v1.9.6-PILOT-build36.apk AIMS-FLOW-v1.9.6-PILOT-build36.signing.json
+        run: python3 ci/verify_android_signing.py AIMS-FLOW-v1.9.7-PILOT-build37.apk AIMS-FLOW-v1.9.7-PILOT-build37.signing.json
 
       - name: Remove private signing key
         if: always()
@@ -206,11 +206,11 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: AIMS-FLOW-v1.9.6-PILOT-build36
+          name: AIMS-FLOW-v1.9.7-PILOT-build37
           path: |
-            AIMS-FLOW-v1.9.6-PILOT-build36.apk
-            AIMS-FLOW-v1.9.6-PILOT-build36.apk.sha256
-            AIMS-FLOW-v1.9.6-PILOT-build36.signing.json
+            AIMS-FLOW-v1.9.7-PILOT-build37.apk
+            AIMS-FLOW-v1.9.7-PILOT-build37.apk.sha256
+            AIMS-FLOW-v1.9.7-PILOT-build37.signing.json
           if-no-files-found: error
           retention-days: 30
 

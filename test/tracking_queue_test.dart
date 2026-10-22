@@ -204,4 +204,13 @@ void main() {
     expect(idFor(13624), idFor(13624));
     expect(idFor(13624).length, lessThanOrEqualTo(120));
   });
+  test('queue counts stay current across independent writers and acknowledgements', () async {
+    final second = TrackingPointQueue(directory: () async => root);
+    expect(await queue.count(), 0); expect(await second.count(), 0);
+    await queue.append(point('a')); expect(await second.count(), 1);
+    await second.append(point('b')); expect(await queue.count(), 2);
+    await second.acknowledge([point('a')]); expect(await queue.count(), 1);
+    await queue.acknowledge([point('b')]); expect(await second.count(), 0);
+  });
+
 }

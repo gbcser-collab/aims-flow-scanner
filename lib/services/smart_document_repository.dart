@@ -201,6 +201,16 @@ class SmartDocumentRepository {
     return item;
   });
 
+  Future<bool> updateIfUnchanged(PendingSmartDocument original, PendingSmartDocument updated) => _serial.run(() async {
+    if (original.id != updated.id) throw ArgumentError('Document identity changed');
+    final all = await _loadAll();
+    final index = all.indexWhere((item) => item.id == original.id);
+    if (index < 0 || jsonEncode(all[index].toJson()) != jsonEncode(original.toJson())) return false;
+    all[index] = updated;
+    await _writeAll(all);
+    return true;
+  });
+
   Future<void> update(PendingSmartDocument document) => _serial.run(() async {
     final all = await _loadAll();
     final index = all.indexWhere((item) => item.id == document.id);

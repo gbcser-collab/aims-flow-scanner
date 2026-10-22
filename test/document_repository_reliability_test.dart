@@ -84,4 +84,16 @@ void main() {
     await expectLater(const SmartDocumentRepository().update(smart('new')), throwsA(isA<FileSystemException>()));
     expect(prefs.getString('aims_pending_smart_documents_v1'), '{broken');
   });
+  test('late Smart Document reply cannot replace a newer local state', () async {
+    const repo = SmartDocumentRepository();
+    final original = smart('a'); await repo.update(original);
+    final newer = original.copyWith(syncState: SmartDocumentSyncState.failed, lastError: 'newer');
+    await repo.update(newer);
+    expect(await repo.updateIfUnchanged(original,
+      original.copyWith(syncState: SmartDocumentSyncState.uploaded)), isFalse);
+    final retained = (await repo.loadAll()).single;
+    expect(retained.syncState, SmartDocumentSyncState.failed);
+    expect(retained.lastError, 'newer');
+  });
+
 }

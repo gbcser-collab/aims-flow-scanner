@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 
@@ -10,16 +11,20 @@ import 'smart_document_repository.dart';
 import 'smart_document_service.dart';
 
 class SyncCoordinator extends ChangeNotifier {
-  SyncCoordinator._();
+  SyncCoordinator({ScanRepository repository = const ScanRepository(),
+    SmartDocumentRepository smartRepository = const SmartDocumentRepository(),
+    SmartDocumentService smartService = const SmartDocumentService(),
+    DeviceIdentityService identityService = const DeviceIdentityService(),
+    AimsApiService api = const AimsApiService(),
+  }) : _repository = repository, _smartRepository = smartRepository,
+       _smartService = smartService, _identityService = identityService, _api = api;
 
-  static final SyncCoordinator instance = SyncCoordinator._();
-
-  final ScanRepository _repository = const ScanRepository();
-  final SmartDocumentRepository _smartRepository =
-      const SmartDocumentRepository();
-  final SmartDocumentService _smartService = const SmartDocumentService();
-  final DeviceIdentityService _identityService = const DeviceIdentityService();
-  final AimsApiService _api = const AimsApiService();
+  static final SyncCoordinator instance = SyncCoordinator();
+  final ScanRepository _repository;
+  final SmartDocumentRepository _smartRepository;
+  final SmartDocumentService _smartService;
+  final DeviceIdentityService _identityService;
+  final AimsApiService _api;
 
   Timer? _timer;
   bool _initialized = false;
@@ -68,6 +73,10 @@ class SyncCoordinator extends ChangeNotifier {
     notifyListeners();
 
     try {
+      final pending = await _repository.pendingForSync();
+      final smartPending = await _smartRepository.pendingForSync();
+      // An empty queue needs no enrollment/status round-trip or mobile radio wakeup.
+      if (pending.isEmpty && smartPending.isEmpty) return;
       final identity = await _identityService.loadOrCreate();
       final enroll = await _api.enroll(identity, label: 'AIMS Flow Smart Scanner');
       _deviceState = enroll['state'] as String? ?? _deviceState;
@@ -81,41 +90,45 @@ class SyncCoordinator extends ChangeNotifier {
         return;
       }
 
-      final pending = await _repository.pendingForSync();
       for (final document in pending) {
         try {
           final response = await _api.syncCmr(identity, document);
           final updated = _applyServerState(document, response);
-          await _repository.update(updated);
+          await _repository.updateIfUnchanged(document, updated);
         } on AimsApiException catch (e) {
           if (e.code == 'device_pending') {
             _deviceState = 'pending';
             _lastError = 'A készülék admin jóváhagyásra vár.';
-            break;
+            return;
           }
           if (e.code == 'device_revoked') {
             _deviceState = 'revoked';
             _lastError = 'A készülék hozzáférését az admin visszavonta.';
-            break;
+            return;
           }
-          await _repository.update(document.copyWith(
+          await _repository.updateIfUnchanged(document, document.copyWith(
             syncState: CmrSyncState.failed,
             lastSyncError: e.code,
           ));
           _lastError = 'CMR szinkronhiba: ${e.code}';
+          if (e.retryable || e.statusCode == 401 || e.statusCode == 403) return;
         } catch (e) {
-          await _repository.update(document.copyWith(
+          await _repository.updateIfUnchanged(document, document.copyWith(
             syncState: CmrSyncState.failed,
             lastSyncError: e.toString(),
           ));
-          _lastError = 'Nincs kapcsolat. A dokumentum offline sorban marad.';
+          if (e is FileSystemException) {
+            _lastError = 'A dokumentum helyi fájlja nem olvasható. A bejegyzés megmaradt.';
+          } else {
+            _lastError = 'Nincs kapcsolat. A dokumentum offline sorban marad.';
+            return;
+          }
         }
       }
-      final smartPending = await _smartRepository.pendingForSync();
       for (final document in smartPending) {
         try {
           final result = await _smartService.send(document);
-          await _smartRepository.update(
+          await _smartRepository.updateIfUnchanged(document,
             document.copyWith(
               syncState: SmartDocumentSyncState.uploaded,
               serverDocumentId: result.documentId,
@@ -124,7 +137,7 @@ class SyncCoordinator extends ChangeNotifier {
             ),
           );
         } on SmartDocumentUploadException catch (e) {
-          await _smartRepository.update(
+          await _smartRepository.updateIfUnchanged(document,
             document.copyWith(
               syncState: SmartDocumentSyncState.failed,
               lastError: e.code,
@@ -139,7 +152,7 @@ class SyncCoordinator extends ChangeNotifier {
             break;
           }
         } catch (e) {
-          await _smartRepository.update(
+          await _smartRepository.updateIfUnchanged(document,
             document.copyWith(
               syncState: SmartDocumentSyncState.failed,
               lastError: e.toString(),
@@ -175,7 +188,8 @@ class SyncCoordinator extends ChangeNotifier {
   ScannedDocument _applyServerState(ScannedDocument document, Map<String, dynamic> response) {
     DateTime? parseDate(dynamic value) => value is String ? DateTime.tryParse(value) : null;
 
-    final stateText = response['state'] as String? ?? 'uploaded';
+    AimsApiService.validateCmrAcknowledgement(response, document.id);
+    final stateText = response['state'] as String;
     final state = switch (stateText) {
       'approved' => CmrSyncState.approved,
       'emailed' => CmrSyncState.emailed,
@@ -190,7 +204,8 @@ class SyncCoordinator extends ChangeNotifier {
       emailedAt: parseDate(response['emailedAt']),
       approvedAt: parseDate(response['approvedAt']),
       deleteAfter: parseDate(response['deleteAfter']),
-      clearLastSyncError: true,
+      lastSyncError: state == CmrSyncState.failed ? 'server_document_failed' : null,
+      clearLastSyncError: state != CmrSyncState.failed,
     );
   }
 
@@ -200,3 +215,4 @@ class SyncCoordinator extends ChangeNotifier {
     super.dispose();
   }
 }
+

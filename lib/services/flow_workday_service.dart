@@ -7,6 +7,7 @@ import 'flow_account_service.dart';
 import 'flow_queue_summary.dart';
 import 'flow_operations_service.dart';
 import 'flow_local_journal.dart';
+import 'local_serial_executor.dart';
 import 'vehicle_tracking_service.dart';
 
 class FlowWorkdayState {
@@ -89,7 +90,13 @@ class FlowWorkdayService {
   final FlowOperationsService _ops;
   final Future<void> Function(String) _beginTracking;
   final Future<void> Function() _endTracking;
-  Future<void> _syncTail = Future<void>.value();
+  final _syncSerial = LocalSerialExecutor();
+  static final _trackingSerial = LocalSerialExecutor();
+
+  void _scheduleTracking(Future<void> Function() action) {
+    // Enqueue inside the durable transaction, so start/stop order cannot invert.
+    unawaited(_trackingSerial.run(action).catchError((Object _) {}));
+  }
 
   static Future<void> _beginDefault(String plate) async {
     await VehicleTrackingService.instance.beginWorkday(plate);
@@ -209,6 +216,7 @@ class FlowWorkdayService {
       if (current.active) {
         data.addAll(current.toJson());
         await _write(data);
+        _scheduleTracking(() => _beginTracking(plate));
         return;
       }
       final effectiveStart = (startedAt ?? DateTime.now()).toUtc();
@@ -222,9 +230,8 @@ class FlowWorkdayService {
         startJobId: jobId,
         syncPending: true,
       ));
+      _scheduleTracking(() => _beginTracking(plate));
     });
-    // Tracking starts only after the durable local write succeeds.
-    unawaited(_beginTracking(plate).catchError((Object _) {}));
     return flushPending(session: session, plate: plate);
   }
 
@@ -235,10 +242,10 @@ class FlowWorkdayService {
   }) async {
     _validateIdentity(session, plate);
     await _prepare();
-    final closed = await FlowLocalJournal.run(() async {
+    await FlowLocalJournal.run(() async {
       final data = await _read();
       final current = _current(data, session, plate);
-      if (!current.active || current.startedAt == null) return false;
+      if (!current.active || current.startedAt == null) return;
       if (endKm < (current.startKm ?? 0) || endKm > 5000000) {
         throw StateError('A záró kilométer nem lehet kisebb a kezdő értéknél.');
       }
@@ -250,10 +257,8 @@ class FlowWorkdayService {
         ...current.toJson(), 'active': false, 'syncPending': true,
         'finishedAt': now.toIso8601String(), 'endKm': endKm,
       }));
-      return true;
+      _scheduleTracking(_endTracking);
     });
-    // Local closure stops GPS even when a previous HTTP request is still pending.
-    if (closed) unawaited(_endTracking().catchError((Object _) {}));
     return flushPending(session: session, plate: plate);
   }
 
@@ -263,9 +268,7 @@ class FlowWorkdayService {
   }) async {
     _validateIdentity(session, plate);
     await _prepare();
-    final result = _syncTail.then((_) => _flush(session, plate));
-    _syncTail = result.then<void>((_) {}, onError: (Object _, StackTrace __) {});
-    await result;
+    await _syncSerial.run(() => _flush(session, plate));
     return load(session: session, plate: plate);
   }
 

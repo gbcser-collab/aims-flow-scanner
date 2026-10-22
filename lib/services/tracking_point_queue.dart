@@ -11,6 +11,8 @@ class TrackingPointQueue {
   final Future<void> Function(File temporary)? beforeReplace;
   static final _serial = LocalSerialExecutor();
   int? _knownCount;
+  static int _revision = 0;
+  int _seenRevision = -1;
   Future<T> _locked<T>(Future<T> Function() action) => _serial.run(action);
 
   Future<File> _file(String name) async {
@@ -43,21 +45,30 @@ class TrackingPointQueue {
     final file = await _file('aims_tracking_queue.jsonl');
     // Prefixing a newline isolates a partial last line after sudden power loss.
     // Replay can duplicate a point, but its stable server ID makes that safe.
+    final nextCount = freshlyStaged && _seenRevision == _revision && _knownCount != null
+        ? _knownCount! + 1 : null;
+    _revision++; // Invalidate every instance even when append/delete fails partway.
     await file.writeAsString('\n$line\n', mode: FileMode.append, flush: true);
     await pending.delete();
-    _knownCount = freshlyStaged && _knownCount != null ? _knownCount! + 1 : null;
+    _knownCount = nextCount;
+    _seenRevision = _revision;
   }
 
   Future<List<String>> snapshot() => _locked(() async {
     await _recoverAppend();
     final lines = await _read(await _file('aims_tracking_queue.jsonl'));
     _knownCount = lines.length;
+    _seenRevision = _revision;
     return lines;
   });
 
   Future<int> count() => _locked(() async {
     await _recoverAppend();
-    return _knownCount ??= (await _read(await _file('aims_tracking_queue.jsonl'))).length;
+    if (_knownCount == null || _seenRevision != _revision) {
+      _knownCount = (await _read(await _file('aims_tracking_queue.jsonl'))).length;
+      _seenRevision = _revision;
+    }
+    return _knownCount!;
   });
 
   Future<int> quarantinedCount() => _locked(() async =>
@@ -94,8 +105,10 @@ class TrackingPointQueue {
         remaining.add(line);
       }
     }
+    _revision++;
     await _replace(file, remaining);
     _knownCount = remaining.length;
+    _seenRevision = _revision;
   });
 
   Future<void> quarantine(String line, String reason) => _locked(() async {

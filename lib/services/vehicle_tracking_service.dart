@@ -18,6 +18,7 @@ import 'flow_multipart_transport.dart';
 import 'tracking_point_queue.dart';
 import 'tracking_queue_sync.dart';
 import 'tracking_shutdown.dart';
+import 'local_serial_executor.dart';
 import 'tracking_policy.dart';
 import 'tracking_platform.dart';
 import 'gps_point_quality.dart';
@@ -96,7 +97,8 @@ class VehicleTrackingService {
   Timer? _streamRecoveryTimer;
 
   final _queue = TrackingPointQueue(directory: getApplicationDocumentsDirectory);
-  Future<void> _positionTail = Future<void>.value();
+  final _positions = LocalSerialExecutor();
+  final _lifecycle = LocalSerialExecutor();
 
   bool _flushRunning = false;
   bool _flushAgain = false;
@@ -240,26 +242,32 @@ class VehicleTrackingService {
   /// Starts tracking for an active workday. The test guard prevents widget
   /// tests from invoking platform GPS plugins while keeping production logic
   /// identical.
-  Future<bool> beginWorkday(String plate) async {
-    await setVehicleLabel(plate);
+  Future<bool> beginWorkday(String plate) => _lifecycle.run(() async {
+    await _setVehicleLabel(plate);
     if (_runningUnderFlutterTest) return true;
-    return enableWithPermission();
-  }
+    return _enableWithPermission();
+  });
 
   /// Stop foreground GPS first; a stalled upload never delays local closure.
   Future<void> endWorkday() async {
     if (_runningUnderFlutterTest) return;
     _lastError = null;
-    await stopTrackingBeforeSync(stop: disable, sync: _requestFlush);
+    await stopTrackingBeforeSync(stop: () => _lifecycle.run(() async {
+      // A late close must not stop a newer, already durable workday.
+      if (await _hasActiveWorkday()) { await _recover(); return; }
+      await _disable();
+    }), sync: _requestFlush);
   }
 
   Future<void> syncPending() => _requestFlush(force: true);
 
-  Future<void> recover() async {
+  Future<void> recover() => _lifecycle.run(_recover);
+
+  Future<void> _recover() async {
     await _loadIdentity();
     await _ensureQueueDepthLoaded();
     if (!await _hasActiveWorkday()) {
-      if (_enabled || _subscription != null) await disable();
+      if (_enabled || _subscription != null) await _disable();
       unawaited(_requestFlush());
       return;
     }
@@ -280,12 +288,14 @@ class VehicleTrackingService {
 
   Future<void> startIfEnabled() => recover();
 
-  Future<bool> enableWithPermission() async {
+  Future<bool> enableWithPermission() => _lifecycle.run(_enableWithPermission);
+
+  Future<bool> _enableWithPermission() async {
     await _loadIdentity();
     await _ensureQueueDepthLoaded();
 
     if (!await _hasActiveWorkday()) {
-      await disable();
+      await _disable();
       _lastError =
           'A nyomkövetés a munkanap indulásakor automatikusan bekapcsol.';
       _emit();
@@ -319,12 +329,14 @@ class VehicleTrackingService {
     return _subscription != null;
   }
 
-  Future<void> disable() async {
+  Future<void> disable() => _lifecycle.run(_disable);
+
+  Future<void> _disable() async {
     _locationGeneration++;
     _enabled = false;
     final subscription = _subscription;
     _subscription = null;
-    await _serviceStatusSubscription?.cancel();
+    final serviceStatus = _serviceStatusSubscription;
     _serviceStatusSubscription = null;
     _policy.reset();
     _motionAnchor = null;
@@ -338,18 +350,30 @@ class VehicleTrackingService {
     _streamStartedAt = null;
     _streamFailures = 0;
     try {
-      await subscription?.cancel();
+      await finishTrackingCleanup([
+        () async { await subscription?.cancel(); },
+        () async { await serviceStatus?.cancel(); },
+        () async {
+          final prefs = await SharedPreferences.getInstance();
+          if (!await prefs.setBool(_enabledKey, false)) {
+            throw StateError('A követés leállításának mentése nem sikerült.');
+          }
+        },
+        () async {
+          if (Platform.isAndroid && !_runningUnderFlutterTest) await TrackingPlatform.setActive(false);
+        },
+      ]);
+    } catch (_) {
+      _lastError = 'A GPS leállítása nem igazolható teljesen. Ellenőrizd a követési értesítést.';
+      rethrow;
     } finally {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool(_enabledKey, false);
-      if (Platform.isAndroid && !_runningUnderFlutterTest) {
-        await TrackingPlatform.setActive(false);
-      }
       _emit();
     }
   }
 
-  Future<void> setVehicleLabel(String label) async {
+  Future<void> setVehicleLabel(String label) => _lifecycle.run(() => _setVehicleLabel(label));
+
+  Future<void> _setVehicleLabel(String label) async {
     await _loadIdentity();
     final cleaned = label
         .trim()
@@ -357,7 +381,7 @@ class VehicleTrackingService {
         .replaceAll(RegExp(r'[^A-Z0-9]'), '');
     final prefs = await SharedPreferences.getInstance();
     if (_vehicleLabel != cleaned) {
-      if (_subscription != null) await disable();
+      if (_subscription != null) await _disable();
       _locationGeneration++;
       _lastAcceptedPosition = null;
       _lastPosition = null;
@@ -405,7 +429,7 @@ class VehicleTrackingService {
     final generation = ++_locationGeneration;
     try {
       if (!await _hasActiveWorkday()) {
-        await disable();
+        await _disable();
         return;
       }
       _ensureSupervisor();
@@ -483,7 +507,7 @@ class VehicleTrackingService {
   void _ensureSupervisor() {
     _healthTimer ??= Timer.periodic(const Duration(seconds: 60), (_) => unawaited(_checkHealth()));
     _serviceStatusSubscription ??= Geolocator.getServiceStatusStream().listen((status) {
-      if (_enabled && status == ServiceStatus.enabled) unawaited(recover());
+      if (_enabled && status == ServiceStatus.enabled) unawaited(recover().catchError((Object _) {}));
     }, onError: (Object _) {});
   }
 
@@ -491,7 +515,9 @@ class VehicleTrackingService {
     if (_healthBusy || !_enabled) return;
     _healthBusy = true;
     try {
-      if (!await _hasActiveWorkday()) { await disable(); return; }
+      await _lifecycle.run(() async {
+      if (!_enabled) return;
+      if (!await _hasActiveWorkday()) { await _disable(); return; }
       final since = _lastReceivedAt ?? _streamStartedAt;
       if (_streamRecoveryTimer == null && (_subscription == null ||
           (since != null && DateTime.now().difference(since) > _policy.staleAfter))) {
@@ -499,6 +525,7 @@ class VehicleTrackingService {
       } else {
         await _applyProfile();
       }
+      });
       await _requestFlush();
     } catch (_) {
       _lastError = 'A követés ellenőrzése nem sikerült. Az állapotot újra ellenőrizzük.';
@@ -521,7 +548,7 @@ class VehicleTrackingService {
     if (_restarting || _starting || !_enabled) return;
     _restarting = true;
     try {
-      if (!await _hasActiveWorkday()) { await disable(); return; }
+      if (!await _hasActiveWorkday()) { await _disable(); return; }
       if (Platform.isAndroid && WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed &&
           await Geolocator.checkPermission() != LocationPermission.always) return;
       _locationGeneration++;
@@ -551,15 +578,13 @@ class VehicleTrackingService {
   }
 
   void _enqueuePosition(Position position, FlowAccountSession session, int generation) {
-    _positionTail = _positionTail.then(
-      (_) async {
-        if (generation != _locationGeneration) return;
-        await _queueAndFlush(position, source: 'stream', capturedSession: session);
-      },
-    ).catchError((Object error) {
+    unawaited(_positions.run(() async {
+      if (generation != _locationGeneration) return;
+      await _queueAndFlush(position, source: 'stream', capturedSession: session);
+    }).catchError((Object error) {
       _lastError = 'GPS feldolgozási hiba: $error';
       _emit();
-    });
+    }));
   }
 
   Future<void> _ensureQueueDepthLoaded() async {
@@ -655,7 +680,7 @@ class VehicleTrackingService {
     if (anchor == null || speed >= 1.5 || distance > 35) _motionAnchor = position;
     _emit();
     if (!_policy.shouldSave(position.timestamp)) {
-      if (changed) unawaited(_applyProfile().catchError((Object _) {}));
+      if (changed) unawaited(_lifecycle.run(_applyProfile).catchError((Object _) {}));
       return;
     }
 
@@ -702,7 +727,7 @@ class VehicleTrackingService {
     _queueDepth = await _queue.count();
     _emit();
     unawaited(_requestFlush());
-    if (changed) unawaited(_applyProfile().catchError((Object _) {}));
+    if (changed) unawaited(_lifecycle.run(_applyProfile).catchError((Object _) {}));
   }
 
   Future<void> _requestFlush({bool force = false}) async {
