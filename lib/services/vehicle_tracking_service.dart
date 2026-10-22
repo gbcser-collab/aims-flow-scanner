@@ -18,6 +18,7 @@ import 'flow_multipart_transport.dart';
 import 'tracking_point_queue.dart';
 import 'tracking_queue_sync.dart';
 import 'tracking_shutdown.dart';
+import 'tracking_workday_guard.dart';
 import 'local_serial_executor.dart';
 import 'tracking_policy.dart';
 import 'tracking_platform.dart';
@@ -99,6 +100,13 @@ class VehicleTrackingService {
   final _queue = TrackingPointQueue(directory: getApplicationDocumentsDirectory);
   final _positions = LocalSerialExecutor();
   final _lifecycle = LocalSerialExecutor();
+  final _workdayGuard = TrackingWorkdayGuard(
+    readJournal: () async {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getString(_workdayKey) ?? prefs.getString(_legacyWorkdayKey);
+    },
+    loadSession: FlowSessionStore.instance.load,
+  );
 
   bool _flushRunning = false;
   bool _flushAgain = false;
@@ -145,30 +153,14 @@ class VehicleTrackingService {
   }
 
   Future<bool> _hasActiveWorkday({FlowAccountSession? session, DateTime? capturedAt}) async {
-    final prefs = await SharedPreferences.getInstance();
-    var raw = prefs.getString(_workdayKey);
-    raw ??= prefs.getString(_legacyWorkdayKey);
-    if (raw == null || raw.trim().isEmpty) return false;
     try {
-      final decoded = jsonDecode(raw);
-      if (decoded is! Map) return false;
-      session ??= await FlowSessionStore.instance.load();
-      if (session == null || session.isExpired) return false;
-      final key = '${session.flowId}:${flowJournalPlate(session.plate)}';
-      final states = decoded['states'];
-      final state = decoded['journalVersion'] == 3 && states is Map
-          ? states[key] : decoded;
-      if (state is! Map || state['active'] != true) return false;
-      final owner = state['flowId']?.toString() ??
-          RegExp(r'^(\d{6})-').firstMatch(state['workdayId']?.toString() ?? '')?.group(1);
-      final plate = state['plate']?.toString() ?? '';
-      final started = DateTime.tryParse(state['startedAt']?.toString() ?? '');
-      if (capturedAt != null && (started == null || capturedAt.isBefore(started))) return false;
-      return owner == session.flowId &&
-          flowJournalPlate(plate).isNotEmpty &&
-          flowJournalPlate(plate) == flowJournalPlate(session.plate);
+      return await _workdayGuard.isActive(session: session, capturedAt: capturedAt);
     } catch (_) {
-      return false;
+      // Preserve the scheduler, not permission to save unauthenticated points.
+      _lastError = 'A munkanap állapota átmenetileg nem olvasható. Automatikus újraellenőrzés.';
+      _ensureSupervisor();
+      _emit();
+      rethrow;
     }
   }
 
@@ -267,7 +259,7 @@ class VehicleTrackingService {
     await _loadIdentity();
     await _ensureQueueDepthLoaded();
     if (!await _hasActiveWorkday()) {
-      if (_enabled || _subscription != null) await _disable();
+      if (_enabled || _subscription != null || _healthTimer != null) await _disable();
       unawaited(_requestFlush());
       return;
     }
@@ -332,6 +324,7 @@ class VehicleTrackingService {
   Future<void> disable() => _lifecycle.run(_disable);
 
   Future<void> _disable() async {
+    _workdayGuard.retryRequired = false;
     _locationGeneration++;
     _enabled = false;
     final subscription = _subscription;
@@ -507,15 +500,18 @@ class VehicleTrackingService {
   void _ensureSupervisor() {
     _healthTimer ??= Timer.periodic(const Duration(seconds: 60), (_) => unawaited(_checkHealth()));
     _serviceStatusSubscription ??= Geolocator.getServiceStatusStream().listen((status) {
-      if (_enabled && status == ServiceStatus.enabled) unawaited(recover().catchError((Object _) {}));
+      if ((_enabled || _workdayGuard.retryRequired) && status == ServiceStatus.enabled) {
+        unawaited(recover().catchError((Object _) {}));
+      }
     }, onError: (Object _) {});
   }
 
   Future<void> _checkHealth() async {
-    if (_healthBusy || !_enabled) return;
+    if (_healthBusy || (!_enabled && !_workdayGuard.retryRequired)) return;
     _healthBusy = true;
     try {
       await _lifecycle.run(() async {
+      if (_workdayGuard.retryRequired) { await _recover(); return; }
       if (!_enabled) return;
       if (!await _hasActiveWorkday()) { await _disable(); return; }
       final since = _lastReceivedAt ?? _streamStartedAt;

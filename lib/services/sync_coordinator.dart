@@ -34,6 +34,9 @@ class SyncCoordinator extends ChangeNotifier {
   Timer? _timer;
   bool _initialized = false;
   bool _syncing = false;
+  bool _syncRequested = false;
+  bool _disposed = false;
+  Future<void>? _syncFlight;
   String _deviceState = 'unknown';
   int _cmrPendingCount = 0;
   int _smartPendingCount = 0;
@@ -47,7 +50,7 @@ class SyncCoordinator extends ChangeNotifier {
   DateTime? get lastSyncAt => _lastSyncAt;
 
   Future<void> initialize() async {
-    if (_initialized) return;
+    if (_initialized || _disposed) return;
     _initialized = true;
     _timer?.cancel();
     _timer = Timer.periodic(const Duration(minutes: 2), (_) => unawaited(syncNow()));
@@ -67,26 +70,42 @@ class SyncCoordinator extends ChangeNotifier {
         catch (error) { failure ??= error; }
       }(),
     ]);
-    notifyListeners();
+    if (!_disposed) notifyListeners();
     if (failure != null) throw failure!;
   }
 
-  Future<void> syncNow() async {
-    if (_syncing) return;
+  Future<void> syncNow() {
+    if (_disposed) return Future<void>.value();
+    _syncRequested = true;
+    final current = _syncFlight;
+    if (current != null) return current;
+    final completion = Completer<void>();
+    _syncFlight = completion.future;
     _syncing = true;
-    _lastError = null;
-    notifyListeners();
+    unawaited(_drainSync(completion));
+    return completion.future;
+  }
+
+  Future<void> _drainSync(Completer<void> completion) async {
     try {
-      // The legacy CMR device credential and FLOW session are independent.
-      // Neither channel may block the other's queue or authentication.
-      final errors = await Future.wait([_syncCmr(), _syncSmart()]);
-      final messages = errors.whereType<String>().toList();
-      _lastError = messages.isEmpty ? null : messages.join(' • ');
+      while (_syncRequested && !_disposed) {
+        _syncRequested = false;
+        _lastError = null;
+        notifyListeners();
+        // A burst of requests during this pass becomes one following pass.
+        final errors = await Future.wait([_syncCmr(), _syncSmart()]);
+        final messages = errors.whereType<String>().toList();
+        _lastError = messages.isEmpty ? null : messages.join(' • ');
+        try { await refreshPendingCount(); }
+        catch (_) { _lastError ??= 'A helyi dokumentumsor nem olvasható. Az adatokat megőriztük.'; }
+      }
+    } catch (_) {
+      _lastError = 'A szinkron nem fejeződött be. A helyi dokumentumokat megőriztük.';
     } finally {
-      try { await refreshPendingCount(); }
-      catch (_) { _lastError ??= 'A helyi dokumentumsor nem olvasható. Az adatokat megőriztük.'; }
+      _syncFlight = null;
       _syncing = false;
-      notifyListeners();
+      if (!_disposed) notifyListeners();
+      completion.complete();
     }
   }
 
@@ -205,6 +224,7 @@ class SyncCoordinator extends ChangeNotifier {
   }
 
   void _stopAutoSync() {
+    _syncRequested = false;
     _timer?.cancel();
     _timer = null;
     _initialized = false;
@@ -218,6 +238,7 @@ class SyncCoordinator extends ChangeNotifier {
 
   @override
   void dispose() {
+    _disposed = true;
     _stopAutoSync();
     super.dispose();
   }

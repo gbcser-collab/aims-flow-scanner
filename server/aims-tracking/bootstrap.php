@@ -17,6 +17,7 @@ if(is_file($aimsSharedConfig)){
 require_once __DIR__ . '/rest_history.php';
 require_once __DIR__ . '/smart_rules.php';
 require_once __DIR__ . '/push_service.php';
+require_once __DIR__ . '/smart_document_storage.php';
 
 function aims_json(array $payload, int $status = 200): never {
     http_response_code($status);
@@ -284,6 +285,7 @@ function aims_db(): PDO {
     )');
     $pdo->exec('CREATE INDEX IF NOT EXISTS idx_smart_documents_vehicle_time
         ON smart_documents(vehicle_id, captured_at DESC)');
+    aims_smart_document_schema($pdo);
 
     $pdo->exec('CREATE TABLE IF NOT EXISTS push_devices (
         id INTEGER PRIMARY KEY AUTOINCREMENT,

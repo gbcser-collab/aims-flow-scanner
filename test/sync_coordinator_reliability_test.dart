@@ -117,8 +117,48 @@ void main() {
   test('overlapping sync calls never upload the same document twice concurrently', () async {
     await repository.update(doc('a')); api.gate = Completer<void>();
     final uploading = sync.syncNow(); await api.entered.future;
-    await sync.syncNow(); expect(api.uploads, 1);
-    api.gate!.complete(); await uploading; expect(sync.syncing, isFalse);
+    final overlapping = sync.syncNow(); expect(api.uploads, 1);
+    api.gate!.complete(); await Future.wait([uploading, overlapping]); expect(sync.syncing, isFalse);
+  });
+
+  test('new documents requested during upload drain without waiting for the timer', () async {
+    api.response = {'state': 'emailed', 'documentId': 'server-1'};
+    await repository.update(doc('first')); api.gate = Completer<void>();
+    final first = sync.syncNow(); await api.entered.future;
+    await repository.update(doc('second'));
+    final waiting = List.generate(20, (_) => sync.syncNow());
+    expect(api.uploads, 1);
+    api.gate!.complete(); await Future.wait([first, ...waiting]);
+    expect(api.uploads, 2); expect(sync.pendingCount, 0); expect(sync.syncing, isFalse);
+    // One authentication pair per nonempty pass, not twenty extra rounds.
+    expect(api.requests, 6);
+  });
+  test('a follow-up request also recovers after the active upload fails', () async {
+    api.response = {'state': 'emailed', 'documentId': 'server-1'};
+    await repository.update(doc('first')); api.gate = Completer<void>();
+    api.failure = const SocketException('offline');
+    final first = sync.syncNow(); await api.entered.future;
+    var requested = false;
+    void recovered() {
+      if (sync.pendingCount == 1 && !requested) {
+        requested = true; api.failure = null; unawaited(sync.syncNow());
+      }
+    }
+    sync.addListener(recovered);
+    api.gate!.complete(); await first;
+    expect(api.uploads, 2); expect(sync.pendingCount, 0); expect(requested, isTrue);
+    sync.removeListener(recovered);
+  });
+  test('disposal during an upload suppresses queued passes and late notifications', () async {
+    api.response = {'state': 'emailed', 'documentId': 'server-1'};
+    await repository.update(doc('first')); api.gate = Completer<void>();
+    final first = sync.syncNow(); await api.entered.future;
+    await repository.update(doc('second')); final queued = sync.syncNow();
+    final old = sync; old.dispose();
+    sync = SyncCoordinator(repository: repository, api: api, identityService: TestIdentity());
+    api.gate!.complete(); await Future.wait([first, queued]);
+    expect(api.uploads, 1); expect((await repository.pendingForSync()).length, 1);
+    await old.syncNow(); expect(api.uploads, 1);
   });
   final owner = FlowAccountSession(flowId: '123456', sessionToken: 'a' * 64,
     expiresAt: DateTime.utc(2099), onboardingComplete: true, plate: 'ABC123');

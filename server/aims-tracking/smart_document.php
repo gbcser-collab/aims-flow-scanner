@@ -15,6 +15,16 @@ if (!is_array($data)) {
 
 $plate = aims_normalize_plate((string)($data['plate'] ?? ''));
 $localId = trim((string)($data['localId'] ?? ''));
+$flowId = trim((string)($_SERVER['AIMS_FLOW_DRIVER_FLOW_ID'] ?? ''));
+$claimedOwner = trim((string)($data['flowId'] ?? ''));
+if ($flowId !== '' && $claimedOwner !== '' && !hash_equals($flowId, $claimedOwner)) {
+    aims_json(['ok' => false, 'error' => 'document_owner_forbidden'], 403);
+}
+// Server-only legacy calls can retain an unassigned owner, never trust a claim.
+if ($flowId !== '' && preg_match('/^smart_(\d{6})_/', $localId, $idOwner) &&
+    !hash_equals($flowId, $idOwner[1])) {
+    aims_json(['ok' => false, 'error' => 'document_owner_forbidden'], 403);
+}
 $type = trim((string)($data['type'] ?? 'other'));
 $capturedAtRaw = trim((string)($data['capturedAt'] ?? ''));
 $ocrText = trim((string)($data['ocrText'] ?? ''));
@@ -68,62 +78,24 @@ if (!$vehicle) {
     aims_json(['ok' => false, 'error' => 'vehicle_not_registered'], 404);
 }
 
-$existing = $pdo->prepare('SELECT id FROM smart_documents
-    WHERE local_id = :local LIMIT 1');
-$existing->execute([':local' => $localId]);
-$existingId = $existing->fetchColumn();
-if ($existingId !== false) {
-    aims_json([
-        'ok' => true,
-        'documentId' => (string)$existingId,
-        'state' => 'uploaded',
-        'duplicate' => true,
-    ]);
-}
-
-$dataDir = trim((string)(getenv('AIMS_TRACKING_DATA_DIR') ?: ''));
-if ($dataDir === '') {
-    $dataDir = __DIR__ . '/data';
-}
-$year = $capturedAt->format('Y');
-$month = $capturedAt->format('m');
-$vehicleDir = preg_replace('/[^A-Za-z0-9_-]/', '_', $plate) ?: 'vehicle';
-$dir = $dataDir . '/smart-documents/' . $vehicleDir . '/' . $year . '/' . $month;
-if (!is_dir($dir) && !@mkdir($dir, 0700, true)) {
-    aims_json(['ok' => false, 'error' => 'storage_dir'], 500);
-}
-
-$safeLocal = preg_replace('/[^A-Za-z0-9_-]/', '_', $localId) ?: bin2hex(random_bytes(8));
-$filename = $safeLocal . '.' . $ext;
-$destination = $dir . '/' . $filename;
-if (file_put_contents($destination, $bytes, LOCK_EX) === false) {
-    aims_json(['ok' => false, 'error' => 'image_write_failed'], 500);
-}
-@chmod($destination, 0600);
-
-$relativePath = 'smart-documents/' . $vehicleDir . '/' . $year . '/' . $month . '/' . $filename;
-
+$dataDir = rtrim(trim((string)(getenv('AIMS_TRACKING_DATA_DIR') ?: '')), '/');
+if ($dataDir === '') $dataDir = __DIR__ . '/data';
 try {
-    $insert = $pdo->prepare('INSERT INTO smart_documents
-        (local_id, vehicle_id, document_type, captured_at, ocr_text,
-         confidence, image_path, created_at)
-        VALUES (:local, :vehicle, :type, :captured, :ocr, :confidence, :path, :created)');
-    $insert->execute([
-        ':local' => $localId,
-        ':vehicle' => (int)$vehicle['id'],
-        ':type' => $type,
-        ':captured' => $capturedAt->format(DateTimeInterface::ATOM),
-        ':ocr' => mb_substr($ocrText, 0, 40000, 'UTF-8'),
-        ':confidence' => $confidence,
-        ':path' => $relativePath,
-        ':created' => gmdate(DateTimeInterface::ATOM),
+    $stored = aims_store_smart_document($pdo, $dataDir, [
+        'localId' => $localId, 'vehicleId' => (int)$vehicle['id'], 'plate' => $plate,
+        'flowId' => $flowId, 'type' => $type,
+        'capturedAt' => $capturedAt->format('Y-m-d\\TH:i:s.uP'),
+        'ocrText' => mb_substr($ocrText, 0, 40000, 'UTF-8'),
+        'confidence' => $confidence, 'extension' => $ext, 'bytes' => $bytes,
     ]);
-    $documentId = (string)$pdo->lastInsertId();
+} catch (AimsSmartDocumentException $error) {
+    aims_json(['ok' => false, 'error' => $error->getMessage()], $error->status);
 } catch (Throwable $error) {
-    @unlink($destination);
     error_log('AIMS smart document: ' . $error->getMessage());
     aims_json(['ok' => false, 'error' => 'storage_error'], 500);
 }
+if ($stored['duplicate']) aims_json(['ok' => true] + $stored);
+$documentId = $stored['documentId'];
 
 $label = trim((string)($vehicle['label'] ?? '')) !== ''
     ? (string)$vehicle['label']
@@ -136,6 +108,7 @@ $typeLabel = [
     'other' => 'egyéb dokumentum',
 ][$type] ?? $type;
 
+try {
 aims_notify(
     $pdo,
     (int)$vehicle['admin_user_id'],
@@ -154,10 +127,9 @@ aims_notify(
     ]
 );
 aims_try_push($pdo, 8);
+} catch (Throwable $error) {
+    // Notification failure must not revoke a durably accepted document.
+    error_log('AIMS smart document notification: ' . $error->getMessage());
+}
 
-aims_json([
-    'ok' => true,
-    'documentId' => $documentId,
-    'state' => 'uploaded',
-    'duplicate' => false,
-]);
+aims_json(['ok' => true] + $stored);
