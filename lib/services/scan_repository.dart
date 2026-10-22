@@ -16,7 +16,7 @@ class ScanRepository {
   static final _serial = LocalSerialExecutor();
 
   Future<Directory> _scanDirectory() async {
-    final root = await (directory ?? getApplicationDocumentsDirectory)();
+    final root = await (this.directory ?? getApplicationDocumentsDirectory)();
     final directory = Directory('${root.path}/aims_scans');
     if (!await directory.exists()) {
       await directory.create(recursive: true);

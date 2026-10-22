@@ -101,6 +101,8 @@ class VehicleTrackingService {
   bool _flushRunning = false;
   bool _flushAgain = false;
   bool _queueDepthLoaded = false;
+  bool _identityLoaded = false;
+  Future<void>? _identityLoading;
   final _retryGate = TrackingRetryGate();
   final _policy = TrackingPolicy();
   bool _starting = false;
@@ -283,14 +285,17 @@ class VehicleTrackingService {
     await _ensureQueueDepthLoaded();
 
     if (!await _hasActiveWorkday()) {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool(_enabledKey, false);
-      _enabled = false;
+      await disable();
       _lastError =
           'A nyomkövetés a munkanap indulásakor automatikusan bekapcsol.';
       _emit();
       return false;
     }
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_enabledKey, true);
+    _enabled = true;
+    _ensureSupervisor();
 
     if (!await Geolocator.isLocationServiceEnabled()) {
       _lastError = 'A helymeghatározás ki van kapcsolva a telefonon.';
@@ -309,9 +314,6 @@ class VehicleTrackingService {
       return false;
     }
 
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_enabledKey, true);
-    _enabled = true;
     _lastError = null;
     await _startLocationStream(requestPermission: false);
     return _subscription != null;
@@ -348,6 +350,7 @@ class VehicleTrackingService {
   }
 
   Future<void> setVehicleLabel(String label) async {
+    await _loadIdentity();
     final cleaned = label
         .trim()
         .toUpperCase()
@@ -368,9 +371,19 @@ class VehicleTrackingService {
   }
 
   Future<void> _loadIdentity() async {
+    if (_identityLoaded) return;
+    final pending = _identityLoading;
+    if (pending != null) return pending;
+    final loading = _readIdentity();
+    _identityLoading = loading;
+    try { await loading; } finally { _identityLoading = null; }
+  }
+
+  Future<void> _readIdentity() async {
+    final generation = _locationGeneration;
     final prefs = await SharedPreferences.getInstance();
-    _enabled = prefs.getBool(_enabledKey) ?? false;
-    _vehicleLabel = (prefs.getString(_vehicleLabelKey) ?? '')
+    final enabled = prefs.getBool(_enabledKey) ?? false;
+    final label = (prefs.getString(_vehicleLabelKey) ?? '')
         .trim()
         .toUpperCase()
         .replaceAll(RegExp(r'[^A-Z0-9]'), '');
@@ -379,7 +392,11 @@ class VehicleTrackingService {
     if (id == null || id.trim().isEmpty) {
       id = (await const DeviceIdentityService().loadOrCreate()).deviceId;
     }
+    if (generation != _locationGeneration) return;
     _deviceId = id;
+    _enabled = enabled;
+    _vehicleLabel = label;
+    _identityLoaded = true;
   }
 
   Future<void> _startLocationStream({required bool requestPermission}) async {
