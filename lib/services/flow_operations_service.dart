@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 
 import 'flow_account_service.dart';
+import 'flow_multipart_transport.dart';
 
 class FlowOperationException extends StateError {
   FlowOperationException(super.message, {required this.code, required this.statusCode});
@@ -236,9 +237,7 @@ class FlowOperationsService {
       );
     }
 
-    final streamed =
-        await request.send().timeout(const Duration(seconds: 60));
-    final response = await http.Response.fromStream(streamed);
+    final response = await sendFlowMultipart(request);
     await _decode(response);
   }
 }
