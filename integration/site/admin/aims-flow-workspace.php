@@ -17,7 +17,9 @@ $flowActiveJobRows=$flowPdo->query('SELECT j.id,j.reference,j.driver_seen_at,j.d
   ORDER BY j.id DESC LIMIT 100')->fetchAll(PDO::FETCH_ASSOC);
 $flowRegistrationPoints=$flowPdo->query('SELECT id,company_name,address,stop_type,latitude,longitude,accuracy,confirmations,updated_at FROM registration_points ORDER BY updated_at DESC LIMIT 200')->fetchAll(PDO::FETCH_ASSOC);
 $flowPhones=$flowPdo->query('SELECT d.device_id,d.platform,d.updated_at,d.enabled,v.plate FROM driver_push_devices d JOIN vehicles v ON v.id=d.vehicle_id ORDER BY d.updated_at DESC LIMIT 50')->fetchAll(PDO::FETCH_ASSOC);
-$flowDriverVehicles=$flowPdo->query('SELECT plate,label,enabled,created_at,driver_email,driver_language,driver_code_hash,driver_code_is_temp,driver_code_expires_at,driver_reset_status,driver_reset_requested_at FROM vehicles ORDER BY plate ASC')->fetchAll(PDO::FETCH_ASSOC);
+// Legacy hosting may add driver-reset fields; current FLOW keeps accounts in
+// driver_accounts. Read available fields without requiring the legacy columns.
+$flowDriverVehicles=$flowPdo->query('SELECT * FROM vehicles ORDER BY plate ASC')->fetchAll(PDO::FETCH_ASSOC);
 $flowResetSnapshot=[];foreach($flowDriverVehicles as $rv){if(!empty($rv['enabled'])&&($rv['driver_reset_status']??'')==='pending')$flowResetSnapshot[]=['plate'=>(string)($rv['plate']??''),'requestedAt'=>(string)($rv['driver_reset_requested_at']??'')];}
 usort($flowResetSnapshot,function($a,$b){$t=strcmp((string)($b['requestedAt']??''),(string)($a['requestedAt']??''));return $t!==0?$t:strcmp((string)($a['plate']??''),(string)($b['plate']??''));});
 $flowResetSignature=hash('sha256',json_encode($flowResetSnapshot,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES));
