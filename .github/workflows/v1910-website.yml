@@ -2,7 +2,7 @@ name: Validate FLOW website integration
 on:
   push:
     branches: [aims-flow-r105-next-v190-stabilization]
-    paths: ['integration/**', 'ci/assemble_website.py', '.github/workflows/v1910-website.yml']
+    paths: ['integration/**', 'ci/assemble_website.py', 'ci/package_website.py', '.github/workflows/v1910-website.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -15,7 +15,8 @@ jobs:
       - name: Validate merged PHP and package script
         run: |
           find integration -name '*.php' -print0 | xargs -0 -n1 php -l
-          python3 -m py_compile ci/assemble_website.py
+          python3 -m py_compile ci/assemble_website.py ci/package_website.py
+          python3 -m unittest discover -s integration -p 'test_package_website.py'
   validate:
     needs: php
     runs-on: macos-15
