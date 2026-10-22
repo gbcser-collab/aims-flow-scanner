@@ -5,6 +5,7 @@ Ez a v1.9.2 továbbfejlesztése. Megtartja a havi ország- és jelenléti riport
 ## Javított hibák
 
 - A Safety Check helyi listája több mint 30 még el nem küldött ellenőrzést is megőriz. Csak a már visszaigazolt előzmények száma korlátozott.
+- Egy hiányzó fotó vagy elutasított ellenőrzés nem akadályozza a későbbi érvényes bejegyzések feltöltését. Az elutasított bejegyzés megmarad; hálózati vagy belépési hiba esetén a teljes küldés várakozik.
 - A lassú feltöltés visszaigazolása az aktuális helyi naplóba kerül, így nem töröl közben mentett új bejegyzést. Egyszerre egy feltöltési menet dolgozik.
 - Minden új ellenőrzés megőrzi a FLOW ID-t és az eredeti rendszámot. Másik sofőr vagy jármű munkamenete nem küldi el a régi bejegyzést. A sofőr csak saját, aktuális járművének előzményeit látja.
 - A korábbi, sofőrazonosító nélkül mentett ellenőrzések megmaradnak, de nem kapnak találomra tulajdonost. A Safety előzményeknél külön szám jelzi őket; irodai egyeztetés szükséges.

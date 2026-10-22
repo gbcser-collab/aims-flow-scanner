@@ -5,6 +5,15 @@ import 'package:http/http.dart' as http;
 
 import 'flow_account_service.dart';
 
+class FlowOperationException extends StateError {
+  FlowOperationException(super.message, {required this.code, required this.statusCode});
+  final String code;
+  final int statusCode;
+
+  bool get rejectsOnlyThisRecord => statusCode == 422 ||
+      (statusCode == 409 && code.startsWith('safety_'));
+}
+
 class FlowServiceAlert {
   const FlowServiceAlert({
     required this.id,
@@ -87,10 +96,11 @@ class FlowOperationsService {
     if (response.statusCode == 403 || error == 'plate_forbidden') {
       throw StateError('Ehhez a járműhöz nincs hozzáférésed.');
     }
-    throw StateError(
+    throw FlowOperationException(
       error.isNotEmpty
           ? error
           : body['message']?.toString() ?? 'A FLOW szerver nem érhető el.',
+      code: error, statusCode: response.statusCode,
     );
   }
 
@@ -213,11 +223,13 @@ class FlowOperationsService {
     for (final kind in const ['oil', 'coolant', 'tires', 'odometer']) {
       final path = photoPaths[kind]?.trim() ?? '';
       if (path.isEmpty) {
-        throw StateError('Hiányzó Safety Check fotó: $kind');
+        throw FlowOperationException('Hiányzó Safety Check fotó: $kind',
+          code: 'safety_local_photo_missing', statusCode: 422);
       }
       final file = File(path);
       if (!await file.exists()) {
-        throw StateError('A Safety Check fotó nem található: $kind');
+        throw FlowOperationException('A Safety Check fotó nem található: $kind',
+          code: 'safety_local_photo_missing', statusCode: 422);
       }
       request.files.add(
         await http.MultipartFile.fromPath('photo_$kind', file.path),

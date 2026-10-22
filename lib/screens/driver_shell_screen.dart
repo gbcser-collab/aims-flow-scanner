@@ -1858,9 +1858,9 @@ class _DriverShellScreenState extends State<DriverShellScreen>
         await _refreshSafetyStatus();
         await _refreshServiceGuard();
         if (!mounted) return;
-        final pending = _pendingSafetyCheckCount;
+        final savedCheckSynced = _lastSafetyCheck?.synced == true;
         _snack(
-          pending > 0
+          !savedCheckSynced
               ? 'Safety Check offline elmentve · szinkronra vár.'
               : 'Safety Check elmentve és szinkronizálva.',
         );

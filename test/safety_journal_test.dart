@@ -10,6 +10,7 @@ import 'package:aims_flow_scanner/services/flow_workday_service.dart';
 
 class SafetyOps extends FlowOperationsService {
   bool offline = true;
+  int? rejectedKm;
   Completer<void>? gate;
   final entered = Completer<void>();
   final sent = <Map<String, dynamic>>[];
@@ -19,6 +20,9 @@ class SafetyOps extends FlowOperationsService {
     required Map<String, String> statuses, required Map<String, String> photoPaths,
     required DateTime createdAt}) async {
     if (offline) throw StateError('offline');
+    if (km == rejectedKm) {
+      throw FlowOperationException('missing photo', code: 'safety_local_photo_missing', statusCode: 422);
+    }
     if (!entered.isCompleted) entered.complete();
     if (gate != null) await gate!.future;
     sent.add({'id': id, 'owner': session.flowId, 'plate': plate, 'km': km});
@@ -66,6 +70,24 @@ void main() {
     await Future.wait([first, second]);
     expect(ops.sent.map((r) => r['km']).toList(), [1000, 1001]);
     expect((await service.recentRecords(session: a)).length, 2);
+    expect(await service.pendingCount(session: a), 0);
+  });
+
+  test('one rejected record cannot block later valid checks or disappear', () async {
+    final ops = SafetyOps();
+    final service = FlowSafetyCheckService(operations: ops);
+    final a = account('123456');
+    await save(service, a, 1000);
+    await save(service, a, 1001);
+    ops.offline = false;
+    ops.rejectedKm = 1000;
+    await service.flushPending(session: a);
+    expect(ops.sent.single['km'], 1001);
+    expect(await service.pendingCount(session: a), 1);
+    expect((await service.recentRecords(session: a)).length, 2);
+    ops.rejectedKm = null;
+    await service.flushPending(session: a);
+    expect(ops.sent.last['km'], 1000);
     expect(await service.pendingCount(session: a), 0);
   });
 

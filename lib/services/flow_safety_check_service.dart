@@ -237,8 +237,11 @@ class FlowSafetyCheckService {
         await _ops.submitSafetyCheck(session: session, id: record.id,
           plate: record.plate, km: record.km, statuses: record.statuses,
           photoPaths: record.photoPaths, createdAt: record.createdAt);
-      } catch (_) {
-        break;
+      } catch (error) {
+        if (error is FlowOperationException && error.rejectsOnlyThisRecord) {
+          continue; // Preserve this rejected record, but send later valid checks.
+        }
+        break; // Authentication/network errors affect the entire upload pass.
       }
       await FlowLocalJournal.run(() async {
         // Merge the acknowledgement into the latest journal, never replace a
