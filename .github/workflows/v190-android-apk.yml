@@ -145,16 +145,16 @@ jobs:
             --dart-define=AIMS_FIREBASE_ANDROID_APP_ID="$AIMS_FIREBASE_ANDROID_APP_ID" \
             --dart-define=AIMS_FIREBASE_STORAGE_BUCKET="$AIMS_FIREBASE_STORAGE_BUCKET"
           test -s build/app/outputs/flutter-apk/app-debug.apk
-          cp build/app/outputs/flutter-apk/app-debug.apk AIMS-FLOW-v1.9.3-PILOT-build33.apk
-          sha256sum AIMS-FLOW-v1.9.3-PILOT-build33.apk | tee AIMS-FLOW-v1.9.3-PILOT-build33.apk.sha256
+          cp build/app/outputs/flutter-apk/app-debug.apk AIMS-FLOW-v1.9.4-PILOT-build34.apk
+          sha256sum AIMS-FLOW-v1.9.4-PILOT-build34.apk | tee AIMS-FLOW-v1.9.4-PILOT-build34.apk.sha256
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: AIMS-FLOW-v1.9.3-PILOT-build33
+          name: AIMS-FLOW-v1.9.4-PILOT-build34
           path: |
-            AIMS-FLOW-v1.9.3-PILOT-build33.apk
-            AIMS-FLOW-v1.9.3-PILOT-build33.apk.sha256
+            AIMS-FLOW-v1.9.4-PILOT-build34.apk
+            AIMS-FLOW-v1.9.4-PILOT-build34.apk.sha256
           if-no-files-found: error
           retention-days: 30
 

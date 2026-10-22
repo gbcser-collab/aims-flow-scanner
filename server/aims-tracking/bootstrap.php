@@ -115,6 +115,12 @@ function aims_db(): PDO {
     if (!isset($pointColumns['point_key'])) {
         $pdo->exec('ALTER TABLE points ADD COLUMN point_key TEXT');
     }
+    if (!isset($pointColumns['payload_hash'])) {
+        $pdo->exec("ALTER TABLE points ADD COLUMN payload_hash TEXT NOT NULL DEFAULT ''");
+    }
+    if (!isset($pointColumns['flow_id'])) {
+        $pdo->exec("ALTER TABLE points ADD COLUMN flow_id TEXT NOT NULL DEFAULT ''");
+    }
     if (!isset($pointColumns['country_code'])) {
         $pdo->exec('ALTER TABLE points ADD COLUMN country_code TEXT');
     }
@@ -777,19 +783,20 @@ function aims_vehicle_for_point(PDO $pdo, string $deviceId, string $vehicleLabel
     $plate = aims_normalize_plate($vehicleLabel);
     $vehicle = null;
 
-    $stmt = $pdo->prepare('SELECT * FROM vehicles WHERE device_id = :device AND enabled = 1 LIMIT 1');
-    $stmt->execute([':device' => $deviceId]);
-    $vehicle = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
-
-    if ($vehicle === null && $plate !== '') {
+    // A phone can move between vehicles. An explicit plate takes precedence
+    // over a stale historical device binding; never return a different plate.
+    if ($plate !== '') {
         $stmt = $pdo->prepare('SELECT * FROM vehicles WHERE plate = :plate AND enabled = 1 LIMIT 1');
         $stmt->execute([':plate' => $plate]);
-        $vehicle = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
-        if ($vehicle !== null && ($vehicle['device_id'] === null || $vehicle['device_id'] === '')) {
-            $bind = $pdo->prepare('UPDATE vehicles SET device_id = :device WHERE id = :id');
-            $bind->execute([':device' => $deviceId, ':id' => $vehicle['id']]);
-            $vehicle['device_id'] = $deviceId;
-        }
+    } else {
+        $stmt = $pdo->prepare('SELECT * FROM vehicles WHERE device_id = :device AND enabled = 1 LIMIT 1');
+        $stmt->execute([':device' => $deviceId]);
+    }
+    $vehicle = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+    if ($vehicle !== null && ($vehicle['device_id'] === null || $vehicle['device_id'] === '')) {
+        $bind = $pdo->prepare('UPDATE vehicles SET device_id = :device WHERE id = :id');
+        $bind->execute([':device' => $deviceId, ':id' => $vehicle['id']]);
+        $vehicle['device_id'] = $deviceId;
     }
     return $vehicle;
 }

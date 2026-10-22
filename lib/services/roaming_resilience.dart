@@ -1,4 +1,7 @@
 import 'dart:math';
+import 'dart:convert';
+
+import 'package:crypto/crypto.dart';
 
 class RoamingResilience {
   const RoamingResilience._();
@@ -64,16 +67,12 @@ class RoamingResilience {
     required DateTime timestamp,
     required double latitude,
     required double longitude,
+    String scope = '',
   }) {
     final raw =
         '${deviceId.trim()}|${timestamp.toUtc().microsecondsSinceEpoch}|'
-        '${latitude.toStringAsFixed(6)}|${longitude.toStringAsFixed(6)}';
-    var hash = 0x811c9dc5;
-    for (final code in raw.codeUnits) {
-      hash ^= code;
-      hash = (hash * 0x01000193) & 0xffffffff;
-    }
-    return 'pt_${hash.toRadixString(16).padLeft(8, '0')}';
+        '${latitude.toStringAsFixed(6)}|${longitude.toStringAsFixed(6)}|$scope';
+    return 'pt2_${sha256.convert(utf8.encode(raw))}';
   }
 }
 

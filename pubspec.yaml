@@ -1,5 +1,5 @@
 name: aims_flow_scanner
-version: 1.9.3+33
+version: 1.9.4+34
 publish_to: 'none'
 
 # Stabilization target: FLOW ID + PIN, revocable device sessions,
@@ -20,6 +20,7 @@ dependencies:
   geolocator: ^14.0.3
   geocoding: ^5.0.0
   http: ^1.6.0
+  crypto: ^3.0.7
   share_plus: ^13.3.0
   cross_file: ^0.3.5+1
   shared_preferences: ^2.5.3

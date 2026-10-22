@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
@@ -20,12 +21,15 @@ class DeviceIdentity {
 }
 
 class DeviceIdentityService {
-  const DeviceIdentityService();
+  const DeviceIdentityService({this.supportDirectory});
+
+  final Future<Directory> Function()? supportDirectory;
+  static Future<void> _ioTail = Future<void>.value();
 
   static const _trackingDeviceKey = 'aims_tracking_device_id';
 
   Future<File> _file() async {
-    final root = await getApplicationSupportDirectory();
+    final root = await (supportDirectory ?? getApplicationSupportDirectory)();
     final directory = Directory('${root.path}/aims_flow_private');
     if (!await directory.exists()) await directory.create(recursive: true);
     return File('${directory.path}/device_identity.json');
@@ -53,7 +57,19 @@ class DeviceIdentityService {
     await prefs.setString(_trackingDeviceKey, identity.deviceId);
   }
 
-  Future<DeviceIdentity> loadOrCreate() async {
+  Future<DeviceIdentity> loadOrCreate() {
+    final result = Completer<DeviceIdentity>();
+    _ioTail = _ioTail.then((_) async {
+      try {
+        result.complete(await _loadOrCreate());
+      } catch (error, stack) {
+        result.completeError(error, stack);
+      }
+    });
+    return result.future;
+  }
+
+  Future<DeviceIdentity> _loadOrCreate() async {
     final file = await _file();
     if (await file.exists()) {
       try {
@@ -67,15 +83,21 @@ class DeviceIdentityService {
             return identity;
           }
         }
-      } catch (_) {}
+      } on FormatException {
+        throw const FormatException('A készülékazonosító sérült; az eredeti fájl megmaradt.');
+      }
+      throw const FormatException('A készülékazonosító érvénytelen; az eredeti fájl megmaradt.');
     }
 
     final identity = DeviceIdentity(
       deviceId: _randomHex(32),
       secret: _randomHex(32),
     );
-    await file.writeAsString(jsonEncode(identity.toJson()), flush: true);
+    final temporary = File('${file.path}.tmp');
+    await temporary.writeAsString(jsonEncode(identity.toJson()), flush: true);
+    await temporary.rename(file.path);
     await _publishDeviceId(identity);
     return identity;
   }
 }
+

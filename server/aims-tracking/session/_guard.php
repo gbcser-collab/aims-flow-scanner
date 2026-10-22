@@ -143,6 +143,13 @@ function aims_flow_session_proxy(string $target):never{
         }
     }
 
+    if (basename($target)==='ingest.php') {
+        $owner=trim((string)($request['flowId']??''));
+        if ($owner!=='' && !hash_equals((string)$session['flow_id'],$owner)) {
+            aims_flow_session_json(['ok'=>false,'error'=>'point_owner_forbidden'],403);
+        }
+    }
+
     $assignedDevice=trim((string)($session['device_id']??''));
     $requestDevice=trim((string)($request['deviceId']??''));
     if($requestDevice!==''&&$assignedDevice!==''&&!hash_equals($assignedDevice,$requestDevice)){

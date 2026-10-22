@@ -34,7 +34,7 @@ void main() {
       expect(first, second);
       ids.add(first);
     }
-    expect(ids.length, greaterThan(9950));
+    expect(ids.length, 10000);
   });
 
   test('backoff is fast and bounded during 10000 simulated failures', () {
@@ -77,3 +77,4 @@ void main() {
     }
   });
 }
+

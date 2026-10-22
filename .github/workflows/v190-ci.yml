@@ -112,6 +112,9 @@ jobs:
       - name: Safety multipart ownership and retry regressions
         run: python3 ci/safety_session_http_test.py
 
+      - name: GPS ownership, replay and vehicle handoff
+        run: python3 ci/gps_session_http_test.py
+
       - name: Session revocation is enforced
         run: |
           TOKEN="$(cat "$RUNNER_TEMP/flow-session-token")"

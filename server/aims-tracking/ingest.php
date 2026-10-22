@@ -14,6 +14,7 @@ $data = json_decode($raw, true);
 if (!is_array($data)) aims_json(['ok' => false, 'error' => 'invalid_json'], 400);
 
 $deviceId = trim((string)($data['deviceId'] ?? ''));
+$flowId = trim((string)($_SERVER['AIMS_FLOW_DRIVER_FLOW_ID'] ?? ''));
 $vehicleLabel = trim((string)($data['vehicleLabel'] ?? ''));
 $capturedAt = trim((string)($data['timestamp'] ?? ''));
 $source = trim((string)($data['source'] ?? 'stream'));
@@ -33,11 +34,22 @@ if ($lat < -90 || $lat > 90 || $lng < -180 || $lng > 180) {
     aims_json(['ok' => false, 'error' => 'invalid_coordinates'], 422);
 }
 
+if (!preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})$/', $capturedAt)) {
+    aims_json(['ok' => false, 'error' => 'invalid_timestamp'], 422);
+}
 try {
     $captured = new DateTimeImmutable($capturedAt);
+    $dateErrors = DateTimeImmutable::getLastErrors();
+    if ($dateErrors !== false && ($dateErrors['warning_count'] || $dateErrors['error_count'])) {
+        throw new InvalidArgumentException('Invalid calendar date');
+    }
     $captured = $captured->setTimezone(new DateTimeZone('UTC'));
 } catch (Throwable) {
     aims_json(['ok' => false, 'error' => 'invalid_timestamp'], 422);
+}
+
+if ($captured > new DateTimeImmutable('+5 minutes', new DateTimeZone('UTC'))) {
+    aims_json(['ok' => false, 'error' => 'future_timestamp'], 422);
 }
 
 function aims_active_stop_context(PDO $pdo, int $vehicleId, float $lat, float $lng, ?float $accuracy): ?array {
@@ -397,20 +409,31 @@ function aims_process_stationary(
 }
 
 $pdo = aims_db();
-$vehicle = aims_vehicle_for_point($pdo, $deviceId, $vehicleLabel);
-$vehicleId = $vehicle === null ? null : (int)$vehicle['id'];
-
+$authorizedPlate = trim((string)($_SERVER['AIMS_FLOW_DRIVER_PLATE'] ?? ''));
+if ($authorizedPlate !== '') $vehicleLabel = $authorizedPlate;
+$payloadHash = hash('sha256', json_encode([
+    $flowId, $deviceId, aims_normalize_plate($vehicleLabel),
+    $captured->format('Y-m-d\TH:i:s.uP'), $countryCode,
+    (float)$lat, (float)$lng, $accuracy, $speedMps,
+    isset($data['heading']) ? (float)$data['heading'] : null,
+    isset($data['altitude']) ? (float)$data['altitude'] : null,
+    in_array($source, ['stream', 'heartbeat'], true) ? $source : 'stream',
+], JSON_PRESERVE_ZERO_FRACTION|JSON_THROW_ON_ERROR));
 $pdo->beginTransaction();
 try {
+    $vehicle = aims_vehicle_for_point($pdo, $deviceId, $vehicleLabel);
+    $vehicleId = $vehicle === null ? null : (int)$vehicle['id'];
     $stmt = $pdo->prepare('INSERT OR IGNORE INTO points (
-        point_key, device_id, vehicle_id, vehicle_label, country_code,
+        point_key, flow_id, payload_hash, device_id, vehicle_id, vehicle_label, country_code,
         captured_at, received_at, latitude, longitude, accuracy,
         speed_mps, heading, altitude, source
-    ) VALUES (:point_key, :device_id, :vehicle_id, :vehicle_label, :country_code,
+    ) VALUES (:point_key, :flow_id, :payload_hash, :device_id, :vehicle_id, :vehicle_label, :country_code,
               :captured_at, :received_at, :latitude, :longitude, :accuracy,
               :speed_mps, :heading, :altitude, :source)');
     $stmt->execute([
         ':point_key' => $pointKey !== '' ? $pointKey : null,
+        ':flow_id' => $flowId,
+        ':payload_hash' => $payloadHash,
         ':device_id' => $deviceId,
         ':vehicle_id' => $vehicleId,
         ':vehicle_label' => mb_substr($vehicleLabel, 0, 80),
@@ -427,11 +450,46 @@ try {
     ]);
 
     $duplicatePoint = $pointKey !== '' && $stmt->rowCount() === 0;
+    if ($duplicatePoint) {
+        $existingQuery = $pdo->prepare('SELECT * FROM points WHERE point_key=:key');
+        $existingQuery->execute([':key' => $pointKey]);
+        $existing = $existingQuery->fetch(PDO::FETCH_ASSOC);
+        $same = $existing && (string)$existing['device_id'] === $deviceId
+            && (int)($existing['vehicle_id'] ?? 0) === (int)($vehicleId ?? 0)
+            && aims_normalize_plate((string)$existing['vehicle_label']) === aims_normalize_plate($vehicleLabel)
+            && (string)$existing['captured_at'] === $captured->format(DateTimeInterface::ATOM)
+            && ((string)$existing['flow_id'] === '' || (string)$existing['flow_id'] === $flowId)
+            && (string)($existing['country_code'] ?? '') === $countryCode
+            && (string)$existing['source'] === (in_array($source, ['stream', 'heartbeat'], true) ? $source : 'stream');
+        foreach (['latitude' => (float)$lat, 'longitude' => (float)$lng,
+                  'accuracy' => $accuracy, 'speed_mps' => $speedMps,
+                  'heading' => isset($data['heading']) ? (float)$data['heading'] : null,
+                  'altitude' => isset($data['altitude']) ? (float)$data['altitude'] : null] as $field => $value) {
+            $stored = $existing[$field] ?? null;
+            if (($stored === null) !== ($value === null) ||
+                ($stored !== null && (float)$stored !== $value)) $same = false;
+        }
+        if ($existing && (string)$existing['payload_hash'] !== '' &&
+            !hash_equals((string)$existing['payload_hash'], $payloadHash)) $same = false;
+        if (!$same) {
+            $pdo->rollBack();
+            aims_json(['ok' => false, 'error' => 'point_identity_conflict'], 409);
+        }
+    }
+    // Historical replay contributes to history, but cannot rewind live state
+    // or trigger arrivals for the current job at an old location.
+    $historicalPoint = false;
+    if ($vehicleId !== null) {
+        $latestQuery = $pdo->prepare('SELECT MAX(captured_at) FROM points WHERE vehicle_id=:vehicle');
+        $latestQuery->execute([':vehicle' => $vehicleId]);
+        $latest = $latestQuery->fetchColumn();
+        $historicalPoint = $latest && $captured < new DateTimeImmutable((string)$latest);
+    }
     $arrivalEvents = 0;
     $waitingEvents = 0;
     $stationaryEvents = 0;
     $borderEvents = 0;
-    if ($vehicle !== null && !$duplicatePoint) {
+    if ($vehicle !== null && !$duplicatePoint && !$historicalPoint) {
         $restMode = aims_rest_mode_state(
             $pdo,
             (int)$vehicle['id'],
@@ -504,6 +562,7 @@ aims_json([
     'ok' => true,
     'registeredVehicle' => $vehicle !== null,
     'duplicatePoint' => $duplicatePoint,
+    'historicalPoint' => $historicalPoint,
     'arrivalEvents' => $arrivalEvents,
     'waitingEvents' => $waitingEvents,
     'stationaryEvents' => $stationaryEvents,
