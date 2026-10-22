@@ -42,7 +42,8 @@ def assemble(website, admin, backend, apk, destination):
     index=root/'index.html';s=index.read_text()
     # Relative access routes also work on the staging host before publication.
     s=s.replace('https://logistic-aims.hu/admin/','admin/').replace('https://logistic-aims.hu/partner/','partner/')
-    marker='<div class="hero-aux-actions-v46 hero-products-v21"'
+    s=s.replace('<a class="login-register-v24"', '<a class="login-option-v24 flow" href="flow/app/" role="menuitem"><span class="login-option-icon-v24">F</span><span><b>FLOW alkalmazás</b><small>Sofőrapp és telepítési segítség</small></span><em></em></a><a class="login-register-v24"',1)
+    s=s.replace('</div><details class="mobile-access-quote', '<a class="flow-mobile-entry-v41" href="flow/app/"><b>FLOW alkalmazás</b><small>Letöltés és belépés</small></a></div><details class="mobile-access-quote',1)
     # Existing service links remain; append a direct app entry after the lead actions.
     s=s.replace('</main>','<section style="padding:32px;text-align:center"><a class="flow-app-entry" href="flow/app/">AIMS FLOW · Belépés és alkalmazás →</a></section></main>',1)
     if 'href="flow/app/"' not in s:

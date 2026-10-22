@@ -7,27 +7,34 @@ on:
 permissions:
   contents: read
 jobs:
-  validate:
+  php:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
       - name: Validate merged PHP and package script
         run: |
           find integration -name '*.php' -print0 | xargs -0 -n1 php -l
           python3 -m py_compile ci/assemble_website.py
+  validate:
+    needs: php
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
       - name: Install WebKit test runner
+        timeout-minutes: 5
         run: |
-          npm install --no-save playwright@1.56.1
-          npx playwright install --with-deps webkit
+          npm install --no-save playwright@1.64.0
+          npx playwright install webkit
       - name: Check iPhone, iPad and desktop layouts
         run: |
           python3 -m http.server 8088 --bind 127.0.0.1 --directory integration/site > /tmp/flow-site.log 2>&1 &
           mkdir -p integration/site/flow/assets
-          base64 -d integration/flow-logo.png.b64 > integration/site/flow/assets/aims-flow-logo.png
+          base64 --decode integration/flow-logo.png.b64 > integration/site/flow/assets/aims-flow-logo.png
           node integration/test-website.cjs
       - uses: actions/upload-artifact@v4
         with:
