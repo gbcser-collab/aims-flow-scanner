@@ -113,7 +113,7 @@ function aims_mileage_time(mixed $value): ?int {
 }
 
 function aims_mileage_home_at(array $homes,int $time,string $flow): ?array {
-    foreach($homes as $h)if($time>=aims_mileage_time($h['valid_from'])&&($h['valid_until']===null||$time<aims_mileage_time($h['valid_until']))&&($h['flow_id']===''||$h['flow_id']===$flow))return $h;
+    foreach($homes as $h)if($time>=($h['_from']??aims_mileage_time($h['valid_from']))&&($h['valid_until']===null||$time<($h['_until']??aims_mileage_time($h['valid_until'])))&&($h['flow_id']===''||$h['flow_id']===$flow))return $h;
     return null;
 }
 
@@ -133,7 +133,7 @@ function aims_mileage_row(string $date,array $vehicle,string $flow,array $names)
     return ['date'=>$date,'plate'=>$vehicle['plate'],'vehicleId'=>(int)$vehicle['id'],'flowId'=>$flow,
       'driverName'=>$names[$flow]??($flow===''?'Nem azonosított sofőr':$flow),'actualKm'=>0.0,'homeKm'=>0.0,'netKm'=>0.0,
       'plannedKm'=>0.0,'differenceKm'=>0.0,'grossDifferenceKm'=>0.0,'revenueCents'=>0,'costCents'=>0,'marginCents'=>null,
-      'jobs'=>0,'missingKm'=>0,'missingRevenue'=>0,'gpsIssues'=>0,'gpsPoints'=>0,'unverifiedHomes'=>0,'notes'=>[]];
+      'jobs'=>0,'missingKm'=>0,'missingRevenue'=>0,'gpsIssues'=>0,'gpsPoints'=>0,'unverifiedHomes'=>0,'missingHome'=>0,'notes'=>[]];
 }
 
 function aims_mileage_build_report(PDO $pdo,string $from,string $to,string $plate='',string $onlyFlow=''): array {
@@ -149,10 +149,12 @@ function aims_mileage_build_report(PDO $pdo,string $from,string $to,string $plat
             $key=$date.'|'.$flow;if(!isset($rows[$key]))$rows[$key]=aims_mileage_row($date,$vehicle,$flow,$names);return $key;
         };
         $q=$pdo->prepare('SELECT * FROM vehicle_home_locations WHERE vehicle_id=? ORDER BY valid_from DESC');$q->execute([$vid]);$homes=$q->fetchAll(PDO::FETCH_ASSOC);
+        foreach($homes as &$h){$h['_from']=aims_mileage_time($h['valid_from']);$h['_until']=aims_mileage_time($h['valid_until']);}unset($h);
         $q=$pdo->prepare('SELECT * FROM driver_workdays WHERE vehicle_id=? AND julianday(started_at)<julianday(?) AND julianday(COALESCE(finished_at,?))>=julianday(?) ORDER BY started_at');
         $q->execute([$vid,gmdate('c',$scanEnd),gmdate('c',$scanEnd),gmdate('c',$scanStart)]);$workdays=$q->fetchAll(PDO::FETCH_ASSOC);
+        foreach($workdays as &$w){$w['_start']=aims_mileage_time($w['started_at']);$w['_end']=aims_mileage_time($w['finished_at'])??min(time(),$scanEnd);}unset($w);
         $flowAt=function(int $t)use($workdays):string{
-            $ids=[];foreach($workdays as $w)if($t>=aims_mileage_time($w['started_at'])&&($w['finished_at']===null||$t<=aims_mileage_time($w['finished_at']))&&preg_match('/^(\d{6})(?:-|$)/',$w['workday_key'],$m))$ids[$m[1]]=true;
+            $ids=[];foreach($workdays as $w)if($t>=$w['_start']&&$t<=$w['_end']&&preg_match('/^(\d{6})(?:-|$)/',$w['workday_key'],$m))$ids[$m[1]]=true;
             return count($ids)===1?(string)array_key_first($ids):'';
         };
         $q=$pdo->prepare('SELECT s.*,j.reference,j.status AS job_status FROM job_stops s JOIN jobs j ON j.id=s.job_id
@@ -164,11 +166,11 @@ function aims_mileage_build_report(PDO $pdo,string $from,string $to,string $plat
         }
         usort($events,static fn($a,$b)=>[$a['_t'],$a['id']]<=>[$b['_t'],$b['id']]);
         $q=$pdo->prepare('SELECT id,latitude,longitude,accuracy,speed_mps,device_id,flow_id,captured_at FROM points
-          WHERE vehicle_id=? AND julianday(captured_at)>=julianday(?) AND julianday(captured_at)<=julianday(?) ORDER BY julianday(captured_at),id LIMIT 250001');
+          WHERE vehicle_id=? AND julianday(captured_at)>=julianday(?) AND julianday(captured_at)<=julianday(?) ORDER BY julianday(captured_at),id LIMIT 2000001');
         $q->execute([$vid,gmdate('c',$scanStart),gmdate('c',$scanEnd)]);
         $previous=null;$segments=[];$candidate=null;$inside=null;$used=[];$eventIndex=0;$count=0;$latest=null;$completionFlows=[];$coverage=[];$invalidSincePrevious=false;
         while($p=$q->fetch(PDO::FETCH_ASSOC)){
-            if(++$count>250000)throw new RuntimeException('Túl sok GPS-pont. Válassz rövidebb időszakot vagy egy rendszámot.');
+            if(++$count>2000000)throw new RuntimeException('Túl sok GPS-pont. Válassz rövidebb időszakot vagy egy rendszámot.');
             $t=aims_mileage_time($p['captured_at']);if($t===null)continue;$p['_t']=$t;
             $flow=trim((string)$p['flow_id']);if($flow==='')$flow=$flowAt($t);$p['_flow']=$flow;
             $date=(new DateTimeImmutable('@'.$t))->setTimezone($period['tz'])->format('Y-m-d');
@@ -191,7 +193,7 @@ function aims_mileage_build_report(PDO $pdo,string $from,string $to,string $plat
             if($key!==null)$rows[$key]['gpsPoints']++;
             $latest=$p;
             foreach($workdays as $w){
-                $wa=aims_mileage_time($w['started_at']);$wb=aims_mileage_time($w['finished_at'])??min(time(),$end);
+                $wa=$w['_start'];$wb=$w['_end'];
                 if($t>=$wa&&$t<=$wb){$coverage[$w['id']]['first']??=$t;$coverage[$w['id']]['last']=$t;}
             }
             if($previous){
@@ -199,7 +201,7 @@ function aims_mileage_build_report(PDO $pdo,string $from,string $to,string $plat
                 $same=$previous['_flow']===$flow&&$previous['device_id']===$p['device_id'];
                 $good=$same&&!$invalidSincePrevious&&$dt<=600&&$km/$dt*3600<=180;
                 if(!$good){
-                    $working=false;foreach($workdays as $w)if(aims_mileage_time($w['started_at'])<$t&&(aims_mileage_time($w['finished_at'])??min(time(),$end))>$previous['_t']){$working=true;break;}
+                    $working=false;foreach($workdays as $w)if($w['_start']<$t&&$w['_end']>$previous['_t']){$working=true;break;}
                     // Overnight parking with tracking stopped must not invalidate
                     // the next working day; no distance is inferred for this gap.
                     if($working||$km>0.2||$invalidSincePrevious)foreach(aims_mileage_split($previous['_t'],$t,0,$period) as $day=>$_){$k=$ensure($day,$flow);$rows[$k]['gpsIssues']++;}
@@ -212,7 +214,7 @@ function aims_mileage_build_report(PDO $pdo,string $from,string $to,string $plat
             }
             $home=aims_mileage_home_at($homes,$t,$flow);
             if($candidate&&($candidate['flow']!==$flow||$t-$candidate['start']>172800)){$candidate=null;$inside=null;}
-            $atHome=$home&&aims_distance_m((float)$p['latitude'],(float)$p['longitude'],(float)$home['latitude'],(float)$home['longitude'])<=(float)$home['radius_m']&&($p['speed_mps']===null||(float)$p['speed_mps']<=2);
+            $atHome=$home&&aims_distance_m((float)$p['latitude'],(float)$p['longitude'],(float)$home['latitude'],(float)$home['longitude'])<=(float)$home['radius_m']&&($p['speed_mps']!==null?(float)$p['speed_mps']<=2:(!$previous||($t>$previous['_t']&&aims_distance_m((float)$previous['latitude'],(float)$previous['longitude'],(float)$p['latitude'],(float)$p['longitude'])/($t-$previous['_t'])<=2)));
             if(!$atHome){$inside=null;}elseif($candidate){
                 if(!$inside||(int)$inside['home']!==(int)$home['id'])$inside=['t'=>$t,'home'=>(int)$home['id']];
                 if($t-$inside['t']>=120){
@@ -266,7 +268,7 @@ function aims_mileage_build_report(PDO $pdo,string $from,string $to,string $plat
             if($a===null||$b<=$a)continue;
             foreach(aims_mileage_split($a,$b,0,$period) as $day=>$_){$k=$ensure($day,$flow);if($rows[$k]['gpsPoints']<2)$rows[$k]['gpsIssues']++;}
             if($a>=$start&&$a<$end&&(($coverage[$w['id']]['first']??PHP_INT_MAX)>$a+600)){$k=$ensure((new DateTimeImmutable('@'.$a))->setTimezone($period['tz'])->format('Y-m-d'),$flow);$rows[$k]['gpsIssues']++;}
-            if($b>$start&&$b<$end&&(($coverage[$w['id']]['last']??0)<$b-600)){$k=$ensure((new DateTimeImmutable('@'.$b))->setTimezone($period['tz'])->format('Y-m-d'),$flow);$rows[$k]['gpsIssues']++;}
+            if($b>$start&&$b<=$end&&(($coverage[$w['id']]['last']??0)<$b-600)){$k=$ensure((new DateTimeImmutable('@'.($b-1)))->setTimezone($period['tz'])->format('Y-m-d'),$flow);$rows[$k]['gpsIssues']++;}
             $day=(new DateTimeImmutable('@'.$a))->setTimezone($period['tz'])->format('Y-m-d');$lastDay=(new DateTimeImmutable('@'.$b))->setTimezone($period['tz'])->format('Y-m-d');
             if($a>=$start&&$b<$end&&$day===$lastDay&&$w['end_km']!==null&&$w['finished_at']!==null){
                 $k=$ensure($day,$flow);$odo=(float)$w['end_km']-(float)$w['start_km'];
@@ -275,6 +277,8 @@ function aims_mileage_build_report(PDO $pdo,string $from,string $to,string $plat
         }
         foreach($rows as $row){
             if($onlyFlow!==''&&$row['flowId']!==$onlyFlow)continue;
+            $midday=(new DateTimeImmutable($row['date'].' 12:00:00',$period['tz']))->getTimestamp();
+            if(aims_mileage_home_at($homes,$midday,$row['flowId'])===null)$row['missingHome']=1;
             if(isset($row['odometerKm'])&&abs($row['odometerKm']-$row['actualKm'])>max(5,$row['odometerKm']*.1)){$row['gpsIssues']++;$row['notes'][]='Km-óra és GPS eltérése';}
             if($row['jobs']>0&&$row['gpsPoints']<2)$row['gpsIssues']++;
             $row['homeKm']=min($row['homeKm'],$row['actualKm']);
@@ -288,7 +292,7 @@ function aims_mileage_build_report(PDO $pdo,string $from,string $to,string $plat
     $summary=[];
     foreach($daily as $row){
         $key=$row['plate'];if(!isset($summary[$key]))$summary[$key]=aims_mileage_row('', ['plate'=>$key,'id'=>$row['vehicleId']], '',[]);
-        foreach(['actualKm','homeKm','netKm','plannedKm','differenceKm','grossDifferenceKm','revenueCents','costCents','jobs','missingKm','missingRevenue','gpsIssues','gpsPoints','unverifiedHomes'] as $field)$summary[$key][$field]+=$row[$field];
+        foreach(['actualKm','homeKm','netKm','plannedKm','differenceKm','grossDifferenceKm','revenueCents','costCents','jobs','missingKm','missingRevenue','gpsIssues','gpsPoints','unverifiedHomes','missingHome'] as $field)$summary[$key][$field]+=$row[$field];
     }
     foreach($summary as &$row)$row['marginCents']=$row['missingRevenue']===0&&$row['gpsIssues']===0?$row['revenueCents']-$row['costCents']:null;unset($row);
     return ['period'=>$period,'daily'=>$daily,'summary'=>array_values($summary),'trips'=>$trips,'jobs'=>$jobRows,'homeStatus'=>$homeStatus,'costPerKm'=>0.30];
@@ -302,6 +306,6 @@ function aims_mileage_csv(array $report,string $kind='daily'): string {
           (new DateTimeImmutable('@'.$t['arrival']))->setTimezone($report['period']['tz'])->format('Y-m-d H:i:s'),round($t['km'],3),round($t['periodKm'],3),$t['verified']?'IGEN':'NEM',$t['reason']];
         return aims_monthly_csv(['Rendszám','FLOW ID','Sofőr','Utolsó lerakó referenciája','Lerakó lezárása','Hazaérkezés','Teljes hazaút GPS km','Időszaki hazaút GPS km','Levonva','Állapot'],$rows);
     }
-    $rows=[];foreach($report[$kind==='summary'?'summary':'daily'] as $r)$rows[]=[$r['date'],$r['plate'],$r['flowId'],$r['driverName'],round($r['plannedKm'],3),round($r['actualKm'],3),round($r['homeKm'],3),round($r['netKm'],3),round($r['grossDifferenceKm'],3),round($r['differenceKm'],3),$r['revenueCents']/100,$r['costCents']/100,$r['marginCents']===null?'':$r['marginCents']/100,$r['missingKm'],$r['missingRevenue'],$r['gpsIssues'],$r['unverifiedHomes']];
-    return aims_monthly_csv(['Nap','Rendszám','FLOW ID','Sofőr','Megbízás km','Megtett GPS km','Levonható hazaút km','Korrigált km','Bruttó eltérés km','Korrigált eltérés km','Ismert nettó bevétel EUR','GPS-alapú önköltség EUR','Árrés EUR','Hiányzó megbízás km tételek','Hiányzó bevétel tételek','GPS-ellenőrzések','Nem levont hazautak'],$rows);
+    $rows=[];foreach($report[$kind==='summary'?'summary':'daily'] as $r)$rows[]=[$r['date'],$r['plate'],$r['flowId'],$r['driverName'],round($r['plannedKm'],3),round($r['actualKm'],3),round($r['homeKm'],3),round($r['netKm'],3),round($r['grossDifferenceKm'],3),round($r['differenceKm'],3),$r['revenueCents']/100,$r['costCents']/100,$r['marginCents']===null?'':$r['marginCents']/100,$r['missingKm'],$r['missingRevenue'],$r['gpsIssues'],$r['unverifiedHomes'],$r['missingHome']];
+    return aims_monthly_csv(['Nap','Rendszám','FLOW ID','Sofőr','Megbízás km','Megtett GPS km','Levonható hazaút km','Korrigált km','Bruttó eltérés km','Korrigált eltérés km','Ismert nettó bevétel EUR','GPS-alapú önköltség EUR','Árrés EUR','Hiányzó megbízás km tételek','Hiányzó bevétel tételek','GPS-ellenőrzések','Nem levont hazautak','Lakóhely-beállítás hiányzik'],$rows);
 }

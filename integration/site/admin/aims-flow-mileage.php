@@ -8,7 +8,12 @@ require_once __DIR__.'/../api/aims-tracking/mileage_report_lib.php';
 header('Cache-Control: private, no-store');header('X-Robots-Tag: noindex, nofollow');
 $pdo=aims_db();aims_driver_auth_schema($pdo);aims_mileage_schema($pdo);$csrf=aims_admin_csrf();
 $tz=new DateTimeZone('Europe/Budapest');$today=new DateTimeImmutable('today',$tz);$error='';$message='';
-$from=trim((string)($_GET['from']??$today->format('Y-m-01')));$to=trim((string)($_GET['to']??$today->format('Y-m-d')));
+$defaultFrom=$today->format('Y-m-01');$defaultTo=$today->format('Y-m-d');
+if(isset($_GET['month'])&&is_string($_GET['month'])){
+ $m=DateTimeImmutable::createFromFormat('!Y-m',$_GET['month'],$tz);
+ if($m&&$m->format('Y-m')===$_GET['month']){$defaultFrom=$m->format('Y-m-d');$defaultTo=$m->modify('last day of this month')->format('Y-m-d');}
+}
+$from=trim((string)($_GET['from']??$defaultFrom));$to=trim((string)($_GET['to']??$defaultTo));
 $plate=aims_normalize_plate((string)($_GET['plate']??''));$flow=trim((string)($_GET['driver']??''));
 if(($_SERVER['REQUEST_METHOD']??'GET')==='POST'){
     if(!is_string($_POST['csrf']??null)||!hash_equals((string)$csrf,$_POST['csrf'])){http_response_code(403);exit('Érvénytelen munkamenet.');}
@@ -36,7 +41,8 @@ $vehicles=$pdo->query('SELECT v.id,v.plate,v.label,
  (SELECT latitude FROM points p WHERE p.vehicle_id=v.id ORDER BY julianday(captured_at) DESC,id DESC LIMIT 1) AS latitude,
  (SELECT longitude FROM points p WHERE p.vehicle_id=v.id ORDER BY julianday(captured_at) DESC,id DESC LIMIT 1) AS longitude,
  (SELECT captured_at FROM points p WHERE p.vehicle_id=v.id ORDER BY julianday(captured_at) DESC,id DESC LIMIT 1) AS captured_at,
- (SELECT accuracy FROM points p WHERE p.vehicle_id=v.id ORDER BY julianday(captured_at) DESC,id DESC LIMIT 1) AS accuracy
+ (SELECT accuracy FROM points p WHERE p.vehicle_id=v.id ORDER BY julianday(captured_at) DESC,id DESC LIMIT 1) AS accuracy,
+ (SELECT flow_id FROM points p WHERE p.vehicle_id=v.id ORDER BY julianday(captured_at) DESC,id DESC LIMIT 1) AS gps_flow_id
  FROM vehicles v ORDER BY plate')->fetchAll(PDO::FETCH_ASSOC);
 $drivers=$pdo->query('SELECT flow_id,driver_name,vehicle_id FROM driver_accounts ORDER BY driver_name,flow_id')->fetchAll(PDO::FETCH_ASSOC);
 $homes=$pdo->query('SELECT h.*,v.plate FROM vehicle_home_locations h JOIN vehicles v ON v.id=h.vehicle_id ORDER BY v.plate,h.valid_from DESC')->fetchAll(PDO::FETCH_ASSOC);
@@ -46,7 +52,7 @@ function km_h(mixed $v):string{return htmlspecialchars((string)$v,ENT_QUOTES,'UT
 function km_n(mixed $v,int $d=1):string{return $v===null?'—':number_format((float)$v,$d,',',' ');}
 function km_money(?int $v):string{return $v===null?'—':number_format($v/100,2,',',' ').' €';}
 function km_flags(array $r):string{
- $a=[];if($r['gpsIssues'])$a[]='GPS ellenőrizendő';if($r['missingKm'])$a[]=$r['missingKm'].' fuvar km-hiány';if($r['missingRevenue'])$a[]=$r['missingRevenue'].' bevétel hiányzik';if($r['unverifiedHomes'])$a[]='Nem levont hazaút';
+ $a=[];if($r['missingHome'])$a[]='Lakóhely nincs beállítva';if($r['gpsIssues'])$a[]='GPS ellenőrizendő';if($r['missingKm'])$a[]=$r['missingKm'].' fuvar km-hiány';if($r['missingRevenue'])$a[]=$r['missingRevenue'].' bevétel hiányzik';if($r['unverifiedHomes'])$a[]='Nem levont hazaút';
  return $a?implode(' · ',$a):'Rögzített adatok alapján';
 }
 function km_table(array $rows,bool $daily):void{?>
@@ -55,8 +61,8 @@ function km_table(array $rows,bool $daily):void{?>
 <?php foreach($rows as $r):?><tr><?php if($daily):?><td><b><?=km_h($r['date'])?></b><small><?=km_h($r['driverName'])?><?= $r['flowId']!==''?' · '.km_h($r['flowId']):''?></small></td><?php endif;?><td><b><?=km_h($r['plate'])?></b></td><td><?=km_n($r['plannedKm'])?><?=$r['missingKm']?' *':''?></td><td><?=km_n($r['actualKm'])?><?=$r['gpsIssues']?' *':''?></td><td><?=km_n($r['homeKm'])?></td><td><b><?=km_n($r['netKm'])?></b></td><td><?=$r['missingKm']?'—':km_n($r['differenceKm'])?><small>Levonás előtt: <?=$r['missingKm']?'—':km_n($r['grossDifferenceKm'])?></small></td><td><?=km_money($r['revenueCents'])?><?=$r['missingRevenue']?' *':''?></td><td><?=km_money($r['costCents'])?><?=$r['gpsIssues']?' *':''?></td><td class="<?=$r['marginCents']!==null&&$r['marginCents']<0?'km-negative':''?>"><b><?=km_money($r['marginCents'])?></b></td><td><small><?=km_h(km_flags($r))?></small></td></tr><?php endforeach;?></tbody></table></div>
 <?php }
 $params=['from'=>$from,'to'=>$to,'plate'=>$plate,'driver'=>$flow];
-$totals=['actual'=>0.0,'home'=>0.0,'net'=>0.0,'planned'=>0.0,'revenue'=>0,'cost'=>0,'margin'=>0,'issues'=>0,'missingRevenue'=>0,'missingKm'=>0];
-foreach($report['summary']??[] as $r){foreach(['actual'=>'actualKm','home'=>'homeKm','net'=>'netKm','planned'=>'plannedKm','revenue'=>'revenueCents','cost'=>'costCents','issues'=>'gpsIssues','missingRevenue'=>'missingRevenue','missingKm'=>'missingKm'] as $a=>$b)$totals[$a]+=$r[$b];}
+$totals=['actual'=>0.0,'home'=>0.0,'net'=>0.0,'planned'=>0.0,'revenue'=>0,'cost'=>0,'margin'=>0,'issues'=>0,'missingRevenue'=>0,'missingKm'=>0,'missingHome'=>0];
+foreach($report['summary']??[] as $r){foreach(['actual'=>'actualKm','home'=>'homeKm','net'=>'netKm','planned'=>'plannedKm','revenue'=>'revenueCents','cost'=>'costCents','issues'=>'gpsIssues','missingRevenue'=>'missingRevenue','missingKm'=>'missingKm','missingHome'=>'missingHome'] as $a=>$b)$totals[$a]+=$r[$b];}
 $totals['margin']=$totals['issues']||$totals['missingRevenue']?null:$totals['revenue']-$totals['cost'];
 ?><!doctype html><html lang="hu"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex,nofollow"><title>AIMS FLOW · Kilométer és árrés</title>
 <link rel="stylesheet" href="admin-content.css?v=20261022"><link rel="stylesheet" href="admin-shell.css?v=20261022"><link rel="stylesheet" href="admin-refresh.css?v=20261022"><link rel="stylesheet" href="aims-mileage.css?v=44"><link rel="stylesheet" href="vendor/leaflet/leaflet.css">
@@ -67,6 +73,7 @@ $totals['margin']=$totals['issues']||$totals['missingRevenue']?null:$totals['rev
 <div class="km-shortcuts"><button type="button" data-range="today">Ma</button><button type="button" data-range="yesterday">Tegnap</button><button type="button" data-range="three">Utolsó 3 nap</button><button type="button" data-range="month">Ez a hónap</button><button type="button" data-range="previous">Előző hónap</button><span>Időzóna: Budapest</span></div></form>
 <nav class="km-links" aria-label="Riportok ugyanerről az időszakról"><a href="aims-flow-monthly-report.php?<?=km_h(http_build_query($params))?>">Országidő és jelenlét</a><a href="aims-flow-eco.php?<?=km_h(http_build_query($params))?>">ECO</a><a href="foreign-stay-report.php?<?=km_h(http_build_query($params))?>">Külföldi tartózkodás</a></nav>
 <?php if($report):?>
+<?php if($totals['missingHome']):?><p class="km-notice">Egyes rendszámokhoz vagy sofőrökhöz ebben az időszakban nincs lakóhely beállítva. Ezeknél hazaúti levonás nem történt. A lakóhely lent rögzíthető, a megfelelő kezdőnappal.</p><?php endif;?>
 <section class="km-summary" aria-label="Időszaki összesítés"><div><small>Megtett GPS km</small><b><?=km_n($totals['actual'])?></b></div><div><small>Levonható hazautak</small><b><?=km_n($totals['home'])?> km</b></div><div><small>Korrigált kilométer</small><b><?=km_n($totals['net'])?> km</b></div><div><small>Megbízás szerinti km</small><b><?=km_n($totals['planned'])?><?=$totals['missingKm']?' *':''?></b></div><div><small>Ismert nettó bevétel</small><b><?=km_money($totals['revenue'])?></b></div><div><small>Önköltség · 0,30 €/km</small><b><?=km_money($totals['cost'])?></b></div><div><small>Árrés a teljes futás után</small><b><?=km_money($totals['margin'])?></b></div></section>
 <p class="km-explanation">Korrigált km = megtett GPS-km − igazolt hazautak. Eltérés = korrigált km − megbízás szerinti km. Önköltség = <b>az összes megtett km × 0,30 €</b>, a hazautakkal együtt. Árrés = nettó bevétel − önköltség. Az önköltség minden költséget tartalmaz, ezért az üzemanyagot és útdíjat nem számoljuk hozzá újra.</p>
 <?php if($totals['issues']||$totals['missingRevenue']||$totals['missingKm']):?><p class="km-notice">* Az összesítés hiányos adatot tartalmaz. Hiányzó bevétel vagy ellenőrizendő GPS esetén az árrést nem tekintjük lezártnak. Az ismert értékek látszanak; a hiányzó összeg nem nulla.</p><?php endif;?>
@@ -82,7 +89,7 @@ $totals['margin']=$totals['issues']||$totals['missingRevenue']?null:$totals['rev
 <div class="km-table"><table><thead><tr><th>Rendszám</th><th>Sofőr</th><th>Cím</th><th>Körzet</th><th>GPS-helyzet</th><th>Érvényesség</th></tr></thead><tbody><?php foreach($homes as $h):
  $presence='Nincs friss GPS-adat';
  foreach($vehicles as $v){if((int)$v['id']!==(int)$h['vehicle_id'])continue;$seen=aims_mileage_time($v['captured_at']);
- if($seen!==null&&$seen>=aims_mileage_time($h['valid_from'])&&($h['valid_until']===null||$seen<aims_mileage_time($h['valid_until']))&&$v['accuracy']!==null&&(float)$v['accuracy']<=100){
+ if(($h['flow_id']===''||$h['flow_id']===$v['gps_flow_id'])&&$seen!==null&&$seen>=aims_mileage_time($h['valid_from'])&&($h['valid_until']===null||$seen<aims_mileage_time($h['valid_until']))&&$v['accuracy']!==null&&(float)$v['accuracy']<=100){
  $presence=(time()-$seen>900?'Régi GPS: ':'').(aims_distance_m((float)$v['latitude'],(float)$v['longitude'],(float)$h['latitude'],(float)$h['longitude'])<=(float)$h['radius_m']?'Lakóhely körzetében':'Lakóhelyen kívül');
  $presence.=' · '.(new DateTimeImmutable('@'.$seen))->setTimezone($tz)->format('m-d H:i');}break;}
  ?><tr><td><?=km_h($h['plate'])?></td><td><?=km_h($h['flow_id']?:'Minden sofőr')?></td><td><?=km_h($h['address'])?></td><td><?=$h['radius_m']?> m</td><td><?=km_h($presence)?></td><td><?=km_h((new DateTimeImmutable($h['valid_from']))->setTimezone($tz)->format('Y-m-d'))?> → <?=km_h($h['valid_until']?(new DateTimeImmutable($h['valid_until']))->setTimezone($tz)->format('Y-m-d H:i'):'visszavonásig')?></td></tr><?php endforeach;?></tbody></table></div></section>
