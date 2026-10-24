@@ -22,6 +22,14 @@ jobs:
       - name: Render real admin pages against SQLite
         if: ${{ !cancelled() }}
         run: python3 integration/test_admin_render.py
+      - name: Exercise mileage admin forms and exports over HTTP
+        if: ${{ !cancelled() }}
+        run: python3 integration/test_mileage_http.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mileage-rendered-fixture
+          path: mileage-fixture/
+          if-no-files-found: error
       - name: Exercise session authorization over HTTP
         if: ${{ !cancelled() }}
         run: python3 integration/test_session_without_config.py
@@ -39,6 +47,10 @@ jobs:
         run: |
           npm install --no-save playwright@1.64.0
           npx playwright install webkit
+      - uses: actions/download-artifact@v4
+        with:
+          name: mileage-rendered-fixture
+          path: mileage-fixture/
       - name: Check iPhone, iPad and desktop layouts
         run: |
           mkdir -p integration/site/flow/assets
@@ -47,6 +59,8 @@ jobs:
           mkdir -p homepage-fixture
           tar -xzf integration/fixtures/home-v43.tar.gz -C homepage-fixture
           node integration/test-homepage.cjs
+          tar -xzf integration/fixtures/mileage-assets-v44.tar.gz -C mileage-fixture
+          node integration/test-mileage.cjs
       - uses: actions/upload-artifact@v4
         with:
           name: AIMS-FLOW-website-WebKit-checks

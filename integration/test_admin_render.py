@@ -44,12 +44,24 @@ $pdo->prepare('INSERT OR IGNORE INTO vehicles(plate,label,admin_user_id,enabled,
 if($argv[2]==='populated'){
  $pdo->exec("INSERT OR IGNORE INTO notifications(admin_user_id,type,severity,title,body,dedupe_key,created_at) SELECT id,'test','info','Test notice','Test body','render-v43',datetime('now') FROM admin_users LIMIT 1");
 }
+if($argv[1]==='aims-flow-mileage.php' && $argv[2]==='populated'){
+ require_once __DIR__.'/api/aims-tracking/mileage_report_lib.php';aims_mileage_schema($pdo);
+ $vehicle=(int)$pdo->query('SELECT id FROM vehicles LIMIT 1')->fetchColumn();
+ $pdo->prepare('INSERT INTO jobs(reference,vehicle_id,status,created_at,updated_at,document_received_at) VALUES(?,?,?, ?,?,?)')->execute(['RENDER-44',$vehicle,'completed',$now,$now,$now]);
+ $job=(int)$pdo->lastInsertId();
+ aims_mileage_save_finance($pdo,$job,['planned_km'=>'125.50','revenue_eur'=>'250.00','service_date'=>(new DateTimeImmutable('now',new DateTimeZone('Europe/Budapest')))->format('Y-m-d')]);
+ foreach([[-1200,19.0],[-1080,19.001]] as [$ago,$lng])$pdo->prepare('INSERT INTO points(device_id,vehicle_id,captured_at,received_at,latitude,longitude,accuracy,speed_mps) VALUES(?,?,?,?,?,?,?,?)')->execute(['render44',$vehicle,gmdate('c',time()+$ago),$now,47,$lng,5,0]);
+}
 ob_start();require __DIR__.'/admin/'.$argv[1];$html=ob_get_clean();
+if($argv[1]==='aims-flow-mileage.php' && $argv[2]==='populated' && getenv('AIMS_RENDER_OUTPUT'))file_put_contents(getenv('AIMS_RENDER_OUTPUT'),$html);
 if(strpos($html,'</html>')===false)throw new RuntimeException('Incomplete HTML response');
 if($argv[1]==='aims-flow-workspace.php' && $argv[2]==='populated' && $flowActionCount!==1)throw new RuntimeException('Unread action count is not initialized correctly');
 echo json_encode(['page'=>$argv[1],'case'=>$argv[2],'bytes'=>strlen($html),'ok'=>true]).PHP_EOL;
 ''')
-    env = dict(os.environ, AIMS_TRACKING_DATA_DIR=str(root / 'data'), AIMS_ADMIN_TRACKING_TOKEN='isolated-admin-test-token')
+    fixture=repo/'mileage-fixture';fixture.mkdir(exist_ok=True)
+    for asset in ('aims-mileage.css','aims-mileage.js','aims-admin-shell.js'):
+        shutil.copy2(repo/'integration/site/admin'/asset,fixture/asset)
+    env = dict(os.environ, AIMS_RENDER_OUTPUT=str(fixture/'index.html'), AIMS_TRACKING_DATA_DIR=str(root / 'data'), AIMS_ADMIN_TRACKING_TOKEN='isolated-admin-test-token')
     for case in ('empty', 'populated'):
         for page in ('aims-flow-workspace.php', 'aims-flow-monthly-report.php', 'aims-flow-eco.php', 'aims-flow-driver-access.php', 'aims-flow-mileage.php', 'foreign-stay-report.php'):
             result = subprocess.run(['php', str(root / 'runner.php'), page, case], env=env, text=True, capture_output=True)

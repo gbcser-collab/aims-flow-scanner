@@ -47,5 +47,15 @@ aims_mileage_save_finance($pdo,$job,['planned_km'=>'0','revenue_eur'=>'0','flow_
 aims_mileage_save_finance($pdo,$job,['planned_km'=>'','revenue_eur'=>'','flow_id'=>'440001']);$missing=aims_mileage_build_report($pdo,'2026-05-04','2026-05-04','TEST44');check($missing['summary'][0]['missingRevenue']===1&&$missing['summary'][0]['marginCents']===null,'missing revenue never becomes zero');
 $pdo->prepare('UPDATE driver_accounts SET driver_name=? WHERE flow_id=?')->execute(['=HYPERLINK("bad")','440001']);$csv=aims_mileage_csv(aims_mileage_build_report($pdo,'2026-05-04','2026-05-04','TEST44'));check(str_contains($csv,"'=HYPERLINK"),'CSV formula neutralized');
 $range=aims_monthly_build_range_report($pdo,'2026-05-04','2026-05-06');check($range['period']['endLocal']->format('Y-m-d')==='2026-05-07','inclusive arbitrary date range');
+$g=vehicle('CLIP44','440007');
+$pdo->prepare('INSERT INTO driver_workdays(workday_key,vehicle_id,started_at,finished_at,start_km,end_km,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)')->execute(['440007-clip',$g,'2026-05-03T20:00:00Z','2026-05-07T06:00:00Z',100,200,gmdate('c'),gmdate('c')]);
+$pdo->prepare('INSERT INTO country_stays(vehicle_id,country_code,entered_at,exited_at,confirmed_at,created_at) VALUES(?,?,?,?,?,?)')->execute([$g,'AT','2026-05-03T20:00:00Z','2026-05-07T06:00:00Z',gmdate('c'),gmdate('c')]);
+$clip=aims_monthly_build_range_report($pdo,'2026-05-04','2026-05-06','CLIP44','440007');
+check(count($clip['attendanceRows'])===3&&array_sum(array_column($clip['attendanceRows'],'grossSeconds'))===72*3600,'three-day attendance clips both edges');
+check(count($clip['countryRows'])===1&&$clip['countryRows'][0]['seconds']===72*3600,'three-day country time clips both edges');
+check($clip['attendanceSummary'][0]['normHours']===null&&$clip['attendanceSummary'][0]['differenceHours']===null,'partial periods do not claim full-month norms');
+$park=vehicle('PARK44','440008');point($park,'440008',$t,19);point($park,'440008',$t+3600,19);$parking=aims_mileage_build_report($pdo,'2026-05-04','2026-05-04','PARK44');check($parking['summary'][0]['gpsIssues']===0&&$parking['summary'][0]['actualKm']===0.0,'stationary off-duty parking is not fabricated driving');
+$invalid=vehicle('ACCURACY44','440009');home($invalid,'440009');job($invalid,$t+600);route($invalid,'440009',$t);point($invalid,'440009',$t+630,19.0105,47,500);
+$poor=aims_mileage_build_report($pdo,'2026-05-04','2026-05-04','ACCURACY44');check($poor['summary'][0]['homeKm']===0.0,'poor GPS fix cannot be silently bridged into a deductible trip');
 check((int)$pdo->query('SELECT COUNT(*) FROM flow_mileage_audit')->fetchColumn()>=10,'configuration and finance changes audited');
 echo "MILEAGE REGRESSIONS: $checks checks passed\n";

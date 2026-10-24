@@ -169,6 +169,11 @@ $createdNew = false;
 $duplicateAssignment = false;
 require_once __DIR__.'/mileage_report_lib.php';
 aims_mileage_schema($pdo);
+if(isset($data['billing'])){
+    if(!is_array($data['billing']))aims_json(['ok'=>false,'error'=>'invalid_billing'],422);
+    try{aims_mileage_decimal($data['billing']['planned_km']??'',1000000);aims_mileage_decimal($data['billing']['revenue_eur']??'',100000000);}
+    catch(InvalidArgumentException){aims_json(['ok'=>false,'error'=>'invalid_billing'],422);}
+}
 $pdo->beginTransaction();
 try {
     if ($sourceOrderId !== '') {
