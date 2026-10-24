@@ -17,6 +17,15 @@ for(const width of [390,820,1440]){
  await page.route('https://tile.openstreetmap.org/**',route=>route.fulfill({status:200,contentType:'image/png',body:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jg7cAAAAASUVORK5CYII=','base64')}));
  await page.goto('http://127.0.0.1:'+server.address().port+'/',{waitUntil:'load'});
  assert.equal(await page.locator('h1').innerText(),'Kilométer és árrés');
+ const contrast=await page.evaluate(()=>{
+  const rgb=v=>v.match(/[\d.]+/g).map(Number);
+  const light=v=>{const c=rgb(v).slice(0,3).map(x=>{x/=255;return x<=.04045?x/12.92:((x+.055)/1.055)**2.4});return c[0]*.2126+c[1]*.7152+c[2]*.0722};
+  return [...document.querySelectorAll('.km-wrap h2,.km-wrap label,.km-table td,.km-table th,.km-wrap input:not([type=hidden]),.km-wrap select')].map(el=>{
+   let parent=el,bg;while(parent){bg=getComputedStyle(parent).backgroundColor;if(rgb(bg)[3]!==0)break;parent=parent.parentElement}
+   const a=light(getComputedStyle(el).color),b=light(bg);return {tag:el.tagName,text:el.textContent.slice(0,35),ratio:(Math.max(a,b)+.05)/(Math.min(a,b)+.05)};
+  });
+ });
+ assert.deepEqual(contrast.filter(x=>x.ratio<4.5),[],'report text contrast '+width);
  await page.locator('#kmJob').selectOption({label:'TEST043 · RENDER-44'});
  assert.equal(await page.locator('#kmFinanceForm [name=planned_km]').inputValue(),'125.5');
  assert.equal(await page.locator('#kmFinanceForm [name=revenue_eur]').inputValue(),'250.00');
@@ -31,7 +40,7 @@ for(const width of [390,820,1440]){
  assert.equal(range.submitted,true);assert.equal((Date.parse(range.to)-Date.parse(range.from))/86400000,2);
  const overflow=await page.evaluate(()=>document.documentElement.scrollWidth>window.innerWidth+2);assert.equal(overflow,false,'page overflow '+width);
  assert.deepEqual(errors,[]);fs.mkdirSync('website-checks',{recursive:true});await page.screenshot({path:'website-checks/mileage-'+width+'.png',fullPage:true});
- results.push({width,formPrefill:true,mapSelection:true,threeDayFilter:true,horizontalOverflow:false,errors});await context.close();
+ results.push({width,textContrast:true,formPrefill:true,mapSelection:true,threeDayFilter:true,horizontalOverflow:false,errors});await context.close();
 }
 fs.writeFileSync('website-checks/mileage-results.json',JSON.stringify(results,null,2));console.log(JSON.stringify(results));await browser.close();await new Promise(resolve=>server.close(resolve));
 })().catch(e=>{console.error(e);process.exit(1)});
