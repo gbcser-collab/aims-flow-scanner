@@ -398,15 +398,15 @@ function aims_monthly_attendance_summary(PDO $pdo, array $period, array $dailyRo
         $row['grossSeconds'] = aims_time_seconds($row['workIntervals']);
         $row['seconds'] = aims_time_seconds($row['netIntervals']);
         $row['restSeconds'] = $row['grossSeconds']-$row['seconds'];
-        $normHours = aims_monthly_calendar_norm_hours($period['month'],$row['flowId']);
+        $normHours = !empty($period['customRange']) ? null : aims_monthly_calendar_norm_hours($period['month'],$row['flowId']);
         $actualHours = $row['seconds']/3600.0;
         $maxWeeklyHours = 0.0;
         foreach ($weekly[$driverKey] ?? [] as $intervals) $maxWeeklyHours = max($maxWeeklyHours,aims_time_seconds($intervals)/3600.0);
-        $average4m = aims_monthly_reference_average($pdo,$row['flowId'],$period);
+        $average4m = !empty($period['customRange']) ? null : aims_monthly_reference_average($pdo,$row['flowId'],$period);
         $flags = [];
         if ($row['incompleteRest']) $flags[] = 'PIHENŐADAT NEM TELJES';
         if ($row['openWorkday']) $flags[] = 'NYITOTT MUNKANAP – IDEIGLENES';
-        if ($actualHours > $normHours+0.01) $flags[] = 'HAVI NORMA FELETT – IRODAI ELLENŐRZÉS';
+        if ($normHours !== null && $actualHours > $normHours+0.01) $flags[] = 'HAVI NORMA FELETT – IRODAI ELLENŐRZÉS';
         if ($maxWeeklyHours > 60.0+0.01) $flags[] = '60 ÓRA/HÉT FELETT – IRODAI ELLENŐRZÉS';
         if ($average4m !== null && $average4m > 48.0+0.01) $flags[] = '4 HÓNAPOS ÁTLAG 48 ÓRA/HÉT FELETT – IRODAI ELLENŐRZÉS';
         $row['plates'] = implode(', ',array_keys($row['plates']));
@@ -414,7 +414,7 @@ function aims_monthly_attendance_summary(PDO $pdo, array $period, array $dailyRo
         $row['grossDuration'] = aims_monthly_duration_parts($row['grossSeconds']);
         $row['restDuration'] = aims_monthly_duration_parts($row['restSeconds']);
         $row['normHours'] = $normHours;
-        $row['differenceHours'] = $actualHours-$normHours;
+        $row['differenceHours'] = $normHours === null ? null : $actualHours-$normHours;
         $row['maxWeeklyHours'] = $maxWeeklyHours;
         $row['average4MonthWeeklyHours'] = $average4m;
         $row['status'] = $flags ? implode(' | ',$flags) : 'RÖGZÍTETT ADATOK ALAPJÁN';
@@ -440,12 +440,24 @@ function aims_monthly_build_report(PDO $pdo, string $month): array {
     ];
 }
 
+function aims_monthly_build_range_report(PDO $pdo,string $from,string $to,string $plate='',string $driver=''): array {
+    require_once __DIR__.'/mileage_report_lib.php';
+    aims_driver_auth_schema($pdo);$period=aims_report_period($from,$to);
+    $country=aims_monthly_country_rows($pdo,$period);
+    if($plate!=='')$country=array_values(array_filter($country,static fn($r)=>$r['plate']===$plate));
+    $daily=array_values(array_filter(aims_monthly_attendance_daily($pdo,$period),
+      static fn($r)=>($plate===''||$r['plate']===$plate)&&($driver===''||$r['flowId']===$driver)));
+    return ['month'=>$from.'_'.$to,'period'=>$period,'generatedAt'=>new DateTimeImmutable('now',new DateTimeZone('UTC')),
+      'countryRows'=>$country,'attendanceRows'=>$daily,'attendanceSummary'=>aims_monthly_attendance_summary($pdo,$period,$daily)];
+}
+
 function aims_monthly_csv(array $headers, array $rows): string {
     $stream = fopen('php://temp', 'w+');
     if ($stream === false) throw new RuntimeException('CSV stream nem nyitható.');
     fwrite($stream, "\xEF\xBB\xBF");
     fputcsv($stream, $headers, ';', '"', '\\', "\r\n");
     foreach ($rows as $row) {
+        foreach ($row as &$cell) { if (is_string($cell) && preg_match('/^[\s]*[=+@-]/u',$cell)) $cell="'".$cell; } unset($cell);
         fputcsv($stream, $row, ';', '"', '\\', "\r\n");
     }
     rewind($stream);
@@ -499,8 +511,8 @@ function aims_monthly_attendance_summary_csv(array $report): string {
         $rows[] = [
             $report['month'], $row['flowId'], $row['driverName'], $row['email'],
             $row['plates'], $row['days'], $row['grossDuration']['hhmm'], $row['restDuration']['hhmm'], $row['duration']['hhmm'],
-            number_format((float)$row['normHours'], 2, ',', ''),
-            number_format((float)$row['differenceHours'], 2, ',', ''),
+            $row['normHours'] === null ? '' : number_format((float)$row['normHours'], 2, ',', ''),
+            $row['differenceHours'] === null ? '' : number_format((float)$row['differenceHours'], 2, ',', ''),
             number_format((float)$row['maxWeeklyHours'], 2, ',', ''),
             $row['average4MonthWeeklyHours'] === null
                 ? ''

@@ -20,6 +20,7 @@ function aims_start_session(){if(session_status()!==PHP_SESSION_ACTIVE)session_s
 function aims_require_admin(){aims_start_session();}
 function aims_admin_csrf(){return 'isolated-test-csrf';}
 function aims_audit($event,$data=[]){}
+function aims_security_headers($admin=false){}
 ''')
     (root / 'inc/portal.php').write_text('''<?php
 function portal_h($s){return htmlspecialchars((string)$s,ENT_QUOTES,'UTF-8');}
@@ -50,8 +51,9 @@ echo json_encode(['page'=>$argv[1],'case'=>$argv[2],'bytes'=>strlen($html),'ok'=
 ''')
     env = dict(os.environ, AIMS_TRACKING_DATA_DIR=str(root / 'data'), AIMS_ADMIN_TRACKING_TOKEN='isolated-admin-test-token')
     for case in ('empty', 'populated'):
-        for page in ('aims-flow-workspace.php', 'aims-flow-monthly-report.php', 'aims-flow-eco.php', 'aims-flow-driver-access.php'):
+        for page in ('aims-flow-workspace.php', 'aims-flow-monthly-report.php', 'aims-flow-eco.php', 'aims-flow-driver-access.php', 'aims-flow-mileage.php', 'foreign-stay-report.php'):
             result = subprocess.run(['php', str(root / 'runner.php'), page, case], env=env, text=True, capture_output=True)
             print(result.stdout, end='')
             if result.returncode:
                 raise RuntimeError(result.stderr or result.stdout)
+

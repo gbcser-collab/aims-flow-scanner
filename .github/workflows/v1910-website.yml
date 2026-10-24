@@ -2,7 +2,7 @@ name: Validate FLOW website integration
 on:
   push:
     branches: [aims-flow-r105-next-v190-stabilization]
-    paths: ['integration/**', 'ci/assemble_website.py', 'ci/package_website.py', '.github/workflows/v1910-website.yml']
+    paths: ['integration/**', 'server/aims-tracking/mileage_report_lib.php', 'server/aims-tracking/monthly_report_lib.php', 'server/aims-tracking/tests/mileage_report_test.php', 'ci/assemble_website.py', 'ci/package_website.py', '.github/workflows/v1910-website.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -17,7 +17,10 @@ jobs:
           find integration -name '*.php' -print0 | xargs -0 -n1 php -l
           python3 -m py_compile ci/assemble_website.py ci/package_website.py
           python3 -m unittest discover -s integration -p 'test_package_website.py'
+      - name: Mileage and accounting regressions
+        run: php server/aims-tracking/tests/mileage_report_test.php
       - name: Render real admin pages against SQLite
+        if: ${{ !cancelled() }}
         run: python3 integration/test_admin_render.py
       - name: Exercise session authorization over HTTP
         if: ${{ !cancelled() }}
@@ -49,3 +52,4 @@ jobs:
           name: AIMS-FLOW-website-WebKit-checks
           path: website-checks/
           if-no-files-found: error
+

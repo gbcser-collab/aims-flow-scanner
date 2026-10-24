@@ -20,7 +20,7 @@ function aims_render_admin_shell(): void {
         ['partners.php','♧','Partnerek'],['billing-ready.php','▤','Számlázási kapu'],
         ['messages.php','≡','Üzenetnapló'],['automation.php','✉','E-mail-bot'],['autopilot.php','↻','Autopilot']],
       'RIPORTOK'=>[
-        ['aims-flow-monthly-report.php','▦','Havi riport'],['aims-flow-eco.php','◷','ECO-elemzés'],
+        ['aims-flow-mileage.php','€','Kilométer és árrés'],['aims-flow-monthly-report.php','▦','Időszaki riport'],['aims-flow-eco.php','◷','ECO-elemzés'],
         ['foreign-stay-report.php','◴','Külföldi tartózkodás'],['analytics.php','▥','Webes analitika']],
     ];
     $h=static fn($s)=>htmlspecialchars((string)$s,ENT_QUOTES,'UTF-8');

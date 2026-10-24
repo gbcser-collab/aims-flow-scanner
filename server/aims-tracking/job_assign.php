@@ -167,6 +167,8 @@ foreach ($rawStops as $stop) {
 $now = gmdate(DateTimeInterface::ATOM);
 $createdNew = false;
 $duplicateAssignment = false;
+require_once __DIR__.'/mileage_report_lib.php';
+aims_mileage_schema($pdo);
 $pdo->beginTransaction();
 try {
     if ($sourceOrderId !== '') {
@@ -231,6 +233,9 @@ try {
         $duplicateAssignment = true;
     }
 
+    if($createdNew&&isset($data['billing'])&&is_array($data['billing'])){
+        aims_mileage_save_finance($pdo,(int)$jobId,$data['billing']);
+    }
     $pdo->commit();
 } catch (Throwable $error) {
     if ($pdo->inTransaction()) $pdo->rollBack();
